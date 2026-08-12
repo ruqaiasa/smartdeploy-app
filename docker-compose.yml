@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: smartdeploy-postgres
+
+    environment:
+      POSTGRES_DB: smartdeploy_db
+      POSTGRES_USER: smartdeploy_user
+      POSTGRES_PASSWORD: smartdeploy_password
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - smartdeploy_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    restart: unless-stopped
+
+volumes:
+  smartdeploy_postgres_data:

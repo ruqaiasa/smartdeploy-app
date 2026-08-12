@@ -1,0 +1,25 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/smartdeploy_db}
+    username: ${DB_USERNAME:smartdeploy_user}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+security:
+  jwt:
+    secret-key: ${JWT_SECRET_KEY}
+    expiration: 3600000
+    refresh-expiration: 604800000
+
+smartdeploy:
+  jenkins:
+    url: ${JENKINS_URL:http://192.168.85.129:8080}
+    username: ${JENKINS_USERNAME:admin}
+    token: ${JENKINS_API_TOKEN}
+    job-name: ${JENKINS_JOB_NAME:smartdeploy}
