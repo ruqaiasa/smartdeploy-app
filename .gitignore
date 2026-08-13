@@ -1,81 +1,45 @@
 # ==========================================================
-# SMARTDEPLOY - Git Ignore
+# SMARTDEPLOY MONOREPO
 # ==========================================================
 
 # --------------------------
-# Maven
+# Backend - Spring Boot
 # --------------------------
-target/
-.mvn/wrapper/maven-wrapper.jar
+backend/target/
+backend/.idea/
+backend/*.iml
+
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+backend/*.log
+backend/logs/
 
 # --------------------------
-# IntelliJ IDEA
+# Frontend - Vue / Vite
+# --------------------------
+frontend/node_modules/
+frontend/dist/
+
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+frontend/.eslintcache
+frontend/.vscode/
+
+# --------------------------
+# Global
 # --------------------------
 .idea/
-*.iws
-*.iml
-*.ipr
-
-# --------------------------
-# Eclipse / STS
-# --------------------------
-.apt_generated/
-.classpath
-.factorypath
-.project
-.settings/
-.springBeans
-.sts4-cache/
-
-# --------------------------
-# NetBeans
-# --------------------------
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-
-# --------------------------
-# VS Code
-# --------------------------
 .vscode/
 
-# --------------------------
-# Secrets / environment
-# --------------------------
-.env
-.env.*
-!.env.example
-
-# --------------------------
-# Local Spring config
-# --------------------------
-application-local.properties
-application-local.yml
-application-local.yaml
-
-# --------------------------
-# Logs
-# --------------------------
 *.log
-logs/
 
-# --------------------------
-# Jenkins local secrets
-# --------------------------
-jenkins.env
-
-# --------------------------
-# OS files
-# --------------------------
 .DS_Store
 Thumbs.db
 
-# --------------------------
-# Temporary files
-# --------------------------
 *.tmp
 *.temp
 *.swp
