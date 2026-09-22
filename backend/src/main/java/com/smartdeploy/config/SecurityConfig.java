@@ -1,5 +1,6 @@
 package com.smartdeploy.config;
 
+import com.smartdeploy.common.exception.ApiError;
 import com.smartdeploy.security.jwt.CustomAccessDeniedHandler;
 import com.smartdeploy.security.jwt.JwtAuthenticationEntryPoint;
 import com.smartdeploy.security.jwt.JwtAuthenticationFilter;
@@ -8,6 +9,7 @@ import com.smartdeploy.user.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -24,12 +26,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
+import com.smartdeploy.deployment.DeploymentNotFoundException;
+import com.smartdeploy.deployment.DeploymentStateException;
+import com.smartdeploy.deployment.DeploymentValidationException;
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
@@ -172,5 +181,48 @@ public class SecurityConfig {
         );
 
         return source;
+    }
+    @ExceptionHandler(DeploymentNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiError handleDeploymentNotFound(
+            DeploymentNotFoundException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                HttpStatus.NOT_FOUND.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+
+    @ExceptionHandler(DeploymentValidationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleDeploymentValidation(
+            DeploymentValidationException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+
+    @ExceptionHandler(DeploymentStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiError handleDeploymentState(
+            DeploymentStateException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
     }
 }

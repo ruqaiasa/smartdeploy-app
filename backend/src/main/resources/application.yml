@@ -23,3 +23,6 @@ smartdeploy:
     username: ${JENKINS_USERNAME:admin}
     token: ${JENKINS_API_TOKEN}
     job-name: ${JENKINS_JOB_NAME:smartdeploy}
+
+prometheus:
+  url: ${PROMETHEUS_URL:http://192.168.85.129:30090}

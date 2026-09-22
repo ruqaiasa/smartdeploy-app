@@ -12,6 +12,5 @@ public record JenkinsProperties(
         String token,
 
         String jobName
-
 ) {
 }
