@@ -1,5 +1,5 @@
 package com.smartdeploy.config;
-
+import com.smartdeploy.security.jwt.JenkinsApiKeyFilter;
 import com.smartdeploy.common.exception.ApiError;
 import com.smartdeploy.security.jwt.CustomAccessDeniedHandler;
 import com.smartdeploy.security.jwt.JwtAuthenticationEntryPoint;
@@ -48,16 +48,20 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
 
+    private final JenkinsApiKeyFilter jenkinsApiKeyFilter;
+
     public SecurityConfig(
             CustomUserDetailsService userDetailsService,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             JwtAuthenticationEntryPoint authenticationEntryPoint,
-            CustomAccessDeniedHandler accessDeniedHandler
+            CustomAccessDeniedHandler accessDeniedHandler,
+            JenkinsApiKeyFilter jenkinsApiKeyFilter
     ) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
+        this.jenkinsApiKeyFilter = jenkinsApiKeyFilter;
     }
 
     @Bean
@@ -94,7 +98,7 @@ public class SecurityConfig {
                 // API REST avec JWT : pas de formulaire ni session HTTP
                 .csrf(csrf -> csrf.disable())
 
-                // Active la configuration CORS déclarée plus bas
+                // Configuration CORS
                 .cors(Customizer.withDefaults())
 
                 // Authentification stateless
@@ -126,17 +130,26 @@ public class SecurityConfig {
 
                                 "/api/webhooks/jenkins/**",
 
+                                // Endpoint exposé à Prometheus
+                                "/actuator/prometheus",
+
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
+                        ).permitAll()
 
-
-                                ).permitAll()
-
+                        // Toutes les autres routes restent protégées par JWT
+                        .requestMatchers(
+                                org.springframework.http.HttpMethod.GET,
+                                "/api/kubernetes/manifests/deployments/*/export"
+                        ).hasRole("JENKINS")
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(
+                        jenkinsApiKeyFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                )
 
-                // Vérification du JWT avant le filtre standard
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class

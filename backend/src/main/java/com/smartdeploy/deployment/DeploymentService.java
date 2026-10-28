@@ -1,5 +1,8 @@
 package com.smartdeploy.deployment;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentNotFoundException;
 import com.smartdeploy.environment.EnvironmentRepository;
@@ -16,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import com.smartdeploy.integration.jenkins.JenkinsIntegrationException;
 import com.smartdeploy.integration.jenkins.JenkinsService;
 
 @Service
@@ -33,6 +35,8 @@ public class DeploymentService {
     private final EnvironmentRepository environmentRepository;
 
     private final JenkinsService jenkinsService;
+    private final DeploymentKubernetesConfigRepository kubernetesConfigRepository;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     /* ==========================================================
      *                      CONSTRUCTOR
      * ==========================================================
@@ -42,12 +46,14 @@ public class DeploymentService {
             DeploymentRepository deploymentRepository,
             VersionRepository versionRepository,
             EnvironmentRepository environmentRepository,
-            JenkinsService jenkinsService
+            JenkinsService jenkinsService,
+            DeploymentKubernetesConfigRepository kubernetesConfigRepository
     ) {
         this.deploymentRepository = deploymentRepository;
         this.versionRepository = versionRepository;
         this.environmentRepository = environmentRepository;
         this.jenkinsService = jenkinsService;
+        this.kubernetesConfigRepository = kubernetesConfigRepository;
     }
 
     /* ==========================================================
@@ -87,6 +93,22 @@ public class DeploymentService {
                 currentUser
         );
 
+        // Conserver la configuration Kubernetes demandée pour ce déploiement.
+        if (request.kubernetesConfig() == null) {
+            throw new DeploymentValidationException(
+                    "La configuration Kubernetes est obligatoire"
+            );
+        }
+
+        boolean hasFrontend = request.kubernetesConfig().frontend() != null;
+        boolean hasBackend = request.kubernetesConfig().backend() != null;
+        if (!hasFrontend && !hasBackend) {
+            throw new DeploymentValidationException(
+                    "Au moins un composant frontend ou backend est obligatoire"
+            );
+        }
+
+
         boolean deploymentAlreadyRunning =
                 deploymentRepository
                         .existsByEnvironmentAndStatusInAndDeletedFalse(
@@ -120,34 +142,47 @@ public class DeploymentService {
                         deployment
                 );
 
-        try {
-
-            jenkinsService.triggerDeployment(
-                    savedDeployment
+        // Le namespace est la source de vérité de l'environnement,
+        // jamais une valeur libre provenant du navigateur.
+        String namespace = environment.getNamespace();
+        if (namespace == null || !namespace.matches(
+                "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        ) || namespace.length() > 63) {
+            throw new DeploymentValidationException(
+                    "Le namespace de l'environnement est absent ou invalide"
             );
-
-        } catch (
-                JenkinsIntegrationException exception
-        ) {
-
-            savedDeployment.setStatus(
-                    DeploymentStatus.FAILED
-            );
-
-            savedDeployment.setFinishedAt(
-                    LocalDateTime.now()
-            );
-
-            savedDeployment.setErrorMessage(
-                    exception.getMessage()
-            );
-
-            deploymentRepository.saveAndFlush(
-                    savedDeployment
-            );
-
-            throw exception;
         }
+
+        final String configurationJson;
+        try {
+            ObjectNode normalizedConfig = OBJECT_MAPPER.valueToTree(
+                    request.kubernetesConfig()
+            );
+            normalizedConfig.put("namespace", namespace);
+            configurationJson = OBJECT_MAPPER.writeValueAsString(normalizedConfig);
+        } catch (JsonProcessingException exception) {
+            throw new DeploymentValidationException(
+                    "Impossible de sérialiser la configuration Kubernetes"
+            );
+        }
+
+        DeploymentKubernetesConfig kubernetesConfig =
+                new DeploymentKubernetesConfig();
+        kubernetesConfig.setDeployment(savedDeployment);
+        kubernetesConfig.setNamespace(namespace);
+        kubernetesConfig.setConfigurationJson(configurationJson);
+
+        kubernetesConfig.setApplicationType(
+                hasFrontend && hasBackend ? KubernetesApplicationType.FULLSTACK
+                        : hasFrontend ? KubernetesApplicationType.FRONTEND
+                        : KubernetesApplicationType.BACKEND
+        );
+
+        kubernetesConfigRepository.saveAndFlush(kubernetesConfig);
+
+        // En cas d'échec du déclenchement Jenkins, la transaction est annulée.
+        // Ne pas enregistrer FAILED puis relancer l'exception : cet état serait annulé.
+        jenkinsService.triggerDeployment(savedDeployment);
 
         return toResponse(savedDeployment);
     }
@@ -251,6 +286,7 @@ public class DeploymentService {
             Long id,
             UpdateDeploymentMetadataRequest request
     ) {
+
         Deployment deployment =
                 findActiveDeploymentById(id);
 
@@ -264,10 +300,18 @@ public class DeploymentService {
                 )
         );
 
-        Deployment updatedDeployment =
-                deploymentRepository.saveAndFlush(deployment);
+        deployment.setKubernetesDeploymentName(
+                normalizeNullableText(
+                        request.kubernetesDeploymentName()
+                )
+        );
 
-        return toResponse(updatedDeployment);
+        Deployment savedDeployment =
+                deploymentRepository.saveAndFlush(
+                        deployment
+                );
+
+        return toResponse(savedDeployment);
     }
 
     /* ==========================================================
@@ -466,11 +510,13 @@ public class DeploymentService {
             );
         }
 
-        if (version.getBuildStatus()
-                != BuildStatus.SUCCESS) {
+        if (version.getBuildStatus() == null
+                || (version.getBuildStatus() != BuildStatus.PENDING
+                && version.getBuildStatus() != BuildStatus.SUCCESS)) {
+
             throw new DeploymentValidationException(
-                    "Seule une version dont le build est réussi "
-                            + "peut être déployée"
+                    "La version doit être en attente de build "
+                            + "ou avoir un build réussi pour être déployée"
             );
         }
 

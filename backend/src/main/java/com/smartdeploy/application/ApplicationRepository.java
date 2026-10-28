@@ -79,5 +79,9 @@ public interface ApplicationRepository
             Pageable pageable
     );
 
+    long countByDeletedFalse();
+
+    long countByActiveTrueAndDeletedFalse();
+
     
 }

@@ -208,7 +208,9 @@ public class AlertDetectionService {
             Alert alert = existingAlert.get();
 
             alert.markDetected(
+                    deployment,
                     severity,
+                    title,
                     message,
                     currentValue,
                     thresholdValue

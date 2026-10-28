@@ -1,10 +1,10 @@
 package com.smartdeploy.environment;
 
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/environments")
@@ -35,6 +35,7 @@ public class EnvironmentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public EnvironmentResponse create(
             @Valid @RequestBody CreateEnvironmentRequest request
     ) {
@@ -47,6 +48,7 @@ public class EnvironmentController {
      */
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public EnvironmentResponse findById(
             @PathVariable Long id
     ) {
@@ -54,11 +56,12 @@ public class EnvironmentController {
     }
 
     /* ==========================================================
-     *                  GET ALL ENVIRONMENTS
+     *              SEARCH AND PAGINATE ENVIRONMENTS
      * ==========================================================
      */
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public EnvironmentPageResponse searchEnvironments(
 
             @RequestParam(defaultValue = "0")
@@ -88,12 +91,14 @@ public class EnvironmentController {
                 applicationId
         );
     }
+
     /* ==========================================================
      *                  UPDATE ENVIRONMENT
      * ==========================================================
      */
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public EnvironmentResponse update(
             @PathVariable Long id,
             @Valid @RequestBody UpdateEnvironmentRequest request
@@ -107,6 +112,7 @@ public class EnvironmentController {
      */
 
     @PatchMapping("/{id}/activate")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public EnvironmentResponse activate(
             @PathVariable Long id
     ) {
@@ -119,6 +125,7 @@ public class EnvironmentController {
      */
 
     @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public EnvironmentResponse deactivate(
             @PathVariable Long id
     ) {
@@ -132,6 +139,7 @@ public class EnvironmentController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public void softDelete(
             @PathVariable Long id
     ) {
@@ -144,6 +152,7 @@ public class EnvironmentController {
      */
 
     @PatchMapping("/{id}/restore")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public EnvironmentResponse restore(
             @PathVariable Long id
     ) {

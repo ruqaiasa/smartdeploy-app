@@ -20,13 +20,12 @@ public record CreateVersionRequest(
         @Size(max = 100)
         String gitCommit,
 
-        @Size(max = 500)
+        // Conservés temporairement pour la compatibilité
+        // avec les anciennes requêtes et les tests.
         String dockerImage,
 
-        @Size(max = 500)
         String artifactPath,
 
-        @Size(max = 1000)
         String buildLogsUrl
 
 ) {

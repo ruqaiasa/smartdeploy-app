@@ -77,15 +77,9 @@ public class VersionService {
                 .gitCommit(
                         normalizeNullableText(request.gitCommit())
                 )
-                .dockerImage(
-                        normalizeNullableText(request.dockerImage())
-                )
-                .artifactPath(
-                        normalizeNullableText(request.artifactPath())
-                )
-                .buildLogsUrl(
-                        normalizeNullableText(request.buildLogsUrl())
-                )
+                .dockerImage(null)
+                .artifactPath(null)
+                .buildLogsUrl(null)
                 .buildStatus(BuildStatus.PENDING)
                 .deleted(false)
                 .build();

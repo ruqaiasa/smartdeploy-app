@@ -102,6 +102,12 @@ public class Deployment {
     private String deploymentLogsUrl;
 
     @Column(
+            name = "kubernetes_deployment_name",
+            length = 255
+    )
+    private String kubernetesDeploymentName;
+
+    @Column(
             name = "error_message",
             length = 2000
     )
@@ -148,6 +154,7 @@ public class Deployment {
             status = DeploymentStatus.PENDING;
         }
     }
+
 
     @PreUpdate
     public void preUpdate() {

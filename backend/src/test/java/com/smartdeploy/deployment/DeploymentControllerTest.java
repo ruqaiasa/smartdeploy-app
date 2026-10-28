@@ -1,5 +1,7 @@
 package com.smartdeploy.deployment;
 
+import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
+import com.smartdeploy.integration.kubernetes.KubernetesComponentRequest;
 import com.smartdeploy.user.Role;
 import com.smartdeploy.user.User;
 import org.junit.jupiter.api.AfterEach;
@@ -73,11 +75,22 @@ class DeploymentControllerTest {
     void create_shouldReturn201AndDeployment()
             throws Exception {
 
-        CreateDeploymentRequest request =
-                new CreateDeploymentRequest(
-                        1L,
-                        2L
+        KubernetesApplicationRequest kubernetesConfig =
+                new KubernetesApplicationRequest(
+                        "smartdeploy-test",
+                        null,
+                        new KubernetesComponentRequest(
+                                "smartdeploy-backend",
+                                "localhost:5000/smartdeploy-backend:v1",
+                                1,
+                                8080
+                        ),
+                        null,
+                        null
                 );
+
+        CreateDeploymentRequest request =
+                new CreateDeploymentRequest(1L, 2L, kubernetesConfig);
 
         DeploymentResponse response =
                 createResponse(
@@ -98,7 +111,19 @@ class DeploymentControllerTest {
                                 .content("""
                                         {
                                           "versionId": 1,
-                                          "environmentId": 2
+                                          "environmentId": 2,
+                                          "kubernetesConfig": {
+                                            "namespace": "smartdeploy-test",
+                                            "frontend": null,
+                                            "backend": {
+                                              "name": "smartdeploy-backend",
+                                              "image": "localhost:5000/smartdeploy-backend:v1",
+                                              "replicas": 1,
+                                              "containerPort": 8080
+                                            },
+                                            "database": null,
+                                            "ingress": null
+                                          }
                                         }
                                         """)
                 )
@@ -320,7 +345,8 @@ class DeploymentControllerTest {
         UpdateDeploymentMetadataRequest request =
                 new UpdateDeploymentMetadataRequest(
                         42,
-                        "https://jenkins/job/smartdeploy/42"
+                        "https://jenkins/job/smartdeploy/42",
+                        null
                 );
 
         DeploymentResponse response =
@@ -510,3 +536,4 @@ class DeploymentControllerTest {
         );
     }
 }
+

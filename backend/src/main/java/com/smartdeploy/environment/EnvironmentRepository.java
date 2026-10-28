@@ -90,4 +90,7 @@ public interface EnvironmentRepository
     );
 
 
+    long countByDeletedFalse();
+
+    long countByActiveTrueAndDeletedFalse();
 }

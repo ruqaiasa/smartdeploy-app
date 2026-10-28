@@ -1,7 +1,9 @@
 package com.smartdeploy.version;
 
 import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,6 +27,7 @@ public class VersionController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public VersionResponse create(
             @Valid @RequestBody
             CreateVersionRequest request
@@ -38,6 +41,7 @@ public class VersionController {
      */
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public VersionResponse findById(
             @PathVariable Long id
     ) {
@@ -45,16 +49,12 @@ public class VersionController {
     }
 
     /* ==========================================================
-     *                  GET ALL
-     * ==========================================================
-     */
-
-    /* ==========================================================
      *              SEARCH AND PAGINATE VERSIONS
      * ==========================================================
      */
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public VersionPageResponse searchVersions(
 
             @RequestParam(defaultValue = "0")
@@ -83,11 +83,12 @@ public class VersionController {
     }
 
     /* ==========================================================
-     *          GET BY APPLICATION
+     *                  GET BY APPLICATION
      * ==========================================================
      */
 
     @GetMapping("/application/{applicationId}")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public List<VersionResponse> findByApplication(
             @PathVariable Long applicationId
     ) {
@@ -102,6 +103,7 @@ public class VersionController {
      */
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public VersionResponse update(
 
             @PathVariable Long id,
@@ -124,6 +126,7 @@ public class VersionController {
      */
 
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public VersionResponse updateBuildStatus(
 
             @PathVariable Long id,
@@ -146,6 +149,7 @@ public class VersionController {
      */
 
     @PatchMapping("/{id}/metadata")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public VersionResponse updateBuildMetadata(
 
             @PathVariable Long id,
@@ -178,6 +182,7 @@ public class VersionController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public void softDelete(
             @PathVariable Long id
     ) {
@@ -190,10 +195,10 @@ public class VersionController {
      */
 
     @PatchMapping("/{id}/restore")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public VersionResponse restore(
             @PathVariable Long id
     ) {
         return versionService.restore(id);
     }
-
 }

@@ -1,7 +1,9 @@
 package com.smartdeploy.deployment;
 
 import com.smartdeploy.user.User;
+
 import jakarta.validation.Valid;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -26,9 +28,7 @@ public class DeploymentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS', 'DEVELOPER')"
-    )
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public DeploymentResponse create(
             @Valid @RequestBody CreateDeploymentRequest request,
             @AuthenticationPrincipal User currentUser
@@ -46,7 +46,7 @@ public class DeploymentController {
 
     @GetMapping("/{id}")
     @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS', 'DEVELOPER', 'VIEWER')"
+            "hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')"
     )
     public DeploymentResponse findById(
             @PathVariable Long id
@@ -61,7 +61,7 @@ public class DeploymentController {
 
     @GetMapping
     @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS', 'DEVELOPER', 'VIEWER')"
+            "hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')"
     )
     public DeploymentPageResponse searchDeployments(
 
@@ -103,9 +103,7 @@ public class DeploymentController {
      */
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS')"
-    )
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public DeploymentResponse updateStatus(
             @PathVariable Long id,
             @Valid @RequestBody
@@ -123,9 +121,7 @@ public class DeploymentController {
      */
 
     @PatchMapping("/{id}/metadata")
-    @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS')"
-    )
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public DeploymentResponse updateMetadata(
             @PathVariable Long id,
             @Valid @RequestBody
@@ -144,9 +140,7 @@ public class DeploymentController {
 
     @PostMapping("/{id}/rollback")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize(
-            "hasAnyRole('ADMIN', 'DEVOPS')"
-    )
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
     public DeploymentResponse rollback(
             @PathVariable Long id,
             @AuthenticationPrincipal User currentUser

@@ -1,3 +1,5 @@
+
+
 package com.smartdeploy.environment;
 
 import com.smartdeploy.application.Application;
@@ -708,7 +710,7 @@ class EnvironmentServiceTest {
                 "Environnement de développement",
                 response.content()
                         .get(0)
-                        .name()
+                        .description()
         );
 
         assertEquals(
@@ -744,7 +746,7 @@ class EnvironmentServiceTest {
 
         when(
                 environmentRepository.searchEnvironments(
-                        isNull(),
+                        eq(""),
                         isNull(),
                         isNull(),
                         isNull(),
@@ -796,7 +798,7 @@ class EnvironmentServiceTest {
 
         verify(environmentRepository)
                 .searchEnvironments(
-                        isNull(),
+                        eq(""),
                         isNull(),
                         isNull(),
                         isNull(),

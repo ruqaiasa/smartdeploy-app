@@ -1,10 +1,10 @@
 package com.smartdeploy.application;
 
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/applications")
@@ -30,6 +30,7 @@ public class ApplicationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse create(
             @Valid @RequestBody
             CreateApplicationRequest request
@@ -43,6 +44,7 @@ public class ApplicationController {
      */
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse findById(
             @PathVariable Long id
     ) {
@@ -50,16 +52,12 @@ public class ApplicationController {
     }
 
     /* ==========================================================
-     *                  GET ALL APPLICATIONS
-     * ==========================================================
-     */
-
-    /* ==========================================================
      *          SEARCH AND PAGINATE APPLICATIONS
      * ==========================================================
      */
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationPageResponse searchApplications(
 
             @RequestParam(defaultValue = "0")
@@ -92,6 +90,7 @@ public class ApplicationController {
      */
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse update(
             @PathVariable Long id,
             @Valid @RequestBody
@@ -102,28 +101,33 @@ public class ApplicationController {
                 request
         );
     }
+
     /* ==========================================================
-     *              ACTIVATE APPLICATION
+     *                  ACTIVATE APPLICATION
      * ==========================================================
      */
 
     @PatchMapping("/{id}/activate")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse activate(
             @PathVariable Long id
     ) {
         return applicationService.activate(id);
     }
+
     /* ==========================================================
-     *              DEACTIVATE APPLICATION
+     *                  DEACTIVATE APPLICATION
      * ==========================================================
      */
 
     @PatchMapping("/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse deactivate(
             @PathVariable Long id
     ) {
         return applicationService.deactivate(id);
     }
+
     /* ==========================================================
      *                  DELETE APPLICATION
      * ==========================================================
@@ -131,24 +135,33 @@ public class ApplicationController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public void softDelete(
             @PathVariable Long id
     ) {
         applicationService.softDelete(id);
     }
+
     /* ==========================================================
      *                  RESTORE APPLICATION
      * ==========================================================
      */
 
     @PatchMapping("/{id}/restore")
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationResponse restore(
             @PathVariable Long id
     ) {
         return applicationService.restore(id);
     }
 
+    /* ==========================================================
+     *                  APPLICATION DETAILS
+     * ==========================================================
+     */
+
     @GetMapping("/{id}/details")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationDetailsResponse findDetailsById(
             @PathVariable Long id
     ) {

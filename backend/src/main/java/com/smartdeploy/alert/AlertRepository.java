@@ -26,4 +26,15 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
             Application application,
             Environment environment
     );
+
+    List<Alert> findAllByOrderByCreatedAtDesc();
+
+    List<Alert> findByStatusOrderByCreatedAtDesc(
+            AlertStatus status
+    );
+
+    long countByStatus(
+            AlertStatus status
+    );
+
 }

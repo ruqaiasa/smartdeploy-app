@@ -19,6 +19,7 @@ import com.smartdeploy.alert.AlertDetectionService;
 import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentNotFoundException;
 import com.smartdeploy.environment.EnvironmentRepository;
+import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MonitoringService {
 
@@ -54,73 +55,95 @@ public class MonitoringService {
     ) {
 
         String cpuQuery = """
-                sum(rate(container_cpu_usage_seconds_total{
+            sum(
+              rate(
+                container_cpu_usage_seconds_total{
                   namespace="%s",
                   pod=~"%s-.*",
-                  container="%s"
-                }[2m])) * 100
-                """.formatted(
+                  container!="",
+                  container!="POD"
+                }[5m]
+              )
+            ) * 100
+            """.formatted(
                 namespace,
-                applicationName,
                 applicationName
         );
 
         String memoryQuery = """
-                sum(container_memory_working_set_bytes{
-                  namespace="%s",
-                  pod=~"%s-.*",
-                  container="%s"
-                }) / 1024 / 1024
-                """.formatted(
+            sum(
+              container_memory_working_set_bytes{
+                namespace="%s",
+                pod=~"%s-.*",
+                container!="",
+                container!="POD"
+              }
+            ) / 1024 / 1024
+            """.formatted(
                 namespace,
-                applicationName,
                 applicationName
         );
 
         String runningPodsQuery = """
-                sum(kube_deployment_status_replicas_available{
-                  namespace="%s",
-                  deployment="%s"
-                })
-                """.formatted(
+            sum(
+              kube_deployment_status_replicas_available{
+                namespace="%s",
+                deployment="%s"
+              }
+            )
+            """.formatted(
                 namespace,
                 applicationName
         );
 
         String desiredPodsQuery = """
-                sum(kube_deployment_spec_replicas{
-                  namespace="%s",
-                  deployment="%s"
-                })
-                """.formatted(
+            sum(
+              kube_deployment_spec_replicas{
+                namespace="%s",
+                deployment="%s"
+              }
+            )
+            """.formatted(
                 namespace,
                 applicationName
         );
 
         String restartCountQuery = """
-                sum(kube_pod_container_status_restarts_total{
-                  namespace="%s",
-                  container="%s"
-                })
-                """.formatted(
+            sum(
+              kube_pod_container_status_restarts_total{
+                namespace="%s",
+                pod=~"%s-.*"
+              }
+            )
+            """.formatted(
                 namespace,
                 applicationName
         );
 
         double cpuUsage =
-                prometheusClient.querySingleValue(cpuQuery);
+                prometheusClient.querySingleValue(
+                        cpuQuery
+                );
 
         double memoryUsage =
-                prometheusClient.querySingleValue(memoryQuery);
+                prometheusClient.querySingleValue(
+                        memoryQuery
+                );
 
         int runningPods =
-                (int) prometheusClient.querySingleValue(runningPodsQuery);
+                (int) prometheusClient.querySingleValue(
+                        runningPodsQuery
+                );
 
         int desiredPods =
-                (int) prometheusClient.querySingleValue(desiredPodsQuery);
+                (int) prometheusClient.querySingleValue(
+                        desiredPodsQuery
+                );
 
         int restartCount =
-                (int) prometheusClient.querySingleValue(restartCountQuery);
+                (int) prometheusClient.querySingleValue(
+                        restartCountQuery
+                );
 
         HealthStatus healthStatus =
                 healthEvaluationService.evaluate(
@@ -140,7 +163,6 @@ public class MonitoringService {
                 healthStatus
         );
     }
-
     public ApplicationMetricsHistoryResponse getApplicationMetricsHistory(
             String namespace,
             String applicationName,
@@ -194,7 +216,37 @@ public class MonitoringService {
                 memory
         );
     }
+    @Transactional(readOnly = true)
+    public ApplicationMetricsResponse getDeploymentMetrics(
+            Long deploymentId
+    ) {
 
+        Deployment deployment = deploymentRepository
+                .findByIdAndDeletedFalse(deploymentId)
+                .orElseThrow(
+                        () -> new DeploymentNotFoundException(deploymentId)
+                );
+
+        String namespace =
+                deployment.getEnvironment().getNamespace();
+
+        String kubernetesDeploymentName =
+                deployment.getKubernetesDeploymentName();
+
+        if (kubernetesDeploymentName == null
+                || kubernetesDeploymentName.isBlank()) {
+
+            throw new IllegalStateException(
+                    "Le nom du déploiement Kubernetes est absent "
+                            + "pour le déploiement " + deploymentId
+            );
+        }
+
+        return getApplicationMetrics(
+                namespace,
+                kubernetesDeploymentName
+        );
+    }
     public DeploymentImpactResponse getDeploymentImpact(Long deploymentId) {
 
         Deployment deployment = deploymentRepository
@@ -206,72 +258,61 @@ public class MonitoringService {
         String namespace =
                 deployment.getEnvironment().getNamespace();
 
-        /*
-         * TEMPORAIRE :
-         * Le nom métier de l'application dans SmartDeploy est "Spring sec",
-         * alors que le nom technique Kubernetes est "smartdeploy-demo".
-         *
-         * Plus tard, ce nom devra être stocké dynamiquement dans SmartDeploy
-         * lors du déploiement Jenkins/Kubernetes.
-         */
-        String kubernetesApplicationName = "smartdeploy-demo";
+        String kubernetesApplicationName =
+                deployment.getKubernetesDeploymentName();
 
-        /*
-         * IMPORTANT :
-         * finishedAt est enregistré en base comme LocalDateTime,
-         * donc sans information de fuseau horaire.
-         *
-         * Dans notre environnement, cette valeur représente l'heure
-         * locale tunisienne.
-         *
-         * On associe donc explicitement Africa/Tunis avant de convertir
-         * vers le timestamp Unix utilisé par Prometheus.
-         */
-        ZoneId tunisZone = ZoneId.of("Africa/Tunis");
+        if (kubernetesApplicationName == null
+                || kubernetesApplicationName.isBlank()) {
+
+            throw new IllegalStateException(
+                    "Le nom du déploiement Kubernetes est absent "
+                            + "pour le déploiement " + deploymentId
+            );
+        }
+
+        ZoneId tunisZone =
+                ZoneId.of("Africa/Tunis");
 
         long deploymentTime = deployment
                 .getFinishedAt()
                 .atZone(tunisZone)
                 .toEpochSecond();
 
-        /*
-         * Fenêtre de comparaison :
-         *
-         * 5 minutes BEFORE
-         *       ↓
-         *    DEPLOYMENT
-         *       ↓
-         * 5 minutes AFTER
-         */
         long window = 5 * 60;
 
-        long beforeStart = deploymentTime - window;
-        long beforeEnd = deploymentTime;
+        long beforeStart =
+                deploymentTime - window;
 
-        long afterStart = deploymentTime;
-        long afterEnd = deploymentTime + window;
+        long beforeEnd =
+                deploymentTime;
+
+        long afterStart =
+                deploymentTime;
+
+        long afterEnd =
+                deploymentTime + window;
 
         int step = 15;
 
         String cpuQuery = """
-                sum(rate(container_cpu_usage_seconds_total{
-                  namespace="%s",
-                  pod=~"%s-.*",
-                  container="%s"
-                }[2m])) * 100
-                """.formatted(
+            sum(rate(container_cpu_usage_seconds_total{
+              namespace="%s",
+              pod=~"%s-.*",
+              container="%s"
+            }[2m])) * 100
+            """.formatted(
                 namespace,
                 kubernetesApplicationName,
                 kubernetesApplicationName
         );
 
         String memoryQuery = """
-                sum(container_memory_working_set_bytes{
-                  namespace="%s",
-                  pod=~"%s-.*",
-                  container="%s"
-                }) / 1024 / 1024
-                """.formatted(
+            sum(container_memory_working_set_bytes{
+              namespace="%s",
+              pod=~"%s-.*",
+              container="%s"
+            }) / 1024 / 1024
+            """.formatted(
                 namespace,
                 kubernetesApplicationName,
                 kubernetesApplicationName
@@ -309,79 +350,6 @@ public class MonitoringService {
                         step
                 );
 
-        /*
-         * DEBUG TEMPORAIRE
-         */
-        System.out.println("=== DEPLOYMENT IMPACT DEBUG ===");
-
-        System.out.println(
-                "Deployment ID : " + deploymentId
-        );
-
-        System.out.println(
-                "Kubernetes application : "
-                        + kubernetesApplicationName
-        );
-
-        System.out.println(
-                "Namespace : " + namespace
-        );
-
-        System.out.println(
-                "Deployment time : " + deploymentTime
-        );
-
-        System.out.println(
-                "Before start : " + beforeStart
-        );
-
-        System.out.println(
-                "Before end   : " + beforeEnd
-        );
-
-        System.out.println(
-                "After start  : " + afterStart
-        );
-
-        System.out.println(
-                "After end    : " + afterEnd
-        );
-
-        System.out.println(
-                "Deployment date : "
-                        + Instant.ofEpochSecond(deploymentTime)
-        );
-
-        System.out.println(
-                "Before start date : "
-                        + Instant.ofEpochSecond(beforeStart)
-        );
-
-        System.out.println(
-                "After end date : "
-                        + Instant.ofEpochSecond(afterEnd)
-        );
-
-        System.out.println(
-                "CPU BEFORE points : "
-                        + cpuBefore.size()
-        );
-
-        System.out.println(
-                "CPU AFTER points : "
-                        + cpuAfter.size()
-        );
-
-        System.out.println(
-                "MEMORY BEFORE points : "
-                        + memoryBefore.size()
-        );
-
-        System.out.println(
-                "MEMORY AFTER points : "
-                        + memoryAfter.size()
-        );
-
         return deploymentImpactService.evaluate(
                 deploymentId,
                 cpuBefore,
@@ -390,7 +358,6 @@ public class MonitoringService {
                 memoryAfter
         );
     }
-
     public ApplicationMetricsResponse getApplicationMetricsAndEvaluateAlerts(
             Long environmentId,
             String kubernetesApplicationName

@@ -105,18 +105,21 @@ public class Alert {
     }
 
     public void markDetected(
+            Deployment deployment,
             AlertSeverity severity,
+            String title,
             String message,
             Double currentValue,
             Double thresholdValue
     ) {
+        this.deployment = deployment;
         this.severity = severity;
+        this.title = title;
         this.message = message;
         this.currentValue = currentValue;
         this.thresholdValue = thresholdValue;
         this.lastDetectedAt = LocalDateTime.now();
     }
-
     public void resolve() {
         this.status = AlertStatus.RESOLVED;
         this.resolvedAt = LocalDateTime.now();

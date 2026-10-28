@@ -16,7 +16,6 @@ public record CreateEnvironmentRequest(
 
         String description,
 
-        @NotBlank
         String namespace,
 
         String clusterUrl

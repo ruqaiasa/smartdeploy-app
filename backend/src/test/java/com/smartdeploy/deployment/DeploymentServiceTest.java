@@ -6,6 +6,8 @@ import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentRepository;
 import com.smartdeploy.environment.EnvironmentType;
 import com.smartdeploy.integration.jenkins.JenkinsService;
+import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
+import com.smartdeploy.integration.kubernetes.KubernetesComponentRequest;
 import com.smartdeploy.user.Role;
 import com.smartdeploy.user.User;
 import com.smartdeploy.version.BuildStatus;
@@ -42,6 +44,9 @@ class DeploymentServiceTest {
     @Mock
     private JenkinsService jenkinsService;
 
+    @Mock
+    private DeploymentKubernetesConfigRepository kubernetesConfigRepository;
+
     private DeploymentService deploymentService;
 
     @BeforeEach
@@ -50,7 +55,8 @@ class DeploymentServiceTest {
                 deploymentRepository,
                 versionRepository,
                 environmentRepository,
-                jenkinsService
+                jenkinsService,
+                kubernetesConfigRepository
         );
     }
 
@@ -77,10 +83,25 @@ class DeploymentServiceTest {
 
         User currentUser = createUser();
 
+        KubernetesApplicationRequest kubernetesConfig =
+                new KubernetesApplicationRequest(
+                        "sd-dev-ecommerce",
+                        null,
+                        new KubernetesComponentRequest(
+                                "ecommerce-backend",
+                                "localhost:5000/ecommerce-backend:v1",
+                                5,
+                                8080
+                        ),
+                        null,
+                        null
+                );
+
         CreateDeploymentRequest request =
                 new CreateDeploymentRequest(
                         1L,
-                        2L
+                        2L,
+                        kubernetesConfig
                 );
 
         when(
@@ -183,6 +204,10 @@ class DeploymentServiceTest {
                 any(Deployment.class)
         );
 
+        verify(kubernetesConfigRepository).saveAndFlush(
+                any(DeploymentKubernetesConfig.class)
+        );
+
         verify(
                 jenkinsService
         ).triggerDeployment(
@@ -216,10 +241,25 @@ class DeploymentServiceTest {
                         application2
                 );
 
+        KubernetesApplicationRequest kubernetesConfig =
+                new KubernetesApplicationRequest(
+                        "sd-dev-ecommerce",
+                        null,
+                        new KubernetesComponentRequest(
+                                "ecommerce-backend",
+                                "localhost:5000/ecommerce-backend:v1",
+                                5,
+                                8080
+                        ),
+                        null,
+                        null
+                );
+
         CreateDeploymentRequest request =
                 new CreateDeploymentRequest(
                         1L,
-                        2L
+                        2L,
+                        kubernetesConfig
                 );
 
         when(
@@ -289,7 +329,8 @@ class DeploymentServiceTest {
         CreateDeploymentRequest request =
                 new CreateDeploymentRequest(
                         1L,
-                        2L
+                        2L,
+                        null
                 );
 
         when(
@@ -356,10 +397,25 @@ class DeploymentServiceTest {
                         application
                 );
 
+        KubernetesApplicationRequest kubernetesConfig =
+                new KubernetesApplicationRequest(
+                        "sd-dev-ecommerce",
+                        null,
+                        new KubernetesComponentRequest(
+                                "ecommerce-backend",
+                                "localhost:5000/ecommerce-backend:v1",
+                                5,
+                                8080
+                        ),
+                        null,
+                        null
+                );
+
         CreateDeploymentRequest request =
                 new CreateDeploymentRequest(
                         1L,
-                        2L
+                        2L,
+                        kubernetesConfig
                 );
 
         when(
@@ -822,7 +878,8 @@ class DeploymentServiceTest {
         UpdateDeploymentMetadataRequest request =
                 new UpdateDeploymentMetadataRequest(
                         42,
-                        " https://jenkins/job/smartdeploy/42 "
+                        " https://jenkins/job/smartdeploy/42 ",
+                        "smartdeploy-demo"
                 );
 
         DeploymentResponse response =

@@ -1,9 +1,11 @@
 package com.smartdeploy.deployment;
 
 import com.smartdeploy.environment.Environment;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface DeploymentRepository extends
@@ -16,4 +18,29 @@ public interface DeploymentRepository extends
             Environment environment,
             Iterable<DeploymentStatus> statuses
     );
+
+    @EntityGraph(
+            attributePaths = {
+                    "environment",
+                    "environment.application"
+            }
+    )
+    List<Deployment>
+    findByStatusAndDeletedFalseAndKubernetesDeploymentNameIsNotNullOrderByFinishedAtDesc(
+            DeploymentStatus status
+    );
+    long countByDeletedFalse();
+
+    long countByStatusAndDeletedFalse(
+            DeploymentStatus status
+    );
+
+    @EntityGraph(
+            attributePaths = {
+                    "environment",
+                    "environment.application",
+                    "version"
+            }
+    )
+    List<Deployment> findTop5ByDeletedFalseOrderByCreatedAtDesc();
 }

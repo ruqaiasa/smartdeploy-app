@@ -135,4 +135,25 @@ public class AlertService {
                 alert.getResolvedAt()
         );
     }
+    @Transactional(readOnly = true)
+    public List<AlertResponse> findAll() {
+
+        return alertRepository
+                .findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AlertResponse> findOpen() {
+
+        return alertRepository
+                .findByStatusOrderByCreatedAtDesc(
+                        AlertStatus.OPEN
+                )
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
 }

@@ -12,7 +12,9 @@ public record JenkinsWebhookRequest(
 
         String logsUrl,
 
-        String errorMessage
+        String errorMessage,
+
+        String kubernetesDeploymentName
 
 ) {
 }

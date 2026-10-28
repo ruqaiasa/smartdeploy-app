@@ -37,45 +37,59 @@ public class EnvironmentService {
     public EnvironmentResponse create(
             CreateEnvironmentRequest request
     ) {
+        // 1. Vérifier que l'application existe
         Application application =
                 findActiveApplication(
                         request.applicationId()
                 );
 
+        // 2. Vérifier l'unicité du type d'environnement
         checkEnvironmentAvailability(
                 application,
                 request.type(),
                 null
         );
 
+        // 3. Générer automatiquement le namespace Kubernetes
+        String generatedNamespace =
+                EnvironmentNamespaceGenerator.generate(
+                        application.getName(),
+                        request.type()
+                );
+
+        // 4. Créer l'environnement
         Environment environment =
                 Environment.builder()
                         .application(application)
                         .type(request.type())
+
                         .name(
                                 normalizeRequiredText(
                                         request.name()
                                 )
                         )
+
                         .description(
                                 normalizeNullableText(
                                         request.description()
                                 )
                         )
-                        .namespace(
-                                normalizeRequiredText(
-                                        request.namespace()
-                                )
-                        )
+
+                        // Namespace généré automatiquement
+                        .namespace(generatedNamespace)
+
+                        // Configuration du cluster conservée
                         .clusterUrl(
                                 normalizeNullableText(
                                         request.clusterUrl()
                                 )
                         )
+
                         .active(true)
                         .deleted(false)
                         .build();
 
+        // 5. Enregistrer dans PostgreSQL
         Environment savedEnvironment =
                 environmentRepository.saveAndFlush(
                         environment

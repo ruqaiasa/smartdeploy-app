@@ -35,7 +35,10 @@ public class JenkinsWebhookController {
 
                         request.buildNumber(),
 
-                        request.logsUrl()
+                        request.logsUrl(),
+
+                        request.kubernetesDeploymentName()
+
 
                 )
 
