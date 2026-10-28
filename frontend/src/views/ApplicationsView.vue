@@ -10,6 +10,7 @@ import { useRouter } from 'vue-router'
 import ApplicationFormModal from '@/components/applications/ApplicationFormModal.vue'
 
 import { useApplicationsStore } from '@/stores/applications'
+import { useAuthStore } from '@/stores/auth'
 
 import type {
   ApplicationResponse,
@@ -21,6 +22,12 @@ const router = useRouter()
 
 const applicationsStore =
   useApplicationsStore()
+
+const authStore = useAuthStore()
+
+const canManageApplications = computed(() =>
+  authStore.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN'),
+)
 
 const search = ref('')
 
@@ -292,6 +299,7 @@ function formatDate(
       </div>
 
       <button
+        v-if="canManageApplications"
         type="button"
         class="primary-button"
         :disabled="
@@ -495,6 +503,7 @@ function formatDate(
                   <!-- MODIFIER -->
 
                   <button
+                    v-if="canManageApplications"
                     type="button"
                     class="
                       action-button
@@ -517,7 +526,8 @@ function formatDate(
 
                   <button
                     v-if="
-                      application.active
+                      canManageApplications
+                      && application.active
                     "
                     type="button"
                     class="
@@ -540,7 +550,7 @@ function formatDate(
                   <!-- ACTIVER -->
 
                   <button
-                    v-else
+                    v-else-if="canManageApplications"
                     type="button"
                     class="
                       action-button
@@ -562,6 +572,7 @@ function formatDate(
                   <!-- SUPPRIMER -->
 
                   <button
+                    v-if="canManageApplications"
                     type="button"
                     class="
                       action-button

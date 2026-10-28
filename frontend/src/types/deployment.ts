@@ -42,10 +42,57 @@ export interface DeploymentResponse {
   createdAt: string
   updatedAt: string
 }
+export type KubernetesDatabaseMode = 'EXTERNAL' | 'MANAGED'
+
+export interface KubernetesComponentRequest {
+  name: string
+  image: string
+  replicas: number
+  containerPort: number
+
+  repositoryUrl?: string
+  gitBranch?: string
+  dockerfilePath?: string
+  buildContext?: string
+}
+export interface KubernetesCiCdRequest {
+  buildStrategy: 'MAVEN' | 'DOCKER_ONLY'
+  sonarMode: 'MAVEN' | 'CLI' | 'SKIP'
+  runBackendTests: boolean
+}
+export interface KubernetesDatabaseRequest {
+  mode: KubernetesDatabaseMode
+  databaseName: string
+  username: string
+  passwordSecretName: string
+  passwordSecretKey: string
+  externalHost: string | null
+  port: number
+  storageGi: number
+}
+
+export interface KubernetesIngressRequest {
+  host: string
+  ingressClassName: string | null
+  tlsSecretName: string | null
+}
+
+export interface KubernetesApplicationRequest {
+  namespace: string
+
+  frontend: KubernetesComponentRequest | null
+  backend: KubernetesComponentRequest | null
+
+  database: KubernetesDatabaseRequest | null
+  ingress: KubernetesIngressRequest | null
+
+  cicd?: KubernetesCiCdRequest | null
+}
 
 export interface CreateDeploymentRequest {
   versionId: number
   environmentId: number
+  kubernetesConfig: KubernetesApplicationRequest
 }
 
 export interface UpdateDeploymentStatusRequest {

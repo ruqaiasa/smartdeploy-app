@@ -6,6 +6,7 @@ import {
 import AppLayout from '@/layouts/AppLayout.vue'
 
 import LoginView from '@/views/LoginView.vue'
+import RegisterView from '@/views/RegisterView.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import ApplicationsView from '@/views/ApplicationsView.vue'
 import EnvironmentsView from '@/views/EnvironmentsView.vue'
@@ -13,6 +14,10 @@ import VersionsView from '@/views/VersionsView.vue'
 import DeploymentsView from '@/views/DeploymentsView.vue'
 
 import { useAuthStore } from '@/stores/auth'
+
+import type {
+  UserRole,
+} from '@/types/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -30,6 +35,17 @@ const router = createRouter({
 
       meta: {
         title: 'Connexion',
+        requiresGuest: true,
+      },
+    },
+
+    {
+      path: '/register',
+      name: 'register',
+      component: RegisterView,
+
+      meta: {
+        title: 'Créer un compte',
         requiresGuest: true,
       },
     },
@@ -68,7 +84,9 @@ const router = createRouter({
           name: 'application-details',
 
           component: () =>
-            import('@/views/ApplicationDetailsView.vue'),
+            import(
+              '@/views/ApplicationDetailsView.vue'
+            ),
 
           meta: {
             title: 'Détail application',
@@ -80,10 +98,13 @@ const router = createRouter({
           name: 'application-environments',
 
           component: () =>
-            import('@/views/ApplicationEnvironmentsView.vue'),
+            import(
+              '@/views/ApplicationEnvironmentsView.vue'
+            ),
 
           meta: {
-            title: 'Environnements application',
+            title:
+              'Environnements application',
           },
         },
 
@@ -92,10 +113,27 @@ const router = createRouter({
           name: 'application-versions',
 
           component: () =>
-            import('@/views/ApplicationVersionsView.vue'),
+            import(
+              '@/views/ApplicationVersionsView.vue'
+            ),
 
           meta: {
             title: 'Versions application',
+          },
+        },
+
+        {
+          path: 'applications/:id/deployments',
+          name: 'application-deployments',
+
+          component: () =>
+            import(
+              '@/views/ApplicationDeploymentsView.vue'
+            ),
+
+          meta: {
+            title:
+              'Déploiements application',
           },
         },
 
@@ -120,35 +158,43 @@ const router = createRouter({
         },
 
         {
-          path: 'applications/:id/deployments',
-          name: 'application-deployments',
-          component: () =>
-               import('@/views/ApplicationDeploymentsView.vue'),
-
-          meta: {
-            title: 'Déploiements application',
-          },
-},
-
-{
-  path: 'applications/:id/deployments',
-  name: 'application-deployments',
-
-  component: () =>
-    import('@/views/ApplicationDeploymentsView.vue'),
-
-  meta: {
-    title: 'Déploiements application',
-  },
-},
-
-        {
           path: 'deployments',
           name: 'deployments',
           component: DeploymentsView,
 
           meta: {
             title: 'Déploiements',
+          },
+        },
+
+        {
+          path: 'alerts',
+          name: 'alerts',
+
+          component: () =>
+            import(
+              '@/views/AlertsView.vue'
+            ),
+
+          meta: {
+            title: 'Alertes',
+          },
+        },
+
+        {
+          path: 'users',
+          name: 'users',
+
+          component: () =>
+            import(
+              '@/views/UsersView.vue'
+            ),
+
+          meta: {
+            title: 'Utilisateurs',
+            roles: [
+              'ADMIN',
+            ] satisfies UserRole[],
           },
         },
       ],
@@ -162,15 +208,20 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  const authStore = useAuthStore()
+  const authStore =
+    useAuthStore()
 
-  const requiresAuth = to.matched.some(
-    (record) => record.meta.requiresAuth,
-  )
+  const requiresAuth =
+    to.matched.some(
+      (record) =>
+        record.meta.requiresAuth,
+    )
 
-  const requiresGuest = to.matched.some(
-    (record) => record.meta.requiresGuest,
-  )
+  const requiresGuest =
+    to.matched.some(
+      (record) =>
+        record.meta.requiresGuest,
+    )
 
   if (
     requiresAuth
@@ -188,6 +239,20 @@ router.beforeEach((to) => {
   if (
     requiresGuest
     && authStore.isAuthenticated
+  ) {
+    return '/dashboard'
+  }
+
+  const allowedRoles =
+    to.meta.roles as
+      | UserRole[]
+      | undefined
+
+  if (
+    allowedRoles
+    && !authStore.hasRole(
+      ...allowedRoles,
+    )
   ) {
     return '/dashboard'
   }

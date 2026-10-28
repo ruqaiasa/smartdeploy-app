@@ -138,14 +138,14 @@ function submitForm() {
     return
   }
 
-  if (!normalizedNamespace) {
+  if (isEditMode.value && !normalizedNamespace) {
     validationError.message =
       'Le namespace Kubernetes est obligatoire.'
 
     return
   }
 
-  if (normalizedClusterUrl) {
+  if (isEditMode.value && normalizedClusterUrl) {
     try {
       new URL(normalizedClusterUrl)
     } catch {
@@ -160,8 +160,8 @@ function submitForm() {
     name: normalizedName,
     description: form.description.trim(),
     type: form.type,
-    namespace: normalizedNamespace,
-    clusterUrl: normalizedClusterUrl,
+    namespace: isEditMode.value ? normalizedNamespace : '',
+    clusterUrl: isEditMode.value ? normalizedClusterUrl : '',
     applicationId: form.applicationId,
   })
 }
@@ -287,7 +287,7 @@ function submitForm() {
             </select>
           </div>
 
-          <div class="form-group">
+          <div v-if="isEditMode" class="form-group">
             <label for="namespace">
               Namespace Kubernetes
             </label>
@@ -301,7 +301,7 @@ function submitForm() {
             />
           </div>
 
-          <div class="form-group">
+          <div v-if="isEditMode" class="form-group">
             <label for="cluster-url">
               URL du cluster
             </label>

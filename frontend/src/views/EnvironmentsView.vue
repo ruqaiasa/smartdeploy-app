@@ -5,6 +5,7 @@ import EnvironmentFormModal from '@/components/environments/EnvironmentFormModal
 
 import { useApplicationsStore } from '@/stores/applications'
 import { useEnvironmentsStore } from '@/stores/environments'
+import { useAuthStore } from '@/stores/auth'
 
 import type {
   CreateEnvironmentRequest,
@@ -13,6 +14,11 @@ import type {
 } from '@/types/environment'
 
 const environmentsStore = useEnvironmentsStore()
+const authStore = useAuthStore()
+
+const canManageEnvironments = computed(() =>
+  authStore.hasRole('DEVOPS', 'ADMIN'),
+)
 const applicationsStore = useApplicationsStore()
 
 const search = ref('')
@@ -201,6 +207,7 @@ function formatDate(date: string) {
       </div>
 
       <button
+        v-if="canManageEnvironments"
         type="button"
         class="primary-button"
         :disabled="
@@ -370,6 +377,7 @@ function formatDate(date: string) {
               <td>
                 <div class="actions">
                   <button
+                    v-if="canManageEnvironments"
                     type="button"
                     class="action-button edit"
                     :disabled="
@@ -381,7 +389,7 @@ function formatDate(date: string) {
                   </button>
 
                   <button
-                    v-if="environment.active"
+                    v-if="canManageEnvironments && environment.active"
                     type="button"
                     class="action-button warning"
                     :disabled="
@@ -395,7 +403,7 @@ function formatDate(date: string) {
                   </button>
 
                   <button
-                    v-else
+                    v-else-if="canManageEnvironments"
                     type="button"
                     class="action-button success"
                     :disabled="
@@ -409,6 +417,7 @@ function formatDate(date: string) {
                   </button>
 
                   <button
+                    v-if="canManageEnvironments"
                     type="button"
                     class="action-button danger"
                     :disabled="

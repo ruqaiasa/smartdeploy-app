@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  computed,
   onMounted,
   ref,
 } from 'vue'
@@ -18,6 +19,12 @@ import {
   useEnvironmentsStore,
 } from '@/stores/environments'
 
+import {
+  useMonitoringStore,
+} from '@/stores/monitoring'
+
+import { useAuthStore } from '@/stores/auth'
+
 import type {
   CreateDeploymentRequest,
 } from '@/types/deployment'
@@ -25,13 +32,31 @@ import type {
 const deploymentsStore =
   useDeploymentsStore()
 
+const authStore = useAuthStore()
+
+const canManageDeployments = computed(() =>
+  authStore.hasRole('DEVOPS', 'ADMIN'),
+)
+
+const canDeleteDeployments = computed(() =>
+  authStore.hasRole('ADMIN'),
+)
+
 const applicationsStore =
   useApplicationsStore()
 
 const environmentsStore =
   useEnvironmentsStore()
 
+const monitoringStore =
+  useMonitoringStore()
+
 const modalOpen = ref(false)
+
+const monitoringOpen = ref(false)
+
+const monitoredDeploymentName =
+  ref<string | null>(null)
 
 onMounted(async () => {
   await Promise.all([
@@ -113,6 +138,29 @@ async function removeDeployment(
   } catch {
     // Store
   }
+}
+
+async function openMonitoring(
+  deploymentId: number,
+  applicationName: string,
+) {
+  monitoredDeploymentName.value =
+    applicationName
+
+  monitoringOpen.value = true
+
+  await monitoringStore
+    .loadDeploymentMetrics(
+      deploymentId,
+    )
+}
+
+function closeMonitoring() {
+  monitoringOpen.value = false
+
+  monitoredDeploymentName.value = null
+
+  monitoringStore.clear()
 }
 
 async function previousPage() {
@@ -201,6 +249,39 @@ function formatDuration(
 
   return `${minutes}m ${remainingSeconds}s`
 }
+
+function formatMetric(
+  value: number | null | undefined,
+  unit = '',
+) {
+  if (
+    value === null
+    || value === undefined
+    || Number.isNaN(value)
+  ) {
+    return '—'
+  }
+
+  return `${value.toFixed(2)}${unit}`
+}
+
+function formatHealthStatus(
+  status: string,
+) {
+  switch (status) {
+    case 'HEALTHY':
+      return 'Sain'
+
+    case 'WARNING':
+      return 'Attention'
+
+    case 'CRITICAL':
+      return 'Critique'
+
+    default:
+      return status
+  }
+}
 </script>
 
 <template>
@@ -218,6 +299,7 @@ function formatDuration(
       </div>
 
       <button
+        v-if="canManageDeployments"
         type="button"
         class="primary-button"
         :disabled="
@@ -472,6 +554,27 @@ function formatDuration(
                     type="button"
                     class="
                       action-button
+                      monitoring
+                    "
+                    @click="
+                      openMonitoring(
+                        deployment.id,
+                        deployment.applicationName,
+                      )
+                    "
+                  >
+                    Monitoring
+                  </button>
+
+                  <button
+                    v-if="
+                      canManageDeployments
+                      && deployment.status
+                        === 'SUCCESS'
+                    "
+                    type="button"
+                    class="
+                      action-button
                       rollback
                     "
                     :disabled="
@@ -488,6 +591,7 @@ function formatDuration(
                   </button>
 
                   <button
+                    v-if="canDeleteDeployments"
                     type="button"
                     class="
                       action-button
@@ -571,6 +675,204 @@ function formatDuration(
       @close="closeModal"
       @submit="submitDeployment"
     />
+
+    <!-- MONITORING -->
+
+    <div
+      v-if="monitoringOpen"
+      class="monitoring-overlay"
+      @click.self="closeMonitoring"
+    >
+      <section class="monitoring-panel">
+        <header class="monitoring-header">
+          <div>
+            <span class="monitoring-label">
+              Observabilité
+            </span>
+
+            <h3>
+              Monitoring du déploiement
+            </h3>
+
+            <p>
+              {{ monitoredDeploymentName }}
+
+              <span
+                v-if="
+                  monitoringStore
+                    .currentDeploymentId
+                "
+              >
+                · Déploiement
+                #{{
+                  monitoringStore
+                    .currentDeploymentId
+                }}
+              </span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="monitoring-close"
+            @click="closeMonitoring"
+          >
+            ×
+          </button>
+        </header>
+
+        <div
+          v-if="monitoringStore.loading"
+          class="monitoring-state"
+        >
+          Interrogation de Prometheus...
+        </div>
+
+        <div
+          v-else-if="
+            monitoringStore.errorMessage
+          "
+          class="
+            monitoring-state
+            monitoring-error
+          "
+        >
+          {{
+            monitoringStore.errorMessage
+          }}
+        </div>
+
+        <template
+          v-else-if="
+            monitoringStore.metrics
+          "
+        >
+          <div class="health-section">
+            <span>
+              État opérationnel
+            </span>
+
+            <strong
+              class="health-badge"
+              :class="
+                monitoringStore.metrics
+                  .healthStatus
+                  .toLowerCase()
+              "
+            >
+              {{
+                formatHealthStatus(
+                  monitoringStore.metrics
+                    .healthStatus,
+                )
+              }}
+            </strong>
+          </div>
+
+          <div class="metrics-grid">
+            <article class="metric-card">
+              <span>
+                Pods disponibles
+              </span>
+
+              <strong>
+                {{
+                  monitoringStore.metrics
+                    .runningPods
+                }}
+                /
+                {{
+                  monitoringStore.metrics
+                    .desiredPods
+                }}
+              </strong>
+
+              <small>
+                Kubernetes
+              </small>
+            </article>
+
+            <article class="metric-card">
+              <span>
+                CPU
+              </span>
+
+              <strong>
+                {{
+                  formatMetric(
+                    monitoringStore.metrics
+                      .cpuUsagePercent,
+                    ' %',
+                  )
+                }}
+              </strong>
+
+              <small>
+                Utilisation actuelle
+              </small>
+            </article>
+
+            <article class="metric-card">
+              <span>
+                Mémoire
+              </span>
+
+              <strong>
+                {{
+                  formatMetric(
+                    monitoringStore.metrics
+                      .memoryUsageMb,
+                    ' MB',
+                  )
+                }}
+              </strong>
+
+              <small>
+                Working set
+              </small>
+            </article>
+
+            <article class="metric-card">
+              <span>
+                Redémarrages
+              </span>
+
+              <strong>
+                {{
+                  monitoringStore.metrics
+                    .restartCount
+                }}
+              </strong>
+
+              <small>
+                Pods Kubernetes
+              </small>
+            </article>
+          </div>
+        </template>
+
+        <footer class="monitoring-footer">
+          <span>
+            Données récupérées depuis Prometheus
+          </span>
+
+          <button
+            type="button"
+            class="monitoring-refresh"
+            :disabled="
+              monitoringStore.loading
+            "
+            @click="monitoringStore.refresh"
+          >
+            {{
+              monitoringStore.loading
+                ? 'Actualisation...'
+                : 'Actualiser'
+            }}
+          </button>
+        </footer>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -585,88 +887,65 @@ function formatDuration(
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   gap: 20px;
 }
 
 .page-header h2 {
   margin: 0;
-
   color: #0f172a;
   font-size: 26px;
 }
 
 .page-header p {
   margin: 7px 0 0;
-
   color: #64748b;
 }
 
 .primary-button,
 .secondary-button {
   min-height: 42px;
-
   padding: 0 16px;
-
   border-radius: 10px;
-
   font-weight: 700;
 }
 
 .primary-button {
   border: 0;
-
   background: #2563eb;
-
   color: #ffffff;
 }
 
 .secondary-button {
-  border:
-    1px solid #cbd5e1;
-
+  border: 1px solid #cbd5e1;
   background: #ffffff;
-
   color: #334155;
 }
 
 .toolbar {
   display: grid;
-
   grid-template-columns:
     minmax(220px, 1fr)
     210px
     170px
     auto
     auto;
-
   gap: 12px;
 }
 
 .toolbar input,
 .toolbar select {
   min-height: 43px;
-
   padding: 0 13px;
-
-  border:
-    1px solid #cbd5e1;
-
+  border: 1px solid #cbd5e1;
   border-radius: 9px;
-
   background: #ffffff;
 }
 
 .table-card {
   overflow: hidden;
-
-  border:
-    1px solid #e2e8f0;
-
+  border: 1px solid #e2e8f0;
   border-radius: 15px;
-
   background: #ffffff;
-
   box-shadow:
     0 8px 24px
     rgb(15 23 42 / 4%);
@@ -678,55 +957,40 @@ function formatDuration(
 
 table {
   width: 100%;
-
   border-collapse: collapse;
 }
 
 th,
 td {
   padding: 15px 16px;
-
-  border-bottom:
-    1px solid #f1f5f9;
-
+  border-bottom: 1px solid #f1f5f9;
   text-align: left;
-
   vertical-align: middle;
 }
 
 th {
   color: #64748b;
-
   font-size: 10px;
-
   text-transform: uppercase;
 }
 
 td {
   color: #334155;
-
   font-size: 12px;
 }
 
 .version-badge {
   display: inline-flex;
-
   padding: 5px 8px;
-
   border-radius: 7px;
-
   background: #eff6ff;
-
   color: #1d4ed8;
-
   font-weight: 800;
 }
 
 .environment-info {
   display: flex;
-
   flex-direction: column;
-
   gap: 4px;
 }
 
@@ -736,11 +1000,8 @@ td {
 
 .status-badge {
   display: inline-flex;
-
   padding: 5px 9px;
-
   border-radius: 999px;
-
   font-size: 9px;
   font-weight: 800;
 }
@@ -778,110 +1039,257 @@ td {
 .actions {
   display: flex;
   flex-wrap: wrap;
-
   gap: 6px;
 }
 
 .action-button {
   min-height: 31px;
-
   padding: 0 9px;
-
   border: 0;
   border-radius: 7px;
-
   font-size: 10px;
   font-weight: 700;
-
   text-decoration: none;
+  cursor: pointer;
 }
 
 .action-button.logs {
   display: inline-flex;
   align-items: center;
-
   background: #eff6ff;
-
   color: #1d4ed8;
+}
+
+.action-button.monitoring {
+  background: #ecfeff;
+  color: #0e7490;
 }
 
 .action-button.rollback {
   background: #f5f3ff;
-
   color: #6d28d9;
 }
 
 .action-button.danger {
   background: #fef2f2;
-
   color: #b91c1c;
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .error-message {
   margin: 0;
-
   padding: 11px 13px;
-
-  border:
-    1px solid #fecaca;
-
+  border: 1px solid #fecaca;
   border-radius: 9px;
-
   background: #fef2f2;
-
   color: #b91c1c;
 }
 
 .state-message {
   padding: 55px;
-
   color: #64748b;
-
   text-align: center;
 }
 
 .pagination {
   display: flex;
-
   align-items: center;
   justify-content: space-between;
-
   gap: 18px;
 }
 
 .pagination p {
   margin: 0;
-
   color: #64748b;
-
   font-size: 12px;
 }
 
 .pagination-actions {
   display: flex;
-
   align-items: center;
-
   gap: 10px;
 }
 
 .pagination-actions button {
   min-height: 35px;
-
   padding: 0 12px;
-
-  border:
-    1px solid #cbd5e1;
-
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-
   background: #ffffff;
 }
 
 .pagination-actions span {
   color: #64748b;
-
   font-size: 11px;
+}
+
+/* MONITORING */
+
+.monitoring-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    rgb(15 23 42 / 55%);
+}
+
+.monitoring-panel {
+  width: min(760px, 100%);
+  overflow: hidden;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow:
+    0 25px 60px
+    rgb(15 23 42 / 25%);
+}
+
+.monitoring-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.monitoring-label {
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.monitoring-header h3 {
+  margin: 6px 0 0;
+  color: #0f172a;
+  font-size: 21px;
+}
+
+.monitoring-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.monitoring-close {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.health-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 24px 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.health-badge {
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.health-badge.healthy {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.health-badge.warning {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.health-badge.critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 20px 24px 24px;
+}
+
+.metric-card {
+  display: flex;
+  min-height: 125px;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+}
+
+.metric-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metric-card strong {
+  margin-top: 10px;
+  color: #0f172a;
+  font-size: 25px;
+}
+
+.metric-card small {
+  margin-top: auto;
+  color: #94a3b8;
+}
+
+.monitoring-state {
+  padding: 70px 24px;
+  color: #64748b;
+  text-align: center;
+}
+
+.monitoring-error {
+  color: #b91c1c;
+}
+
+.monitoring-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 18px 24px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.monitoring-footer span {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.monitoring-refresh {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.monitoring-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (max-width: 900px) {
@@ -895,12 +1303,20 @@ td {
   .page-header,
   .pagination {
     align-items: stretch;
-
     flex-direction: column;
   }
 
   .toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .monitoring-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

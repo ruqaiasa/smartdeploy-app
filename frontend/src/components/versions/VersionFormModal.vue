@@ -185,14 +185,11 @@ function submitForm() {
     gitCommit:
       form.gitCommit.trim(),
 
-    dockerImage:
-      form.dockerImage.trim(),
-
-    artifactPath:
-      form.artifactPath.trim(),
-
-    buildLogsUrl:
-      form.buildLogsUrl.trim(),
+    // Preserve existing CI metadata when editing a version.
+    // On creation these fields remain empty until Jenkins fills them.
+    dockerImage: isEditMode.value ? form.dockerImage.trim() : '',
+    artifactPath: isEditMode.value ? form.artifactPath.trim() : '',
+    buildLogsUrl: isEditMode.value ? form.buildLogsUrl.trim() : '',
   }
 
   if (isEditMode.value) {
@@ -322,48 +319,6 @@ function submitForm() {
               type="text"
               maxlength="100"
               placeholder="a83fd42..."
-              :disabled="loading"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>
-              Image Docker
-            </label>
-
-            <input
-              v-model="form.dockerImage"
-              type="text"
-              maxlength="500"
-              placeholder="smartdeploy/backend:1.0.0"
-              :disabled="loading"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>
-              Chemin de l’artefact
-            </label>
-
-            <input
-              v-model="form.artifactPath"
-              type="text"
-              maxlength="500"
-              placeholder="target/app.jar"
-              :disabled="loading"
-            />
-          </div>
-
-          <div class="form-group">
-            <label>
-              URL des logs
-            </label>
-
-            <input
-              v-model="form.buildLogsUrl"
-              type="url"
-              maxlength="1000"
-              placeholder="http://localhost:8080/job/..."
               :disabled="loading"
             />
           </div>

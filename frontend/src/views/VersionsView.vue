@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  computed,
   onMounted,
   ref,
 } from 'vue'
@@ -14,6 +15,8 @@ import {
   useVersionsStore,
 } from '@/stores/versions'
 
+import { useAuthStore } from '@/stores/auth'
+
 import type {
   CreateVersionRequest,
   UpdateVersionRequest,
@@ -22,6 +25,12 @@ import type {
 
 const versionsStore =
   useVersionsStore()
+
+const authStore = useAuthStore()
+
+const canManageVersions = computed(() =>
+  authStore.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN'),
+)
 
 const applicationsStore =
   useApplicationsStore()
@@ -178,6 +187,7 @@ function formatDate(
       </div>
 
       <button
+        v-if="canManageVersions"
         type="button"
         class="primary-button"
         :disabled="versionsStore.actionLoading"
@@ -374,6 +384,7 @@ function formatDate(
               <td>
                 <div class="actions">
                   <button
+                    v-if="canManageVersions"
                     type="button"
                     class="action-button edit"
                     :disabled="versionsStore.actionLoading"
@@ -393,6 +404,7 @@ function formatDate(
                   </a>
 
                   <button
+                    v-if="canManageVersions"
                     type="button"
                     class="action-button danger"
                     :disabled="versionsStore.actionLoading"
