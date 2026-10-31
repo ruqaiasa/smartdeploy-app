@@ -1,0 +1,1381 @@
+// =====================================================================
+// SMARTDEPLOY — Pipeline CI/CD (Pipeline as Code)
+// Fichier versionné dans le dépôt smartdeploy-app : jenkins/Jenkinsfile
+// Credential Jenkins requis : "smartdeploy-api-key" (même valeur que
+// SMARTDEPLOY_JENKINS_API_KEY côté backend).
+// =====================================================================
+
+/**
+ * Notifie SmartDeploy de l'état du pipeline (POST /api/webhooks/jenkins).
+ *  - authentifié par X-SmartDeploy-Api-Key (la clé n'est jamais interpolée
+ *    par Groovy ni écrite dans les logs) ;
+ *  - JSON écrit dans un fichier puis envoyé tel quel (pas de problème
+ *    de guillemets) ;
+ *  - --fail : un refus du backend (401, 404, 409…) devient visible.
+ *
+ * failOnError = true  : l'échec de notification fait échouer le build
+ *                       (utilisé au démarrage : on ne déploie rien
+ *                       que SmartDeploy ne peut pas suivre) ;
+ * failOnError = false : simple avertissement (blocs post).
+ */
+def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentName, boolean failOnError) {
+
+    def deploymentId = params.DEPLOYMENT_ID?.trim()
+
+    if (!(deploymentId ==~ /[0-9]+/)) {
+        def msg = "Notification SmartDeploy ${status} impossible : DEPLOYMENT_ID invalide"
+        if (failOnError) { error(msg) } else { echo "AVERTISSEMENT : ${msg}"; return }
+    }
+
+    def json = { String value ->
+        if (value == null || value.trim().isEmpty()) {
+            return 'null'
+        }
+        return '"' + value
+                .replace('\\', '\\\\')
+                .replace('"', '\\"')
+                .replace('\n', ' ')
+                .replace('\r', ' ') + '"'
+    }
+
+    String logsUrl = "${env.JENKINS_BASE_URL}/job/${env.JOB_NAME}/${env.BUILD_NUMBER}/"
+
+    def payload = """{
+  "deploymentId": ${deploymentId},
+  "buildNumber": ${env.BUILD_NUMBER},
+  "logsUrl": ${json(logsUrl)},
+  "status": ${json(status)},
+  "errorMessage": ${json(errorMessage)},
+  "kubernetesDeploymentName": ${json(k8sDeploymentName)}
+}"""
+
+    writeFile file: '.smartdeploy-callback.json', text: payload
+
+    def rc
+
+    withCredentials([
+        string(credentialsId: 'smartdeploy-api-key', variable: 'SMARTDEPLOY_API_KEY')
+    ]) {
+        // Guillemets simples : la clé est lue par le shell, pas par Groovy.
+        rc = sh(
+            returnStatus: true,
+            script: '''
+                curl --fail --silent --show-error \
+                    --retry 3 --retry-connrefused --retry-delay 2 \
+                    --connect-timeout 5 --max-time 20 \
+                    -X POST \
+                    -H 'Content-Type: application/json' \
+                    -H "X-SmartDeploy-Api-Key: $SMARTDEPLOY_API_KEY" \
+                    --data @.smartdeploy-callback.json \
+                    "$SMARTDEPLOY_URL/api/webhooks/jenkins"
+            '''
+        )
+    }
+
+    if (rc != 0) {
+        def msg = "SmartDeploy n'a pas accepté la notification ${status} (curl rc=${rc})"
+        if (failOnError) { error(msg) } else { echo "AVERTISSEMENT : ${msg}" }
+    } else {
+        echo "SmartDeploy notifié : ${status}"
+    }
+}
+
+
+pipeline {
+
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        // Jenkinsfile lu depuis le dépôt SmartDeploy : pas de checkout
+        // implicite, le pipeline clone lui-même l'application à déployer.
+        skipDefaultCheckout()
+    }
+
+
+    // ============================================================
+    // PARAMÈTRES REÇUS DEPUIS SMARTDEPLOY
+    // ============================================================
+    parameters {
+
+        string(name: 'DEPLOYMENT_ID', defaultValue: '')
+        string(name: 'APPLICATION_ID', defaultValue: '')
+        string(name: 'APPLICATION_NAME', defaultValue: '')
+        string(name: 'REPOSITORY_URL', defaultValue: '')
+
+        string(name: 'VERSION_ID', defaultValue: '')
+        string(name: 'VERSION', defaultValue: '')
+
+        string(name: 'GIT_BRANCH', defaultValue: '')
+        string(name: 'GIT_COMMIT', defaultValue: '')
+
+        string(name: 'DOCKER_IMAGE', defaultValue: '')
+
+        choice(name: 'BUILD_STRATEGY', choices: ['MAVEN', 'DOCKER_ONLY'], description: 'MAVEN compile dans Jenkins ; DOCKER_ONLY compile dans Docker')
+        choice(name: 'SONAR_MODE', choices: ['MAVEN', 'CLI', 'SKIP'], description: 'Analyse SonarQube Maven, CLI ou désactivée')
+        booleanParam(name: 'RUN_BACKEND_TESTS', defaultValue: false, description: 'Exécuter les tests Maven dans Jenkins (compatibilité historique : false)')
+        // Chemins relatifs au checkout backend ; '.' préserve BACKEND_ONLY.
+        string(name: 'BACKEND_BUILD_CONTEXT', defaultValue: '.', description: 'Dossier Maven/backend relatif au dépôt')
+        string(name: 'BACKEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Dockerfile relatif au contexte backend')
+
+        string(name: 'ENVIRONMENT_ID', defaultValue: '')
+        string(name: 'ENVIRONMENT_TYPE', defaultValue: '')
+        string(name: 'ENVIRONMENT_NAME', defaultValue: '')
+
+        string(name: 'KUBERNETES_NAMESPACE', defaultValue: '')
+        string(name: 'CLUSTER_URL', defaultValue: '')
+        string(name: 'DEPLOYMENT_MODE', defaultValue: 'BACKEND_ONLY')
+        string(name: 'FRONTEND_IMAGE', defaultValue: '')
+        string(name: 'BACKEND_IMAGE', defaultValue: '')
+
+        // Frontend : source Git et configuration Docker (facultatifs pour BACKEND_ONLY)
+        string(name: 'FRONTEND_REPOSITORY_URL', defaultValue: '', description: 'URL du dépôt Git frontend')
+        string(name: 'FRONTEND_GIT_BRANCH', defaultValue: 'main', description: 'Branche Git frontend')
+        string(name: 'FRONTEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Chemin du Dockerfile frontend')
+        string(name: 'FRONTEND_BUILD_CONTEXT', defaultValue: '.', description: 'Contexte de construction Docker frontend')
+        string(name: 'FRONTEND_REPLICAS', defaultValue: '2')
+        string(name: 'BACKEND_REPLICAS', defaultValue: '1')
+        string(name: 'DATABASE_MODE', defaultValue: 'EXTERNAL')
+    }
+
+
+    // ============================================================
+    // VARIABLES GLOBALES
+    // ============================================================
+    environment {
+
+        // Backend SmartDeploy
+        SMARTDEPLOY_URL =
+            'http://192.168.85.1:8081'
+
+        // Jenkins
+        JENKINS_BASE_URL =
+            'http://192.168.85.129:8080'
+
+        // Docker
+        DOCKER_REGISTRY =
+            'localhost:5000'
+
+        // Kubernetes
+        KUBECONFIG =
+            '/var/lib/jenkins/.kube/config'
+
+        DEFAULT_K8S_NAMESPACE =
+            'smartdeploy-test'
+
+        // Les noms Kubernetes sont générés dynamiquement
+        // dans Prepare Deployment.
+
+        APP_CONTAINER_PORT =
+            '8080'
+
+        APP_NODE_PORT =
+            '30080'
+
+        // Passer a 'true' uniquement apres validation du rapport Trivy.
+        TRIVY_ENFORCE_GATE = 'false'
+    }
+
+
+    stages {
+
+
+        // ========================================================
+        // 1. SMARTDEPLOY → RUNNING
+        // ========================================================
+        stage('Notify RUNNING') {
+            steps {
+                script {
+                    notifySmartDeploy('RUNNING', null, null, true)
+                }
+            }
+        }
+
+
+        // ========================================================
+        // 2. INFORMATIONS DU DÉPLOIEMENT
+        // ========================================================
+        stage('Deployment Information') {
+
+            steps {
+
+                echo "======================================"
+                echo " SmartDeploy Deployment"
+                echo "======================================"
+
+                echo "Deployment ID  : ${params.DEPLOYMENT_ID}"
+
+                echo "Application    : ${params.APPLICATION_NAME}"
+                echo "Application ID : ${params.APPLICATION_ID}"
+
+                echo "Version        : ${params.VERSION}"
+                echo "Version ID     : ${params.VERSION_ID}"
+
+                echo "Repository     : ${params.REPOSITORY_URL}"
+                echo "Git Branch     : ${params.GIT_BRANCH}"
+                echo "Git Commit     : ${params.GIT_COMMIT}"
+
+                echo "Docker Image   : ${params.DOCKER_IMAGE}"
+
+                echo "Environment    : ${params.ENVIRONMENT_NAME}"
+                echo "Environment ID : ${params.ENVIRONMENT_ID}"
+                echo "Type           : ${params.ENVIRONMENT_TYPE}"
+
+                echo "Namespace      : ${params.KUBERNETES_NAMESPACE}"
+                echo "Cluster URL    : ${params.CLUSTER_URL}"
+
+                echo "======================================"
+            }
+        }
+
+
+        // ========================================================
+        // 3. VALIDATION DES PARAMÈTRES
+        // ========================================================
+        stage('Validate Parameters') {
+
+            steps {
+
+                script {
+
+                    if (!params.DEPLOYMENT_ID?.trim()) {
+                        error("DEPLOYMENT_ID est vide")
+                    }
+
+                    if (!params.APPLICATION_ID?.trim()) {
+                        error("APPLICATION_ID est vide")
+                    }
+
+                    if (!params.REPOSITORY_URL?.trim()) {
+                        error("REPOSITORY_URL est vide")
+                    }
+
+                    if (!params.GIT_BRANCH?.trim()) {
+                        error("GIT_BRANCH est vide")
+                    }
+
+                    if (!params.VERSION?.trim()) {
+                        error("VERSION est vide")
+                    }
+
+                    if (!(params.BUILD_STRATEGY in ['MAVEN', 'DOCKER_ONLY'])) error('BUILD_STRATEGY invalide')
+                    if (!(params.SONAR_MODE in ['MAVEN', 'CLI', 'SKIP'])) error('SONAR_MODE invalide')
+                    if (params.BUILD_STRATEGY == 'DOCKER_ONLY' && params.SONAR_MODE == 'MAVEN') error('SONAR_MODE=MAVEN nécessite BUILD_STRATEGY=MAVEN ; sélectionner CLI ou SKIP')
+                    if (params.SONAR_MODE != 'SKIP' && !params.APPLICATION_ID?.trim()) error('APPLICATION_ID requis pour SonarQube')
+                    if (!(params.DEPLOYMENT_MODE in ['BACKEND_ONLY', 'FULL_STACK'])) error('DEPLOYMENT_MODE invalide')
+                    if (!params.BACKEND_IMAGE?.trim() && !params.DOCKER_IMAGE?.trim()) {
+                        error('BACKEND_IMAGE ou DOCKER_IMAGE est obligatoire')
+                    }
+                    if (params.BACKEND_IMAGE?.trim() && params.DOCKER_IMAGE?.trim() &&
+                        params.BACKEND_IMAGE.trim() != params.DOCKER_IMAGE.trim()) {
+                        error('BACKEND_IMAGE et DOCKER_IMAGE sont incohérentes')
+                    }
+                    if (!(params.DATABASE_MODE in ['EXTERNAL', 'MANAGED'])) error('DATABASE_MODE invalide')
+                    if (!(params.BACKEND_REPLICAS ==~ /[0-9]+/) || params.BACKEND_REPLICAS.toInteger() < 1 || params.BACKEND_REPLICAS.toInteger() > 10) error('BACKEND_REPLICAS invalide')
+                    ['BACKEND_BUILD_CONTEXT', 'BACKEND_DOCKERFILE_PATH'].each { key ->
+                        def path = params[key]?.trim()
+                        if (!path || path.startsWith('/') || path.contains('..') || path.contains('\\') || !(path ==~ /[a-zA-Z0-9._\/-]+/)) {
+                            error("${key} doit être un chemin relatif sûr")
+                        }
+                    }
+                    if (params.DEPLOYMENT_MODE == 'FULL_STACK') {
+                        if (!(params.FRONTEND_REPLICAS ==~ /[0-9]+/) || params.FRONTEND_REPLICAS.toInteger() < 1 || params.FRONTEND_REPLICAS.toInteger() > 10) error('FRONTEND_REPLICAS invalide')
+                        ['FRONTEND_REPOSITORY_URL', 'FRONTEND_GIT_BRANCH', 'FRONTEND_IMAGE', 'FRONTEND_DOCKERFILE_PATH', 'FRONTEND_BUILD_CONTEXT'].each { key ->
+                            if (!params[key]?.trim()) error("${key} est obligatoire en FULL_STACK")
+                        }
+                        if (!(params.FRONTEND_IMAGE ==~ /[a-zA-Z0-9._:\/-]+/)) error('FRONTEND_IMAGE invalide')
+                        if (!params.FRONTEND_IMAGE.startsWith("${env.DOCKER_REGISTRY}/")) error('FRONTEND_IMAGE doit utiliser le registry SmartDeploy')
+                        def frontendImageName = params.FRONTEND_IMAGE.substring("${env.DOCKER_REGISTRY}/".length()).replaceFirst(/:[^:]*$/, '')
+                        if (!(frontendImageName ==~ /[a-z0-9]+([._\/-][a-z0-9]+)*/)) error('Nom d image frontend invalide')
+                        def expectedFrontendTag = params.VERSION.trim().toLowerCase().replaceAll('[^a-z0-9._-]', '-')
+                        if (!params.FRONTEND_IMAGE.endsWith(":${expectedFrontendTag}")) error('FRONTEND_IMAGE doit porter le tag de la version')
+                        ['FRONTEND_DOCKERFILE_PATH', 'FRONTEND_BUILD_CONTEXT'].each { key ->
+                            def path = params[key].trim()
+                            if (path.startsWith('/') || path.contains('..') || path.contains('\\') || !(path ==~ /[a-zA-Z0-9._\/-]+/)) error("${key} doit être un chemin relatif sûr")
+                        }
+                    }
+                    echo "Paramètres SmartDeploy valides."
+                }
+            }
+        }
+
+
+        // ========================================================
+        // 4. CHECKOUT GIT
+        // ========================================================
+        stage('Checkout Git') {
+
+            steps {
+
+                deleteDir()
+
+                git(
+                    branch: "${params.GIT_BRANCH}",
+                    url: "${params.REPOSITORY_URL}"
+                )
+            }
+        }
+
+
+        // ========================================================
+        // 5. VÉRIFICATION GIT
+        // ========================================================
+        stage('Verify Checkout') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Git Checkout"
+                    echo "======================================"
+
+                    echo ""
+                    echo "Workspace :"
+                    pwd
+
+                    echo ""
+                    echo "Contenu :"
+                    ls -la
+
+                    echo ""
+                    echo "Git status :"
+                    git status
+
+                    echo ""
+                    echo "Dernier commit :"
+                    git log -1 --oneline
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 6. VÉRIFICATION OPTIONNELLE DU COMMIT
+        // ========================================================
+        stage('Verify Git Commit') {
+
+            when {
+
+                expression {
+                    return params.GIT_COMMIT?.trim()
+                }
+            }
+
+            steps {
+
+                script {
+
+                    def currentCommit =
+                        sh(
+                            script: 'git rev-parse HEAD',
+                            returnStdout: true
+                        ).trim()
+
+                    echo "Commit actuel  : ${currentCommit}"
+                    echo "Commit demandé : ${params.GIT_COMMIT}"
+
+                    if (currentCommit != params.GIT_COMMIT.trim()) {
+
+                        error(
+                            "Le commit Git ne correspond pas au commit demandé"
+                        )
+                    }
+                }
+            }
+        }
+
+
+        // ========================================================
+        // 7. MAVEN BUILD
+        // ========================================================
+        stage('Build Maven') {
+            when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
+            steps {
+                script {
+                    def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
+                    if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
+                    dir(backendDir) {
+                        withEnv(["RUN_BACKEND_TESTS=${params.RUN_BACKEND_TESTS}"]) {
+                        sh '''
+                            set -eu
+                            test -f pom.xml
+                            test -f mvnw
+                            chmod +x mvnw
+                            if [ "$RUN_BACKEND_TESTS" = 'true' ]; then
+                                ./mvnw clean verify
+                            else
+                                ./mvnw clean package -DskipTests
+                            fi
+                        '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Artifact') {
+            when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
+            steps {
+                script {
+                    def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
+                    if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
+                    dir(backendDir) {
+                        sh '''
+                            set -eu
+                            test -d target || { echo 'ERREUR : target absent'; exit 1; }
+                            JAR_FILE=$(find target -maxdepth 1 -type f -name '*.jar' ! -name '*.original' | head -n 1)
+                            test -n "$JAR_FILE" || { echo 'ERREUR : aucun JAR détecté'; exit 1; }
+                            echo "JAR détecté : $JAR_FILE"
+                            ls -lh "$JAR_FILE"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when { expression { params.SONAR_MODE != 'SKIP' } }
+            steps {
+                script {
+                    def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
+                    if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
+                    def projectKey = 'SmartDeploy-' + params.APPLICATION_ID.trim().replaceAll('[^a-zA-Z0-9_.:-]', '-') + '-Backend'
+                    dir(backendDir) {
+                        withSonarQubeEnv('SonarQube') {
+                            withEnv(["SONAR_PROJECT_KEY=${projectKey}"]) {
+                                if (params.SONAR_MODE == 'MAVEN') {
+                                    sh '''
+                                        set -eu
+                                        test -f pom.xml
+                                        chmod +x mvnw
+                                        ./mvnw org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                                            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+                                            -Dsonar.projectName="$SONAR_PROJECT_KEY"
+                                    '''
+                                } else if (params.SONAR_MODE == 'CLI') {
+                                    // Prérequis : sonar-scanner disponible sur l'agent Jenkins.
+                                    sh '''
+                                        set -eu
+                                        command -v sonar-scanner >/dev/null || { echo 'sonar-scanner absent de l agent Jenkins' >&2; exit 1; }
+                                        sonar-scanner \
+                                            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
+                                            -Dsonar.projectName="$SONAR_PROJECT_KEY" \
+                                            -Dsonar.sources=.
+                                    '''
+                                } else {
+                                    error("SONAR_MODE inconnu : ${params.SONAR_MODE}")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { expression { params.SONAR_MODE != 'SKIP' } }
+            steps {
+                timeout(time: 15, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+
+        // ========================================================
+        // 9. DOCKERFILE
+        // ========================================================
+        stage('Validate Dockerfile') {
+            steps {
+                script {
+                    def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
+                    if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
+                    dir(backendDir) {
+                        withEnv(["BACKEND_DOCKERFILE=${params.BACKEND_DOCKERFILE_PATH.trim()}"]) {
+                            sh '''
+                                set -eu
+                                test -f "$BACKEND_DOCKERFILE" || { echo "Dockerfile backend absent : $BACKEND_DOCKERFILE"; exit 1; }
+                                echo "Dockerfile backend : $BACKEND_DOCKERFILE"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Prepare Deployment') {
+
+            steps {
+
+                script {
+
+                    // ------------------------------------------------
+                    // Docker image
+                    // ------------------------------------------------
+
+// =====================================================
+// DOCKER IMAGE CONFIGURATION
+// Compatible BACKEND_ONLY et FULL_STACK
+// =====================================================
+
+def requestedImage = params.BACKEND_IMAGE?.trim()
+
+if (!requestedImage) {
+    requestedImage = params.DOCKER_IMAGE?.trim()
+}
+
+if (!requestedImage) {
+    error(
+        "Aucune image Docker backend définie pour le déploiement"
+    )
+}
+
+def registryPrefix = "${env.DOCKER_REGISTRY}/"
+
+if (!requestedImage.startsWith(registryPrefix)) {
+    error(
+        "L'image backend doit utiliser le registre ${env.DOCKER_REGISTRY}"
+    )
+}
+
+def imageWithoutRegistry =
+        requestedImage.substring(registryPrefix.length())
+
+def expectedTag = params.VERSION
+        .trim()
+        .toLowerCase()
+        .replaceAll('[^a-z0-9._-]', '-')
+
+if (!imageWithoutRegistry.endsWith(":${expectedTag}")) {
+    error(
+        "L'image backend doit utiliser le tag ${expectedTag}"
+    )
+}
+
+def imageName = imageWithoutRegistry.substring(
+        0,
+        imageWithoutRegistry.length() - expectedTag.length() - 1
+)
+
+if (!(imageName ==~ /[a-z0-9]+([._\/-][a-z0-9]+)*/)) {
+    error("Nom d'image Docker backend invalide : ${imageName}")
+}
+
+env.DOCKER_IMAGE_NAME = imageName
+
+env.DOCKER_IMAGE_TAG = expectedTag
+
+env.FULL_DOCKER_IMAGE =
+        "${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
+
+env.REGISTRY_IMAGE =
+        "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
+
+                    // ------------------------------------------------
+                    // Namespace Kubernetes
+                    // ------------------------------------------------
+
+                    def namespace =
+                        params.KUBERNETES_NAMESPACE?.trim()
+
+
+                    if (!namespace) {
+
+                        namespace =
+                            env.DEFAULT_K8S_NAMESPACE
+                    }
+
+
+                    env.K8S_NAMESPACE =
+                        namespace
+                    env.BACKEND_REPLICAS = params.BACKEND_REPLICAS
+                    env.DEPLOYMENT_MODE = params.DEPLOYMENT_MODE
+                    env.DATABASE_MODE = params.DATABASE_MODE
+
+
+                    // ------------------------------------------------
+                    // Identité Kubernetes : déterminée après kubectl apply
+                    // ------------------------------------------------
+                    env.K8S_DEPLOYMENT_NAME = ''
+                    env.K8S_SERVICE_NAME = ''
+
+                    // ------------------------------------------------
+                    // Logs
+                    // ------------------------------------------------
+
+                    echo "======================================"
+
+                    echo "Deployment préparé"
+
+                    echo "======================================"
+
+                    echo "Image locale :"
+                    echo "${env.FULL_DOCKER_IMAGE}"
+
+                    echo "Image Registry :"
+                    echo "${env.REGISTRY_IMAGE}"
+
+                    echo "Namespace Kubernetes :"
+                    echo "${env.K8S_NAMESPACE}"
+
+                    echo "Noms Kubernetes : déterminés après application des manifests"
+
+                    echo "======================================"
+                }
+            }
+        }
+
+
+        // ========================================================
+        // 11. DOCKER BUILD
+        // ========================================================
+        stage('Docker Build') {
+            steps {
+                script {
+                    def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
+                    if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
+                    dir(backendDir) {
+                        withEnv(["BACKEND_DOCKERFILE=${params.BACKEND_DOCKERFILE_PATH.trim()}"]) {
+                            sh '''
+                                set -eu
+                                docker build -f "$BACKEND_DOCKERFILE" -t "$FULL_DOCKER_IMAGE" .
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Docker Image') {
+
+            steps {
+
+                sh '''
+                    docker image inspect \
+                        "$FULL_DOCKER_IMAGE" \
+                        > /dev/null
+
+
+                    echo "Image créée :"
+
+                    echo "$FULL_DOCKER_IMAGE"
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // TRIVY - VULNERABILITY SCAN OS + DEPENDANCES APPLICATIVES
+        // ========================================================
+        stage('Trivy Security Scan') {
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
+            steps {
+                sh '''
+                    set -eu
+                    mkdir -p security-reports
+
+                    # Analyse complete : paquets OS + bibliotheques Java/Go.
+                    # Les DB sont gerees dans le cache Jenkins et actualisees separement.
+                    trivy --config /dev/null image \
+                        --image-src docker \
+                        --scanners vuln \
+                        --pkg-types os,library \
+                        --skip-db-update \
+                        --skip-java-db-update \
+                        --severity HIGH,CRITICAL \
+                        --timeout 15m \
+                        --no-progress \
+                        --exit-code 0 \
+                        --format json \
+                        --output security-reports/trivy-report.json \
+                        "$FULL_DOCKER_IMAGE"
+
+                    test -s security-reports/trivy-report.json
+                '''
+                script {
+                    if (env.TRIVY_ENFORCE_GATE == 'true') {
+                        sh '''
+                            # Bloquer si une vulnérabilité CRITICAL est detectee.
+                            trivy --config /dev/null image \
+                                --image-src docker \
+                                --scanners vuln \
+                                --pkg-types os,library \
+                                --skip-db-update \
+                                --skip-java-db-update \
+                                --severity CRITICAL \
+                                --timeout 15m \
+                                --no-progress \
+                                --exit-code 1 \
+                                "$FULL_DOCKER_IMAGE"
+                        '''
+                    } else {
+                        echo 'Trivy: scan OS + librairies valide (HIGH/CRITICAL), gate non bloquant.'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'security-reports/trivy-report.json',
+                                     allowEmptyArchive: true,
+                                     fingerprint: true
+                }
+            }
+        }
+
+
+        stage('Docker Tag') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Docker Tag"
+                    echo "======================================"
+
+                    docker tag \
+                        "$FULL_DOCKER_IMAGE" \
+                        "$REGISTRY_IMAGE"
+
+                    echo "$REGISTRY_IMAGE"
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 14. REGISTRY CHECK
+        // ========================================================
+        stage('Check Docker Registry') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Docker Registry Check"
+                    echo "======================================"
+
+                    curl \
+                        --fail \
+                        --silent \
+                        --show-error \
+                        --connect-timeout 3 \
+                        --max-time 10 \
+                        http://localhost:5000/v2/
+
+                    echo ""
+
+                    echo "Registry disponible."
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 15. DOCKER PUSH
+        // ========================================================
+        stage('Docker Push') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Docker Push"
+                    echo "======================================"
+
+                    docker push \
+                        "$REGISTRY_IMAGE"
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 16. VERIFY REGISTRY
+        // ========================================================
+        stage('Verify Registry') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Verify Registry"
+                    echo "======================================"
+
+                    curl \
+                        --fail \
+                        --silent \
+                        --show-error \
+                        --connect-timeout 3 \
+                        --max-time 10 \
+                        "http://localhost:5000/v2/$DOCKER_IMAGE_NAME/tags/list"
+
+                    echo ""
+
+                    echo "Image Registry :"
+
+                    echo "$REGISTRY_IMAGE"
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 17. VÉRIFICATION KUBERNETES
+        // ========================================================
+        // ========================================================
+        // FRONTEND FULL STACK : CHECKOUT, BUILD, SCAN, PUSH
+        // ========================================================
+        stage('Checkout Frontend') {
+            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            steps {
+                dir('frontend-source') {
+                    deleteDir()
+                    git branch: params.FRONTEND_GIT_BRANCH.trim(),
+                        url: params.FRONTEND_REPOSITORY_URL.trim()
+                }
+            }
+        }
+
+        stage('Docker Build Frontend') {
+            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            steps {
+                withEnv([
+                    "FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}",
+                    "FRONTEND_DOCKERFILE=${params.FRONTEND_DOCKERFILE_PATH.trim()}",
+                    "FRONTEND_CONTEXT=${params.FRONTEND_BUILD_CONTEXT.trim()}"
+                ]) {
+                    sh '''
+                        set -eu
+                        cd frontend-source
+                        # Les chemins sont relatifs au checkout frontend-source.
+                        # Un Dockerfile peut être exprimé relativement au contexte
+                        # (Dockerfile) OU à la racine du dépôt (frontend/Dockerfile).
+                        if [ "$FRONTEND_CONTEXT" = '.' ] && [ ! -f Dockerfile ] && [ -f frontend/Dockerfile ] && [ "$FRONTEND_DOCKERFILE" = 'Dockerfile' ]; then
+                            FRONTEND_CONTEXT='frontend'
+                        fi
+                        test -d "$FRONTEND_CONTEXT" || { echo "Contexte frontend absent : $FRONTEND_CONTEXT" >&2; exit 1; }
+                        if [ -f "$FRONTEND_CONTEXT/$FRONTEND_DOCKERFILE" ]; then
+                            FRONTEND_DOCKERFILE="$FRONTEND_CONTEXT/$FRONTEND_DOCKERFILE"
+                        fi
+                        test -f "$FRONTEND_DOCKERFILE" || { echo "Dockerfile frontend absent : $FRONTEND_DOCKERFILE" >&2; exit 1; }
+                        docker build -f "$FRONTEND_DOCKERFILE" -t "$FRONTEND_TARGET_IMAGE" "$FRONTEND_CONTEXT"
+                        docker image inspect "$FRONTEND_TARGET_IMAGE" >/dev/null
+                    '''
+                }
+            }
+        }
+
+        stage('Trivy Frontend Security Scan') {
+            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            options { timeout(time: 20, unit: 'MINUTES') }
+            steps {
+                withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
+                    sh '''
+                        set -eu
+                        mkdir -p security-reports
+                        trivy --config /dev/null image \
+                            --image-src docker \
+                            --scanners vuln \
+                            --pkg-types os,library \
+                            --skip-db-update \
+                            --skip-java-db-update \
+                            --severity HIGH,CRITICAL \
+                            --timeout 15m \
+                            --no-progress \
+                            --exit-code 0 \
+                            --format json \
+                            --output security-reports/trivy-frontend-report.json \
+                            "$FRONTEND_TARGET_IMAGE"
+                        test -s security-reports/trivy-frontend-report.json
+                    '''
+                    script {
+                        if (env.TRIVY_ENFORCE_GATE == 'true') {
+                            sh '''
+                                trivy --config /dev/null image \
+                                    --image-src docker \
+                                    --scanners vuln \
+                                    --pkg-types os,library \
+                                    --skip-db-update \
+                                    --skip-java-db-update \
+                                    --severity CRITICAL \
+                                    --timeout 15m \
+                                    --no-progress \
+                                    --exit-code 1 \
+                                    "$FRONTEND_TARGET_IMAGE"
+                            '''
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'security-reports/trivy-frontend-report.json',
+                                     allowEmptyArchive: true,
+                                     fingerprint: true
+                }
+            }
+        }
+
+       stage('Docker Push Frontend') {
+    when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+    steps {
+        withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
+            sh '''
+                set -eu
+
+                # Envoyer l'image frontend vers le registre
+                docker push "$FRONTEND_TARGET_IMAGE"
+
+                # Extraire les informations de l'image dynamiquement
+                REGISTRY_HOST="${FRONTEND_TARGET_IMAGE%%/*}"
+                IMAGE_WITH_TAG="${FRONTEND_TARGET_IMAGE#*/}"
+                IMAGE_NAME="${IMAGE_WITH_TAG%:*}"
+                IMAGE_TAG="${IMAGE_WITH_TAG##*:}"
+
+                if [ "$IMAGE_NAME" = "$IMAGE_WITH_TAG" ]; then
+                    echo "ERREUR : tag Docker manquant"
+                    exit 1
+                fi
+
+                echo "Verification du manifest dans le registre..."
+
+                curl --fail --silent --show-error \
+                    --connect-timeout 5 --max-time 30 \
+                    -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+                    "http://${REGISTRY_HOST}/v2/${IMAGE_NAME}/manifests/${IMAGE_TAG}" \
+                    -o /dev/null
+
+                echo "Image frontend presente dans le registre."
+            '''
+        }
+    }
+}
+
+        stage('Prepare Kubernetes Images') {
+            steps {
+                script {
+                    // L'image backend existe maintenant dans le registry.
+                    env.BACKEND_IMAGE_BUILT = env.REGISTRY_IMAGE
+                    env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK' ? params.FRONTEND_IMAGE.trim() : ''
+
+                    echo "Image backend : ${env.BACKEND_IMAGE_BUILT}"
+                    if (params.DEPLOYMENT_MODE == 'FULL_STACK') {
+                        if (!env.FRONTEND_IMAGE_BUILT) {
+                            error('FULL_STACK exige une image frontend construite et publiee.')
+                        }
+                        echo "Image frontend : ${env.FRONTEND_IMAGE_BUILT}"
+                    }
+                }
+            }
+        }
+
+        stage('Check Kubernetes') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Kubernetes Cluster"
+                    echo "======================================"
+
+                    kubectl get nodes
+
+                    echo ""
+
+                    kubectl cluster-info
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 18. CRÉATION / VÉRIFICATION DU NAMESPACE
+        // ========================================================
+        stage('Prepare Kubernetes Namespace') {
+
+            steps {
+
+                sh '''
+                    echo "======================================"
+                    echo " Kubernetes Namespace"
+                    echo "======================================"
+
+                    kubectl create namespace \
+                        "$K8S_NAMESPACE" \
+                        --dry-run=client \
+                        -o yaml \
+                    | kubectl apply -f -
+
+
+                    kubectl get namespace \
+                        "$K8S_NAMESPACE"
+                '''
+            }
+        }
+
+
+        // ========================================================
+        // 19. KUBERNETES DEPLOYMENT
+        // ======================================================== Les manifests sont générés à partir de la configuration sauvegardée.
+
+stage('Download Kubernetes Manifests') {
+    steps {
+
+        withCredentials([
+            string(
+                credentialsId: 'smartdeploy-api-key',
+                variable: 'SMARTDEPLOY_API_KEY'
+            )
+        ]) {
+
+            sh '''
+                set -eu
+
+                mkdir -p k8s-generated
+
+                echo "======================================"
+                echo " Download Kubernetes Manifests"
+                echo "======================================"
+
+                if [ -n "${FRONTEND_IMAGE_BUILT:-}" ]; then
+
+                    curl --fail --silent --show-error --retry 3 \
+                        -H "X-SmartDeploy-Api-Key: $SMARTDEPLOY_API_KEY" \
+                        --get \
+                        --data-urlencode "backendImage=$BACKEND_IMAGE_BUILT" \
+                        --data-urlencode "frontendImage=$FRONTEND_IMAGE_BUILT" \
+                        "${SMARTDEPLOY_URL}/api/kubernetes/manifests/deployments/${DEPLOYMENT_ID}/export" \
+                        -o k8s-manifests.zip
+
+                else
+
+                    curl --fail --silent --show-error --retry 3 \
+                        -H "X-SmartDeploy-Api-Key: $SMARTDEPLOY_API_KEY" \
+                        --get \
+                        --data-urlencode "backendImage=$BACKEND_IMAGE_BUILT" \
+                        "${SMARTDEPLOY_URL}/api/kubernetes/manifests/deployments/${DEPLOYMENT_ID}/export" \
+                        -o k8s-manifests.zip
+
+                fi
+
+                echo "Archive Kubernetes téléchargée."
+
+                # Vérification des fichiers YAML dans le ZIP
+                unzip -Z1 k8s-manifests.zip | grep -Eq '^[a-zA-Z0-9._/-]+[.]ya?ml$'
+
+                # Protection contre les chemins dangereux
+                if unzip -Z1 k8s-manifests.zip | grep -E '(^/|(^|/)[.][.](/|$)|[^a-zA-Z0-9._/-]|[.][.])'; then
+                    echo "ERREUR : Archive ZIP non sûre"
+                    exit 1
+                fi
+
+                # Extraction
+                unzip -oq k8s-manifests.zip -d k8s-generated
+
+                # Vérification de la présence des manifests
+                find k8s-generated -type f -name '*.yaml' -print -quit | grep -q . || \
+                find k8s-generated -type f -name '*.yml' -print -quit | grep -q .
+
+                echo "======================================"
+                echo " Manifests Kubernetes disponibles"
+                echo "======================================"
+            '''
+        }
+    }
+}
+
+
+// ========================================================
+// VALIDATE KUBERNETES MANIFESTS
+// ========================================================
+
+stage('Validate Kubernetes Manifests') {
+    steps {
+
+        sh '''
+            set -eu
+
+            echo "======================================"
+            echo " Validation Kubernetes Manifests"
+            echo "======================================"
+
+            kubectl apply \
+                --dry-run=client \
+                -n "$K8S_NAMESPACE" \
+                -f k8s-generated/
+
+            echo "Validation Kubernetes terminée."
+        '''
+    }
+}
+
+
+// ========================================================
+// APPLY KUBERNETES MANIFESTS
+// ========================================================
+
+stage('Apply Kubernetes Manifests') {
+    steps {
+
+        sh '''
+            set -eu
+
+            echo "======================================"
+            echo " Apply Kubernetes Manifests"
+            echo "======================================"
+
+            kubectl apply \
+                -n "$K8S_NAMESPACE" \
+                -f k8s-generated/
+
+            kubectl get \
+                -n "$K8S_NAMESPACE" \
+                -f k8s-generated/ \
+                -o name > k8s-resources.txt
+
+            test -s k8s-resources.txt
+
+            echo "Ressources Kubernetes appliquées."
+        '''
+
+        script {
+
+            // ------------------------------------------------
+            // Identifier le Deployment backend réel
+            // ------------------------------------------------
+            // Fonctionne aussi avec plusieurs Deployments
+            // dans le scénario FULL_STACK.
+
+            def backendDeployment = sh(
+                script: '''
+                    set -eu
+
+                    grep '^deployment.apps/' \
+                        k8s-resources.txt > k8s-deployments.txt || true
+
+                    test -s k8s-deployments.txt || {
+                        echo 'Aucun Deployment dans les manifests' >&2
+                        exit 1
+                    }
+
+                    match=''
+
+                    while IFS= read -r resource; do
+
+                        images=$(kubectl get "$resource" \
+                            -n "$K8S_NAMESPACE" \
+                            -o jsonpath='{.spec.template.spec.containers[*].image}')
+
+                        for image in $images; do
+
+                            if [ "$image" = "$BACKEND_IMAGE_BUILT" ]; then
+
+                                if [ -n "$match" ]; then
+                                    echo 'Plusieurs Deployments utilisent l image backend' >&2
+                                    exit 1
+                                fi
+
+                                match=${resource#deployment.apps/}
+
+                            fi
+
+                        done
+
+                    done < k8s-deployments.txt
+
+                    test -n "$match" || {
+                        echo 'Deployment backend introuvable' >&2
+                        exit 1
+                    }
+
+                    printf '%s' "$match"
+                ''',
+                returnStdout: true
+            ).trim()
+
+            env.K8S_DEPLOYMENT_NAME = backendDeployment
+
+
+            // ------------------------------------------------
+            // Identifier les Services Kubernetes
+            // ------------------------------------------------
+
+            def serviceNames = sh(
+                script: "grep '^service/' k8s-resources.txt | cut -d/ -f2 || true",
+                returnStdout: true
+            ).trim().readLines()
+
+            env.K8S_SERVICE_NAME =
+                serviceNames ? serviceNames[0] : ''
+
+
+            // ------------------------------------------------
+            // Logs
+            // ------------------------------------------------
+
+            echo "======================================"
+            echo " Kubernetes Resources Detected"
+            echo "======================================"
+
+            echo "Backend Deployment : ${env.K8S_DEPLOYMENT_NAME}"
+
+            echo "Services : ${serviceNames.join(', ')}"
+
+            echo "Namespace : ${env.K8S_NAMESPACE}"
+
+            echo "======================================"
+        }
+    }
+}
+
+        stage('Verify Kubernetes Rollout') {
+            steps {
+                sh '''
+                    set -eu
+                    # Vérifie UNIQUEMENT les ressources de ce déploiement, pas tout le namespace.
+                    grep -E '^(deployment.apps|statefulset.apps)/' k8s-resources.txt > k8s-workloads.txt || true
+                    test -s k8s-workloads.txt || { echo 'Aucun Deployment/StatefulSet généré'; exit 1; }
+                    while IFS= read -r workload; do
+                        kubectl rollout status "$workload" -n "$K8S_NAMESPACE" --timeout=900s
+                    done < k8s-workloads.txt
+                '''
+            }
+        }
+
+        stage('Verify Kubernetes Resources') {
+            steps {
+                sh '''
+                    set -eu
+                    kubectl get -n "$K8S_NAMESPACE" -f k8s-generated/ -o wide
+                    kubectl get pods -n "$K8S_NAMESPACE" -o wide
+                '''
+            }
+        }
+
+
+        stage('Deployment Completed') {
+
+            steps {
+
+                echo "======================================"
+
+                echo " SMARTDEPLOY DEPLOYMENT SUCCESS"
+
+                echo "======================================"
+
+                echo "Application : ${params.APPLICATION_NAME}"
+
+                echo "Version : ${params.VERSION}"
+
+                echo "Docker Image :"
+                echo "${env.REGISTRY_IMAGE}"
+
+                echo "Namespace :"
+                echo "${env.K8S_NAMESPACE}"
+
+                echo "Les Deployments et Services sont définis par les manifests Kubernetes."
+
+                echo "Accès applicatif : voir les Services / Ingress générés."
+
+                echo "======================================"
+            }
+        }
+    }
+
+
+    // ============================================================
+    // POST ACTIONS
+    // ============================================================
+    post {
+
+
+        // ========================================================
+        // SUCCESS / FAILURE / ABORTED → SmartDeploy (authentifié)
+        // ========================================================
+        success {
+            script {
+                echo "======================================"
+                echo " PIPELINE SUCCESS"
+                echo "======================================"
+                notifySmartDeploy('SUCCESS', null, env.K8S_DEPLOYMENT_NAME ?: '', false)
+            }
+        }
+
+        failure {
+            script {
+                echo "======================================"
+                echo " PIPELINE FAILED"
+                echo "======================================"
+                notifySmartDeploy(
+                    'FAILED',
+                    'Le pipeline Jenkins ou le déploiement Kubernetes a échoué',
+                    env.K8S_DEPLOYMENT_NAME ?: '',
+                    false
+                )
+            }
+        }
+
+        aborted {
+            script {
+                echo "======================================"
+                echo " PIPELINE ABORTED"
+                echo "======================================"
+                notifySmartDeploy(
+                    'CANCELLED',
+                    'Le pipeline Jenkins a été annulé',
+                    env.K8S_DEPLOYMENT_NAME ?: '',
+                    false
+                )
+            }
+        }
+
+
+        // ========================================================
+        // ALWAYS
+        // ========================================================
+        always {
+
+            echo "======================================"
+
+            echo " Fin du pipeline SmartDeploy"
+
+            echo "======================================"
+
+            echo "Deployment SmartDeploy : ${params.DEPLOYMENT_ID}"
+
+            echo "Build Jenkins : ${env.BUILD_NUMBER}"
+
+
+            script {
+
+                if (env.REGISTRY_IMAGE) {
+
+                    echo "Docker Registry : ${env.REGISTRY_IMAGE}"
+                }
+
+
+                if (env.K8S_NAMESPACE) {
+
+                    echo "Kubernetes Namespace : ${env.K8S_NAMESPACE}"
+                }
+
+
+                if (env.K8S_DEPLOYMENT_NAME) {
+
+                    echo "Kubernetes Deployment : ${env.K8S_DEPLOYMENT_NAME}"
+                }
+
+
+                if (env.K8S_SERVICE_NAME) {
+
+                    echo "Kubernetes Service : ${env.K8S_SERVICE_NAME}"
+                }
+            }
+
+
+            echo "======================================"
+        }
+    }
+}
