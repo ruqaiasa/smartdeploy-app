@@ -8,6 +8,7 @@ import com.smartdeploy.environment.EnvironmentType;
 import com.smartdeploy.integration.jenkins.JenkinsService;
 import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
 import com.smartdeploy.integration.kubernetes.KubernetesComponentRequest;
+import com.smartdeploy.integration.kubernetes.KubernetesNamespaceService;
 import com.smartdeploy.user.Role;
 import com.smartdeploy.user.User;
 import com.smartdeploy.version.BuildStatus;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import io.fabric8.kubernetes.client.KubernetesClient;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -47,6 +50,12 @@ class DeploymentServiceTest {
     @Mock
     private DeploymentKubernetesConfigRepository kubernetesConfigRepository;
 
+    @Mock
+    private KubernetesNamespaceService kubernetesNamespaceService;
+
+    @Mock
+    private KubernetesClient kubernetesClient;
+
     private DeploymentService deploymentService;
 
     @BeforeEach
@@ -56,7 +65,9 @@ class DeploymentServiceTest {
                 versionRepository,
                 environmentRepository,
                 jenkinsService,
-                kubernetesConfigRepository
+                kubernetesConfigRepository,
+                kubernetesNamespaceService,
+                kubernetesClient
         );
     }
 
@@ -361,7 +372,7 @@ class DeploymentServiceTest {
                 exception
                         .getMessage()
                         .contains(
-                                "build est réussi"
+                                "build réussi"
                         )
         );
 

@@ -140,7 +140,7 @@ class EnvironmentServiceTest {
         );
 
         assertEquals(
-                "smartdeploy-dev",
+                "sd-dev-smartdeploy",
                 response.namespace()
         );
 
@@ -174,7 +174,7 @@ class EnvironmentServiceTest {
         );
 
         assertEquals(
-                "smartdeploy-dev",
+                "sd-dev-smartdeploy",
                 capturedEnvironment.getNamespace()
         );
     }

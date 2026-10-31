@@ -3,6 +3,7 @@ package com.smartdeploy.deployment;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentNotFoundException;
 import com.smartdeploy.environment.EnvironmentRepository;
@@ -20,6 +21,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import com.smartdeploy.integration.jenkins.JenkinsService;
+import com.smartdeploy.integration.kubernetes.KubernetesNamespaceService;
+import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
+import com.smartdeploy.integration.kubernetes.KubernetesDatabaseRequest;
+import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 
 @Service
 @Transactional
@@ -36,6 +42,8 @@ public class DeploymentService {
 
     private final JenkinsService jenkinsService;
     private final DeploymentKubernetesConfigRepository kubernetesConfigRepository;
+    private final KubernetesNamespaceService kubernetesNamespaceService;
+    private final KubernetesClient kubernetesClient;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     /* ==========================================================
      *                      CONSTRUCTOR
@@ -47,13 +55,17 @@ public class DeploymentService {
             VersionRepository versionRepository,
             EnvironmentRepository environmentRepository,
             JenkinsService jenkinsService,
-            DeploymentKubernetesConfigRepository kubernetesConfigRepository
+            DeploymentKubernetesConfigRepository kubernetesConfigRepository,
+            KubernetesNamespaceService kubernetesNamespaceService,
+            KubernetesClient kubernetesClient
     ) {
         this.deploymentRepository = deploymentRepository;
         this.versionRepository = versionRepository;
         this.environmentRepository = environmentRepository;
         this.jenkinsService = jenkinsService;
         this.kubernetesConfigRepository = kubernetesConfigRepository;
+        this.kubernetesNamespaceService = kubernetesNamespaceService;
+        this.kubernetesClient = kubernetesClient;
     }
 
     /* ==========================================================
@@ -153,6 +165,9 @@ public class DeploymentService {
             );
         }
 
+        // Créer le namespace s'il n'existe pas (avant le déploiement).
+        kubernetesNamespaceService.ensureExists(namespace);
+
         final String configurationJson;
         try {
             ObjectNode normalizedConfig = OBJECT_MAPPER.valueToTree(
@@ -179,6 +194,9 @@ public class DeploymentService {
         );
 
         kubernetesConfigRepository.saveAndFlush(kubernetesConfig);
+
+        // Valider que le Secret Kubernetes existe si une base de données est configurée.
+        validateDatabaseSecret(namespace, request.kubernetesConfig());
 
         // En cas d'échec du déclenchement Jenkins, la transaction est annulée.
         // Ne pas enregistrer FAILED puis relancer l'exception : cet état serait annulé.
@@ -636,5 +654,59 @@ public class DeploymentService {
                 deployment.getCreatedAt(),
                 deployment.getUpdatedAt()
         );
+    }
+
+    private void validateDatabaseSecret(
+            String namespace,
+            KubernetesApplicationRequest kubernetesConfig
+    ) {
+        if (kubernetesConfig == null || kubernetesConfig.database() == null) {
+            return;
+        }
+
+        KubernetesDatabaseRequest database = kubernetesConfig.database();
+
+        if (database.passwordSecretName() == null ||
+                database.passwordSecretName().isBlank()) {
+            throw new DeploymentValidationException(
+                    "Le nom du Secret Kubernetes pour la base de données est obligatoire"
+            );
+        }
+
+        try {
+            var secret = kubernetesClient.secrets()
+                    .inNamespace(namespace)
+                    .withName(database.passwordSecretName())
+                    .get();
+
+            if (secret == null) {
+                throw new DeploymentValidationException(
+                        "Le Secret Kubernetes '" + database.passwordSecretName() +
+                                "' n'existe pas dans le namespace '" + namespace + "'"
+                );
+            }
+
+            if (database.passwordSecretKey() != null &&
+                    !database.passwordSecretKey().isBlank()) {
+                var secretData = secret.getData();
+                if (secretData == null || !secretData.containsKey(database.passwordSecretKey())) {
+                    throw new DeploymentValidationException(
+                            "La clé '" + database.passwordSecretKey() +
+                                    "' n'existe pas dans le Secret Kubernetes '" +
+                                    database.passwordSecretName() + "'"
+                    );
+                }
+            }
+        } catch (KubernetesClientException e) {
+            if (e.getCode() == 403 || e.getCode() == 401) {
+                throw new DeploymentValidationException(
+                        "Permissions Kubernetes insuffisantes pour vérifier le Secret de base de données"
+                );
+            }
+            throw new DeploymentValidationException(
+                    "Impossible de vérifier le Secret Kubernetes '" +
+                            database.passwordSecretName() + "' : erreur HTTP " + e.getCode()
+            );
+        }
     }
 }
