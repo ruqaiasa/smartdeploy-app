@@ -109,23 +109,20 @@ onMounted(async () => {
 <template>
   <section class="dashboard">
 
-    <div class="welcome-section">
+    <!-- Header -->
+    <div class="dashboard-header flex-between">
       <div>
-        <h2>
-          Tableau de bord
-        </h2>
-
-        <p>
-          Vue globale et temps réel de votre
-          plateforme SmartDeploy.
+        <h1>Tableau de bord</h1>
+        <p class="subtitle">
+          Vue globale et temps réel de votre plateforme SmartDeploy
         </p>
       </div>
 
       <RouterLink
         to="/deployments"
-        class="primary-button"
+        class="button button-primary"
       >
-        Voir les déploiements
+        Voir les déploiements →
       </RouterLink>
     </div>
 
@@ -201,71 +198,56 @@ onMounted(async () => {
           Aucun déploiement disponible.
         </div>
 
+        <!-- Deployments List (Cards) -->
         <div
           v-else
-          class="table-wrapper"
+          class="deployments-list"
         >
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Application</th>
-                <th>Version</th>
-                <th>Environnement</th>
-                <th>Date</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr
-                v-for="deployment in recentDeployments"
-                :key="deployment.id"
+          <article
+            v-for="deployment in recentDeployments"
+            :key="deployment.id"
+            class="deployment-card"
+          >
+            <!-- Left: Application Info -->
+            <div class="deployment-main">
+              <RouterLink
+                :to="`/applications/${deployment.applicationId}`"
+                class="app-name"
               >
-                <td>
-                  #{{ deployment.id }}
-                </td>
+                {{ deployment.applicationName }}
+              </RouterLink>
 
-                <td>
-                  <RouterLink
-                    :to="`/applications/${deployment.applicationId}`"
-                    class="entity-link"
-                  >
-                    {{ deployment.applicationName }}
-                  </RouterLink>
-                </td>
+              <div class="deployment-details">
+                <span class="version-badge">
+                  v{{ deployment.version }}
+                </span>
 
-                <td>
-                  {{ deployment.version }}
-                </td>
+                <span class="environment-badge">
+                  {{ deployment.environmentType }}
+                </span>
 
-                <td>
-                  <div class="environment-cell">
-                    <strong>
-                      {{ deployment.environmentName }}
-                    </strong>
-
-                    <small>
-                      {{ deployment.environmentType }}
-                    </small>
-                  </div>
-                </td>
-
-                <td>
+                <span class="deployment-date">
                   {{ formatDate(deployment.createdAt) }}
-                </td>
+                </span>
+              </div>
+            </div>
 
-                <td>
-                  <span
-                    class="status"
-                    :class="deployment.status.toLowerCase()"
-                  >
-                    {{ statusLabel(deployment.status) }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            <!-- Right: Environment + Status -->
+            <div class="deployment-side">
+              <div class="environment-info">
+                <div class="env-label">
+                  {{ deployment.environmentName }}
+                </div>
+              </div>
+
+              <span
+                class="status"
+                :class="deployment.status.toLowerCase()"
+              >
+                {{ statusLabel(deployment.status) }}
+              </span>
+            </div>
+          </article>
         </div>
 
       </section>
@@ -279,281 +261,350 @@ onMounted(async () => {
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--space-2xl);
 }
 
-.welcome-section {
+/* HEADER */
+
+.dashboard-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--space-xl);
+  flex-wrap: wrap;
 }
 
-.welcome-section h2 {
-  margin: 0;
-
-  color: #0f172a;
-  font-size: 25px;
+.dashboard-header h1 {
+  margin-bottom: var(--space-sm);
 }
 
-.welcome-section p {
-  margin: 7px 0 0;
-
-  color: #64748b;
-  font-size: 14px;
+.subtitle {
+  color: var(--color-gray-500);
+  font-size: var(--font-size-lg);
+  margin-top: var(--space-xs);
 }
 
-.primary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 11px 18px;
-
-  border-radius: 9px;
-
-  background: #2563eb;
-  color: white;
-
-  font-size: 13px;
-  font-weight: 600;
-
-  text-decoration: none;
-}
+/* METRICS SECTION */
 
 .statistics-grid {
   display: grid;
-  grid-template-columns:
-    repeat(auto-fit, minmax(190px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-md);
 }
 
 .statistic-card {
-  padding: 20px;
-
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-
+  padding: var(--space-lg);
   background: white;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.statistic-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
 }
 
 .statistic-card p {
   margin: 0;
-
-  color: #64748b;
-  font-size: 13px;
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .statistic-card strong {
   display: block;
-
-  margin-top: 12px;
-
-  color: #0f172a;
-  font-size: 28px;
+  margin-top: var(--space-md);
+  color: var(--color-slate-dark);
+  font-size: 32px;
+  font-weight: var(--font-weight-bold);
 }
 
 .statistic-card small {
   display: block;
-
-  margin-top: 8px;
-
-  color: #64748b;
-  font-size: 12px;
+  margin-top: var(--space-sm);
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
 }
 
+/* TABLE SECTION */
+
 .table-card {
-  overflow: hidden;
-
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-
   background: white;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
 .table-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-
-  padding: 20px;
-
-  border-bottom: 1px solid #e2e8f0;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-bottom: var(--border-width) solid var(--border-color);
+  flex-wrap: wrap;
 }
 
 .table-header h3 {
-  margin: 0;
-
-  color: #0f172a;
-  font-size: 16px;
+  margin-bottom: var(--space-xs);
 }
 
 .table-header p {
-  margin: 5px 0 0;
-
-  color: #64748b;
-  font-size: 12px;
+  margin: 0;
+  color: var(--color-gray-500);
+  font-size: var(--font-size-sm);
 }
 
 .table-header a {
-  color: #2563eb;
-
-  font-size: 13px;
-  font-weight: 600;
-
-  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
 }
 
-.table-wrapper {
-  overflow-x: auto;
-}
+/* DEPLOYMENTS LIST */
 
-table {
-  width: 100%;
-
-  border-collapse: collapse;
-}
-
-th,
-td {
-  padding: 14px 20px;
-
-  border-bottom: 1px solid #f1f5f9;
-
-  text-align: left;
-}
-
-th {
-  color: #64748b;
-
-  background: #f8fafc;
-
-  font-size: 11px;
-  font-weight: 600;
-
-  text-transform: uppercase;
-}
-
-td {
-  color: #334155;
-
-  font-size: 13px;
-}
-
-tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.entity-link {
-  color: #2563eb;
-
-  font-weight: 600;
-
-  text-decoration: none;
-}
-
-.entity-link:hover {
-  text-decoration: underline;
-}
-
-.environment-cell {
+.deployments-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-md);
 }
 
-.environment-cell strong {
-  color: #334155;
-
-  font-size: 13px;
+.deployment-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  background: white;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  transition: all var(--transition-normal);
+  cursor: pointer;
 }
 
-.environment-cell small {
-  color: #94a3b8;
-
-  font-size: 10px;
+.deployment-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
 }
+
+.deployment-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-name {
+  display: block;
+  color: var(--color-slate-dark);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: var(--space-sm);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.app-name:hover {
+  color: var(--color-primary);
+}
+
+.deployment-details {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.version-badge,
+.environment-badge,
+.deployment-date {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+}
+
+.version-badge {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary);
+  background-color: var(--color-primary-light);
+  padding: 2px 8px;
+  border-radius: var(--border-radius-sm);
+}
+
+.environment-badge {
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-700);
+  padding: 2px 8px;
+  border-radius: var(--border-radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.deployment-date {
+  margin-left: auto;
+  color: var(--color-gray-500);
+}
+
+.deployment-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  white-space: nowrap;
+}
+
+.environment-info {
+  text-align: right;
+}
+
+.env-label {
+  color: var(--color-gray-800);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+}
+
 
 .status {
   display: inline-flex;
-
-  padding: 5px 9px;
-
-  border-radius: 999px;
-
-  font-size: 11px;
-  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--border-radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
 }
 
 .status.success {
-  background: #dcfce7;
-  color: #166534;
+  background-color: var(--color-success-light);
+  color: var(--color-success-dark);
 }
 
 .status.failed {
-  background: #fee2e2;
-  color: #991b1b;
+  background-color: var(--color-error-light);
+  color: var(--color-error-dark);
 }
 
 .status.running {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background-color: var(--color-primary-light);
+  color: var(--color-primary-hover);
 }
 
 .status.pending {
-  background: #fef3c7;
-  color: #92400e;
+  background-color: var(--color-warning-light);
+  color: var(--color-warning-dark);
 }
 
 .status.cancelled {
-  background: #f1f5f9;
-  color: #475569;
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-600);
 }
 
 .status.rolled_back {
-  background: #ede9fe;
+  background-color: #ede9fe;
   color: #6d28d9;
 }
 
+/* STATE MESSAGES */
+
 .state-card,
 .empty-state {
-  padding: 28px;
-
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-
+  padding: var(--space-2xl);
   background: white;
-
-  color: #64748b;
-
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  color: var(--color-gray-500);
   text-align: center;
 }
 
 .state-card.error {
-  color: #991b1b;
+  color: var(--color-error-dark);
+  background-color: var(--color-error-light);
+  border-color: var(--color-error);
 }
 
 .retry-button {
-  margin-top: 12px;
-  padding: 8px 14px;
-
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
   border: none;
-  border-radius: 7px;
-
-  background: #2563eb;
+  border-radius: var(--border-radius-md);
+  background: var(--color-primary);
   color: white;
-
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
-@media (max-width: 700px) {
-  .welcome-section {
-    align-items: flex-start;
+.retry-button:hover {
+  background: var(--color-primary-hover);
+}
+
+/* RESPONSIVE */
+
+/* RESPONSIVE */
+
+@media (max-width: 768px) {
+  .dashboard-header {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .statistics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .table-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .deployment-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .deployment-side {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .deployment-date {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard {
+    gap: var(--space-lg);
   }
 
   .statistics-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-header h1 {
+    font-size: var(--font-size-2xl);
+  }
+
+  .deployment-card {
+    padding: var(--space-md);
+  }
+
+  .app-name {
+    font-size: var(--font-size-base);
+  }
+
+  .deployment-details {
+    gap: var(--space-sm);
+  }
+
+  .deployment-side {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .environment-info {
+    text-align: left;
   }
 }
 </style>

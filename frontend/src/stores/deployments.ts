@@ -35,6 +35,13 @@ function extractErrorMessage(
   return fallback
 }
 
+/*
+ * Numéro de la dernière requête de liste envoyée. Une réponse plus ancienne
+ * (recherche en direct, actualisation automatique) est ignorée pour ne jamais
+ * écraser des résultats plus récents.
+ */
+let listRequestSequence = 0
+
 export const useDeploymentsStore =
   defineStore(
     'deployments',
@@ -73,9 +80,16 @@ export const useDeploymentsStore =
       actions: {
         async loadDeployments(
           params: DeploymentSearchParams = {},
+          options: { silent?: boolean } = {},
         ) {
-          this.loading = true
-          this.errorMessage = null
+          const sequence = ++listRequestSequence
+
+          // Mode silencieux : actualisation en arrière-plan, sans
+          // indicateur de chargement ni effacement du message d'erreur.
+          if (!options.silent) {
+            this.loading = true
+            this.errorMessage = null
+          }
 
           try {
             const response =
@@ -104,6 +118,10 @@ export const useDeploymentsStore =
                 ...params,
               })
 
+            if (sequence !== listRequestSequence) {
+              return
+            }
+
             this.deployments =
               response.content
 
@@ -119,13 +137,20 @@ export const useDeploymentsStore =
             this.totalPages =
               response.totalPages
           } catch (error) {
-            this.errorMessage =
-              extractErrorMessage(
-                error,
-                'Impossible de charger les déploiements.',
-              )
+            if (
+              sequence === listRequestSequence
+              && !options.silent
+            ) {
+              this.errorMessage =
+                extractErrorMessage(
+                  error,
+                  'Impossible de charger les déploiements.',
+                )
+            }
           } finally {
-            this.loading = false
+            if (sequence === listRequestSequence) {
+              this.loading = false
+            }
           }
         },
 
