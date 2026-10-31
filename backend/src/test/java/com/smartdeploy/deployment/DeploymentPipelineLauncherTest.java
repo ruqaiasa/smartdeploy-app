@@ -1,11 +1,14 @@
 package com.smartdeploy.deployment;
 
 import com.smartdeploy.integration.jenkins.JenkinsBuildResponse;
+import com.smartdeploy.integration.jenkins.JenkinsCancellationResult;
 import com.smartdeploy.integration.jenkins.JenkinsIntegrationException;
 import com.smartdeploy.integration.jenkins.JenkinsService;
+import com.smartdeploy.user.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,13 +27,17 @@ class DeploymentPipelineLauncherTest {
     @Mock
     private JenkinsService jenkinsService;
 
+    @Mock
+    private DeploymentService deploymentService;
+
     private DeploymentPipelineLauncher launcher;
 
     @BeforeEach
     void setUp() {
         launcher = new DeploymentPipelineLauncher(
                 deploymentRepository,
-                jenkinsService
+                jenkinsService,
+                deploymentService
         );
     }
 
@@ -48,7 +55,9 @@ class DeploymentPipelineLauncherTest {
 
         verify(jenkinsService).triggerDeployment(deployment);
         assertEquals(DeploymentStatus.PENDING, deployment.getStatus());
-        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+        // L'URL de file d'attente est conservée pour pouvoir annuler.
+        assertEquals("http://jenkins/queue/item/1/", deployment.getJenkinsQueueUrl());
+        verify(deploymentRepository).saveAndFlush(deployment);
     }
 
     @Test
@@ -86,6 +95,50 @@ class DeploymentPipelineLauncherTest {
         launcher.onPipelineRequested(new DeploymentPipelineRequestedEvent(10L));
 
         verifyNoInteractions(jenkinsService);
+    }
+
+    @Test
+    void cancel_shouldStopJenkinsThenMarkDeploymentCancelled() {
+        Deployment deployment = deployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(46);
+        deployment.setJenkinsQueueUrl("http://jenkins/queue/item/9/");
+        User user = new User();
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(deployment));
+        when(jenkinsService.cancelPipeline("http://jenkins/queue/item/9/", 46))
+                .thenReturn(new JenkinsCancellationResult(true, "Build Jenkins #46 arrêté."));
+
+        launcher.cancel(10L, user);
+
+        InOrder order = inOrder(deploymentService, jenkinsService);
+        order.verify(deploymentService).ensureCancellable(deployment);
+        order.verify(jenkinsService).cancelPipeline("http://jenkins/queue/item/9/", 46);
+        order.verify(deploymentService).markCancelled(10L, user, "Build Jenkins #46 arrêté.");
+    }
+
+    @Test
+    void cancel_shouldStillCancelWhenJenkinsIsUnreachable() {
+        Deployment deployment = deployment(DeploymentStatus.PENDING);
+        User user = new User();
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(deployment));
+        when(jenkinsService.cancelPipeline(null, null))
+                .thenReturn(new JenkinsCancellationResult(false, "Jenkins n'a pas pu être joint"));
+
+        launcher.cancel(10L, user);
+
+        verify(deploymentService).markCancelled(10L, user, "Jenkins n'a pas pu être joint");
+    }
+
+    @Test
+    void cancel_shouldNotCallJenkinsForFinishedDeployment() {
+        Deployment deployment = deployment(DeploymentStatus.SUCCESS);
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(deployment));
+        doThrow(new DeploymentStateException("terminé"))
+                .when(deploymentService).ensureCancellable(deployment);
+
+        assertThrows(DeploymentStateException.class, () -> launcher.cancel(10L, new User()));
+
+        verifyNoInteractions(jenkinsService);
+        verify(deploymentService, never()).markCancelled(any(), any(), any());
     }
 
     private Deployment deployment(DeploymentStatus status) {

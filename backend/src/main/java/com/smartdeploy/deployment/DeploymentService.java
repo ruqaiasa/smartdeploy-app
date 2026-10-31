@@ -391,6 +391,16 @@ public class DeploymentService {
 
         DeploymentStatus currentStatus = deployment.getStatus();
 
+        // Build démarré malgré une annulation : la réponse 409 fait échouer
+        // l'étape « Notify RUNNING » du Jenkinsfile, avant tout déploiement.
+        if (currentStatus == DeploymentStatus.CANCELLED
+                && newStatus == DeploymentStatus.RUNNING) {
+            throw new DeploymentStateException(
+                    "Le déploiement " + deploymentId
+                            + " a été annulé dans SmartDeploy : le pipeline doit s'arrêter"
+            );
+        }
+
         if (isTerminal(currentStatus) && currentStatus != newStatus) {
             return new PipelineCallbackResult(
                     deploymentId,
@@ -517,6 +527,53 @@ public class DeploymentService {
                 || status == DeploymentStatus.FAILED
                 || status == DeploymentStatus.CANCELLED
                 || status == DeploymentStatus.ROLLED_BACK;
+    }
+
+    /* ==========================================================
+     *                  CANCEL (ACTION UTILISATEUR)
+     * ==========================================================
+     *
+     * Appelé par DeploymentPipelineLauncher APRÈS la demande d'arrêt
+     * envoyée à Jenkins (hors transaction). Le statut est revérifié
+     * sous verrou : le pipeline a pu se terminer entre-temps.
+     */
+    public DeploymentResponse markCancelled(
+            Long deploymentId,
+            User cancelledBy,
+            String jenkinsMessage
+    ) {
+        Deployment deployment = deploymentRepository
+                .findActiveByIdForUpdate(deploymentId)
+                .orElseThrow(() ->
+                        new DeploymentNotFoundException(deploymentId)
+                );
+
+        ensureCancellable(deployment);
+
+        String author = cancelledBy != null && cancelledBy.getEmail() != null
+                ? cancelledBy.getEmail()
+                : "un utilisateur";
+        String reason = "Annulé par " + author + "."
+                + (jenkinsMessage == null || jenkinsMessage.isBlank() ? "" : " " + jenkinsMessage.trim());
+
+        completeDeployment(
+                deployment,
+                LocalDateTime.now(),
+                reason.length() <= 2000 ? reason : reason.substring(0, 2000)
+        );
+        deployment.setStatus(DeploymentStatus.CANCELLED);
+
+        return toResponse(deploymentRepository.saveAndFlush(deployment));
+    }
+
+    void ensureCancellable(Deployment deployment) {
+        DeploymentStatus status = deployment.getStatus();
+        if (status != DeploymentStatus.PENDING && status != DeploymentStatus.RUNNING) {
+            throw new DeploymentStateException(
+                    "Seul un déploiement en attente ou en cours peut être annulé (statut actuel : "
+                            + status + ")"
+            );
+        }
     }
 
     /* ==========================================================

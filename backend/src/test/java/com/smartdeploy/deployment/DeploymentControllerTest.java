@@ -30,6 +30,9 @@ class DeploymentControllerTest {
     @Mock
     private DeploymentService deploymentService;
 
+    @Mock
+    private DeploymentPipelineLauncher pipelineLauncher;
+
     private MockMvc mockMvc;
 
     private User currentUser;
@@ -38,7 +41,7 @@ class DeploymentControllerTest {
     void setUp() {
 
         DeploymentController controller =
-                new DeploymentController(deploymentService);
+                new DeploymentController(deploymentService, pipelineLauncher);
 
         mockMvc = MockMvcBuilders
                 .standaloneSetup(controller)
@@ -419,6 +422,22 @@ class DeploymentControllerTest {
      *                  ROLLBACK
      * ==========================================================
      */
+
+    @Test
+    void cancel_shouldDelegateToPipelineLauncher()
+            throws Exception {
+
+        DeploymentResponse response =
+                createResponse(DeploymentStatus.CANCELLED, null);
+
+        when(pipelineLauncher.cancel(10L, currentUser)).thenReturn(response);
+
+        mockMvc.perform(post("/api/deployments/10/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        verify(pipelineLauncher).cancel(10L, currentUser);
+    }
 
     @Test
     void rollback_shouldReturn201AndRollbackDeployment()

@@ -1250,6 +1250,53 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void applyPipelineCallback_shouldRejectRunningCallbackOnCancelledDeployment() {
+        Deployment deployment = createDeployment(DeploymentStatus.CANCELLED);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.applyPipelineCallback(
+                        10L, DeploymentStatus.RUNNING, 47, null, null, null
+                )
+        );
+        assertEquals(DeploymentStatus.CANCELLED, deployment.getStatus());
+    }
+
+    @Test
+    void markCancelled_shouldCancelRunningDeploymentWithReason() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setStartedAt(LocalDateTime.now().minusSeconds(30));
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+        when(deploymentRepository.saveAndFlush(deployment)).thenReturn(deployment);
+
+        DeploymentResponse response = deploymentService.markCancelled(
+                10L, createUser(), "Build Jenkins #46 arrêté."
+        );
+
+        assertEquals(DeploymentStatus.CANCELLED, response.status());
+        assertNotNull(deployment.getFinishedAt());
+        assertTrue(deployment.getErrorMessage().startsWith("Annulé par "));
+        assertTrue(deployment.getErrorMessage().endsWith("Build Jenkins #46 arrêté."));
+    }
+
+    @Test
+    void markCancelled_shouldRejectDeploymentFinishedMeanwhile() {
+        Deployment deployment = createDeployment(DeploymentStatus.SUCCESS);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.markCancelled(10L, createUser(), null)
+        );
+        assertEquals(DeploymentStatus.SUCCESS, deployment.getStatus());
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
+
+    @Test
     void applyPipelineCallback_shouldRejectCallbackFromAnotherBuild() {
         Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
         deployment.setJenkinsBuildNumber(44);

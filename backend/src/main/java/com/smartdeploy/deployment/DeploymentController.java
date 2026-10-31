@@ -14,11 +14,14 @@ import org.springframework.web.bind.annotation.*;
 public class DeploymentController {
 
     private final DeploymentService deploymentService;
+    private final DeploymentPipelineLauncher pipelineLauncher;
 
     public DeploymentController(
-            DeploymentService deploymentService
+            DeploymentService deploymentService,
+            DeploymentPipelineLauncher pipelineLauncher
     ) {
         this.deploymentService = deploymentService;
+        this.pipelineLauncher = pipelineLauncher;
     }
 
     /* ==========================================================
@@ -141,6 +144,19 @@ public class DeploymentController {
      *                  CREATE ROLLBACK
      * ==========================================================
      */
+
+    /**
+     * Annule un déploiement en attente ou en cours : arrêt du build
+     * Jenkins (ou retrait de la file d'attente), puis statut CANCELLED.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    public DeploymentResponse cancel(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return pipelineLauncher.cancel(id, currentUser);
+    }
 
     @PostMapping("/{id}/rollback")
     @ResponseStatus(HttpStatus.CREATED)

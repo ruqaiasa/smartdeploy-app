@@ -2,6 +2,7 @@ import axios from 'axios'
 import { defineStore } from 'pinia'
 
 import {
+  cancelDeployment,
   createDeployment,
   deleteDeployment,
   getDeployments,
@@ -229,6 +230,27 @@ export const useDeploymentsStore =
                 'Impossible de modifier les métadonnées.',
               )
 
+            throw error
+          } finally {
+            this.actionLoading = false
+          }
+        },
+
+        async cancel(
+          id: number,
+        ) {
+          this.actionLoading = true
+          this.errorMessage = null
+
+          try {
+            await cancelDeployment(id)
+            await this.loadDeployments()
+          } catch (error) {
+            this.errorMessage =
+              extractErrorMessage(
+                error,
+                'Impossible d’annuler le déploiement.',
+              )
             throw error
           } finally {
             this.actionLoading = false

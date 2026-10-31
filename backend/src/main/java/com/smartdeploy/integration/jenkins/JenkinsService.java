@@ -6,6 +6,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.smartdeploy.deployment.DeploymentKubernetesConfig;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,6 +28,84 @@ public class JenkinsService {
         this.jenkinsClient = jenkinsClient;
         this.kubernetesConfigRepository = kubernetesConfigRepository;
         this.objectMapper = objectMapper;
+    }
+
+    /* ==========================================================
+     * CANCEL DEPLOYMENT PIPELINE
+     * ========================================================== */
+
+    private static final Pattern QUEUE_ITEM_ID =
+            Pattern.compile("/queue/item/(\\d+)/?");
+
+    /**
+     * Annule le pipeline d'un déploiement, au mieux :
+     *  - build connu      → arrêt du build ;
+     *  - en file d'attente → arrêt du build s'il vient de démarrer,
+     *                        sinon retrait de la file ;
+     *  - rien de connu     → aucun appel (déploiement jamais parti).
+     * Ne lève jamais d'exception : l'annulation côté SmartDeploy doit
+     * rester possible même si Jenkins est indisponible.
+     */
+    public JenkinsCancellationResult cancelPipeline(
+            String queueUrl,
+            Integer buildNumber
+    ) {
+        try {
+            if (buildNumber != null) {
+                return stopBuild(buildNumber);
+            }
+
+            Long queueId = extractQueueId(queueUrl);
+            if (queueId == null) {
+                return new JenkinsCancellationResult(
+                        true,
+                        "Aucun build Jenkins associé : rien à arrêter."
+                );
+            }
+
+            Integer startedBuild = findStartedBuild(queueId);
+            if (startedBuild != null) {
+                return stopBuild(startedBuild);
+            }
+
+            return jenkinsClient.cancelQueueItem(queueId)
+                    ? new JenkinsCancellationResult(true, "Build retiré de la file d'attente Jenkins.")
+                    : new JenkinsCancellationResult(true, "L'élément n'est plus dans la file d'attente Jenkins.");
+
+        } catch (RuntimeException exception) {
+            return new JenkinsCancellationResult(
+                    false,
+                    "Jenkins n'a pas pu être joint (" + exception.getMessage()
+                            + ") : le build peut encore s'exécuter, vérifiez-le dans Jenkins."
+            );
+        }
+    }
+
+    private JenkinsCancellationResult stopBuild(int buildNumber) {
+        return jenkinsClient.stopBuild(buildNumber)
+                ? new JenkinsCancellationResult(true, "Build Jenkins #" + buildNumber + " arrêté.")
+                : new JenkinsCancellationResult(true, "Build Jenkins #" + buildNumber + " introuvable ou déjà terminé.");
+    }
+
+    private Integer findStartedBuild(long queueId) {
+        String json = jenkinsClient.getQueueItemJson(queueId);
+        if (json == null) {
+            return null;
+        }
+        try {
+            JsonNode number = objectMapper.readTree(json).path("executable").path("number");
+            return number.isInt() ? number.asInt() : null;
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    static Long extractQueueId(String queueUrl) {
+        if (queueUrl == null) {
+            return null;
+        }
+        Matcher matcher = QUEUE_ITEM_ID.matcher(queueUrl);
+        return matcher.find() ? Long.valueOf(matcher.group(1)) : null;
     }
 
     /* ==========================================================

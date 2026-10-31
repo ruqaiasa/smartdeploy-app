@@ -101,6 +101,16 @@ public class Deployment {
     )
     private String deploymentLogsUrl;
 
+    /**
+     * URL de l'élément de file d'attente renvoyée par Jenkins au
+     * déclenchement : seul moyen d'annuler un build pas encore démarré.
+     */
+    @Column(
+            name = "jenkins_queue_url",
+            length = 1000
+    )
+    private String jenkinsQueueUrl;
+
     @Column(
             name = "kubernetes_deployment_name",
             length = 255

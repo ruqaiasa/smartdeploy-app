@@ -1,6 +1,8 @@
 package com.smartdeploy.deployment;
 
+import com.smartdeploy.integration.jenkins.JenkinsCancellationResult;
 import com.smartdeploy.integration.jenkins.JenkinsService;
+import com.smartdeploy.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -29,13 +31,16 @@ public class DeploymentPipelineLauncher {
 
     private final DeploymentRepository deploymentRepository;
     private final JenkinsService jenkinsService;
+    private final DeploymentService deploymentService;
 
     public DeploymentPipelineLauncher(
             DeploymentRepository deploymentRepository,
-            JenkinsService jenkinsService
+            JenkinsService jenkinsService,
+            DeploymentService deploymentService
     ) {
         this.deploymentRepository = deploymentRepository;
         this.jenkinsService = jenkinsService;
+        this.deploymentService = deploymentService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -54,6 +59,9 @@ public class DeploymentPipelineLauncher {
         try {
             String queueUrl =
                     jenkinsService.triggerDeployment(deployment).queueUrl();
+
+            deployment.setJenkinsQueueUrl(queueUrl);
+            deploymentRepository.saveAndFlush(deployment);
 
             log.info(
                     "Pipeline Jenkins mis en file pour le déploiement {} : {}",
@@ -88,6 +96,32 @@ public class DeploymentPipelineLauncher {
             ));
             deploymentRepository.saveAndFlush(deployment);
         }
+    }
+
+    /**
+     * Annulation demandée par un utilisateur.
+     *
+     * Volontairement non transactionnel : les appels à Jenkins (réseau)
+     * ne doivent pas tenir de verrou en base. Le statut est contrôlé
+     * avant l'appel, puis revérifié sous verrou par markCancelled.
+     */
+    public DeploymentResponse cancel(Long deploymentId, User currentUser) {
+        Deployment deployment = deploymentRepository
+                .findByIdAndDeletedFalse(deploymentId)
+                .orElseThrow(() -> new DeploymentNotFoundException(deploymentId));
+
+        deploymentService.ensureCancellable(deployment);
+
+        JenkinsCancellationResult result = jenkinsService.cancelPipeline(
+                deployment.getJenkinsQueueUrl(),
+                deployment.getJenkinsBuildNumber()
+        );
+
+        if (!result.jenkinsReached()) {
+            log.warn("Annulation du déploiement {} : {}", deploymentId, result.message());
+        }
+
+        return deploymentService.markCancelled(deploymentId, currentUser, result.message());
     }
 
     private static String truncate(String value) {

@@ -134,6 +134,13 @@ async function submitDeployment(request: CreateDeploymentRequest) {
     // Le message d'erreur est affiché par le store.
   }
 }
+async function cancelDeployment(deployment: DeploymentResponse) {
+  const where = deployment.status === 'RUNNING'
+    ? 'Le build Jenkins en cours sera arrêté. Si la mise à jour Kubernetes a déjà commencé, les ressources déjà appliquées restent en place.'
+    : 'Le build sera retiré de la file d’attente Jenkins.'
+  if (!window.confirm(`Annuler le déploiement de ${deployment.applicationName} ${deployment.version} sur ${deployment.environmentName} ?\n\n${where}`)) return
+  try { await deploymentsStore.cancel(deployment.id) } catch { /* store */ }
+}
 async function rollback(deployment: DeploymentResponse) {
   if (!window.confirm(`Revenir à la version ${deployment.version} sur ${deployment.environmentName} ?`)) return
   try { await deploymentsStore.rollback(deployment.id) } catch { /* store */ }
@@ -196,6 +203,9 @@ function formatMetric(value: number | null | undefined, unit = '') {
   return `${value.toFixed(1)}${unit}`
 }
 const HEALTH_LABELS: Record<string, string> = { HEALTHY: 'Sain', WARNING: 'À surveiller', CRITICAL: 'Critique' }
+function hasReason(deployment: DeploymentResponse) {
+  return !!deployment.errorMessage && (deployment.status === 'FAILED' || deployment.status === 'CANCELLED')
+}
 function requesterName(email: string) { return email?.split('@')[0] || email }
 </script>
 
@@ -271,7 +281,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </thead>
         <tbody>
           <template v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
-            <tr :class="{ 'has-error': deployment.status === 'FAILED' && deployment.errorMessage }">
+            <tr :class="{ 'has-error': hasReason(deployment) }">
               <td data-label="Application">
                 <div class="dp-app">
                   <strong>{{ deployment.applicationName }}</strong>
@@ -303,6 +313,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
               <td class="dp-actions-cell">
                 <div class="dp-actions">
                   <button v-if="deployment.status === 'SUCCESS'" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
+                  <button v-if="canManageDeployments && ACTIVE_STATUSES.includes(deployment.status)" type="button" class="dp-action dp-action-danger"
+                    :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
                   <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && deployment.status === 'SUCCESS'" type="button" class="dp-action"
                     :disabled="deploymentsStore.actionLoading" @click="rollback(deployment)">Rollback</button>
                   <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
@@ -312,8 +324,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                 </div>
               </td>
             </tr>
-            <tr v-if="deployment.status === 'FAILED' && deployment.errorMessage" class="dp-error-row">
-              <td colspan="7"><span class="dp-error-text">{{ deployment.errorMessage }}</span></td>
+            <tr v-if="hasReason(deployment)" class="dp-error-row">
+              <td colspan="7"><span class="dp-error-text" :class="{ 'is-neutral': deployment.status === 'CANCELLED' }">{{ deployment.errorMessage }}</span></td>
             </tr>
           </template>
         </tbody>
@@ -458,6 +470,7 @@ small.dp-muted { font-size: 12px; }
 .dp-action:disabled { opacity: .4; cursor: not-allowed; }
 
 .dp-error-row td { padding: 0 16px 14px; }
+.dp-error-text.is-neutral { border-left-color: var(--color-gray-300, #d1d5db); background: var(--soft); color: var(--muted); }
 .dp-error-text { display: block; padding: 8px 12px; border-left: 3px solid #f87171; border-radius: 4px; background: #fef2f2; color: #991b1b; font-size: 13px; }
 
 .dp-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 24px; color: var(--muted); text-align: center; }

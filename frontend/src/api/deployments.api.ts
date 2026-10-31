@@ -93,3 +93,18 @@ export async function rollbackDeployment(
 
   return response.data
 }
+
+/**
+ * Annule un déploiement en attente ou en cours : arrêt du build Jenkins
+ * (ou retrait de la file d'attente), puis statut CANCELLED.
+ */
+export async function cancelDeployment(
+  id: number,
+): Promise<DeploymentResponse> {
+  const response =
+    await httpClient.post<DeploymentResponse>(
+      `${DEPLOYMENTS_ENDPOINT}/${id}/cancel`,
+    )
+
+  return response.data
+}
