@@ -26,6 +26,9 @@ import com.smartdeploy.version.VersionNotFoundException;
 import com.smartdeploy.version.VersionStateException;
 
 import com.smartdeploy.integration.jenkins.JenkinsIntegrationException;
+import com.smartdeploy.deployment.DeploymentNotFoundException;
+import com.smartdeploy.deployment.DeploymentStateException;
+import com.smartdeploy.deployment.DeploymentValidationException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
@@ -261,6 +264,67 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiError handleVersionState(
             VersionStateException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                HttpStatus.CONFLICT.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+    /* ==========================================================
+     *   APPLICATIONS ET DÉPLOIEMENTS
+     *   (déplacés depuis SecurityConfig, où ils étaient inopérants)
+     * ========================================================== */
+
+    @ExceptionHandler(ApplicationNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiError handleApplicationNotFound(
+            ApplicationNotFoundException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                HttpStatus.NOT_FOUND.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(DeploymentNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiError handleDeploymentNotFound(
+            DeploymentNotFoundException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                HttpStatus.NOT_FOUND.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(DeploymentValidationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiError handleDeploymentValidation(
+            DeploymentValidationException exception
+    ) {
+        return new ApiError(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                exception.getMessage(),
+                Map.of()
+        );
+    }
+
+    @ExceptionHandler(DeploymentStateException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiError handleDeploymentState(
+            DeploymentStateException exception
     ) {
         return new ApiError(
                 LocalDateTime.now(),

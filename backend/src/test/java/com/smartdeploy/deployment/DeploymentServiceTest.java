@@ -5,7 +5,6 @@ import com.smartdeploy.application.Technology;
 import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentRepository;
 import com.smartdeploy.environment.EnvironmentType;
-import com.smartdeploy.integration.jenkins.JenkinsService;
 import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
 import com.smartdeploy.integration.kubernetes.KubernetesComponentRequest;
 import com.smartdeploy.integration.kubernetes.KubernetesNamespaceService;
@@ -21,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 
@@ -45,7 +45,7 @@ class DeploymentServiceTest {
     private EnvironmentRepository environmentRepository;
 
     @Mock
-    private JenkinsService jenkinsService;
+    private ApplicationEventPublisher eventPublisher;
 
     @Mock
     private DeploymentKubernetesConfigRepository kubernetesConfigRepository;
@@ -64,7 +64,7 @@ class DeploymentServiceTest {
                 deploymentRepository,
                 versionRepository,
                 environmentRepository,
-                jenkinsService,
+                eventPublisher,
                 kubernetesConfigRepository,
                 kubernetesNamespaceService,
                 kubernetesClient
@@ -219,10 +219,10 @@ class DeploymentServiceTest {
                 any(DeploymentKubernetesConfig.class)
         );
 
-        verify(
-                jenkinsService
-        ).triggerDeployment(
-                any(Deployment.class)
+        // Jenkins n'est plus appelé dans la transaction : un événement
+        // est publié et traité après commit par DeploymentPipelineLauncher.
+        verify(eventPublisher).publishEvent(
+                new DeploymentPipelineRequestedEvent(10L)
         );
     }
 
@@ -313,7 +313,7 @@ class DeploymentServiceTest {
         );
 
         verifyNoInteractions(
-                jenkinsService
+                eventPublisher
         );
     }
 
@@ -384,7 +384,7 @@ class DeploymentServiceTest {
         );
 
         verifyNoInteractions(
-                jenkinsService
+                eventPublisher
         );
     }
 
@@ -468,7 +468,7 @@ class DeploymentServiceTest {
         );
 
         verifyNoInteractions(
-                jenkinsService
+                eventPublisher
         );
     }
 
@@ -1101,6 +1101,139 @@ class DeploymentServiceTest {
                 never()
         ).saveAndFlush(
                 any(Deployment.class)
+        );
+    }
+
+    /* ==========================================================
+     *              JENKINS PIPELINE CALLBACK
+     * ==========================================================
+     */
+
+    @Test
+    void applyPipelineCallback_shouldMoveFromPendingToRunningAndStoreMetadata() {
+        Deployment deployment = createDeployment(DeploymentStatus.PENDING);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        PipelineCallbackResult result = deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.RUNNING, 44,
+                "http://jenkins/job/smartdeploy/44/", null, null
+        );
+
+        assertEquals(PipelineCallbackOutcome.APPLIED, result.outcome());
+        assertEquals(DeploymentStatus.RUNNING, deployment.getStatus());
+        assertEquals(44, deployment.getJenkinsBuildNumber());
+        assertEquals("http://jenkins/job/smartdeploy/44/", deployment.getDeploymentLogsUrl());
+        assertNotNull(deployment.getStartedAt());
+        verify(deploymentRepository).saveAndFlush(deployment);
+    }
+
+    @Test
+    void applyPipelineCallback_shouldTreatRepeatedStatusAsDuplicate() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(44);
+        LocalDateTime startedAt = LocalDateTime.now().minusMinutes(2);
+        deployment.setStartedAt(startedAt);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        PipelineCallbackResult result = deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.RUNNING, 44, null, null, null
+        );
+
+        assertEquals(PipelineCallbackOutcome.DUPLICATE, result.outcome());
+        assertEquals(DeploymentStatus.RUNNING, deployment.getStatus());
+        // Un doublon ne réinitialise pas la date de démarrage.
+        assertEquals(startedAt, deployment.getStartedAt());
+    }
+
+    @Test
+    void applyPipelineCallback_shouldAcceptSuccessWhenRunningCallbackWasLost() {
+        Deployment deployment = createDeployment(DeploymentStatus.PENDING);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        PipelineCallbackResult result = deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.SUCCESS, 44, null, null, "ecommerce-backend"
+        );
+
+        assertEquals(PipelineCallbackOutcome.APPLIED, result.outcome());
+        assertEquals(DeploymentStatus.SUCCESS, deployment.getStatus());
+        assertNotNull(deployment.getFinishedAt());
+        assertEquals("ecommerce-backend", deployment.getKubernetesDeploymentName());
+    }
+
+    @Test
+    void applyPipelineCallback_shouldIgnoreLateCallbackOnFinishedDeployment() {
+        Deployment deployment = createDeployment(DeploymentStatus.SUCCESS);
+        deployment.setKubernetesDeploymentName("ecommerce-backend");
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        PipelineCallbackResult result = deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.RUNNING, null, null, null, null
+        );
+
+        assertEquals(PipelineCallbackOutcome.IGNORED, result.outcome());
+        assertEquals(DeploymentStatus.SUCCESS, deployment.getStatus());
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
+
+    @Test
+    void applyPipelineCallback_shouldKeepKnownMetadataWhenCallbackSendsBlanks() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(44);
+        deployment.setDeploymentLogsUrl("http://jenkins/job/smartdeploy/44/");
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.FAILED, 44, "  ", null, ""
+        );
+
+        assertEquals(DeploymentStatus.FAILED, deployment.getStatus());
+        assertEquals("http://jenkins/job/smartdeploy/44/", deployment.getDeploymentLogsUrl());
+        assertNull(deployment.getKubernetesDeploymentName());
+        assertEquals("Échec signalé par Jenkins sans détail", deployment.getErrorMessage());
+    }
+
+    @Test
+    void applyPipelineCallback_shouldRejectCallbackFromAnotherBuild() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(44);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.applyPipelineCallback(
+                        10L, DeploymentStatus.SUCCESS, 45, null, null, null
+                )
+        );
+        assertEquals(DeploymentStatus.RUNNING, deployment.getStatus());
+    }
+
+    @Test
+    void applyPipelineCallback_shouldRejectForbiddenStatus() {
+        assertThrows(
+                DeploymentValidationException.class,
+                () -> deploymentService.applyPipelineCallback(
+                        10L, DeploymentStatus.ROLLED_BACK, 44, null, null, null
+                )
+        );
+        verifyNoInteractions(deploymentRepository);
+    }
+
+    @Test
+    void applyPipelineCallback_shouldThrowWhenDeploymentDoesNotExist() {
+        when(deploymentRepository.findActiveByIdForUpdate(99L))
+                .thenReturn(Optional.empty());
+
+        assertThrows(
+                DeploymentNotFoundException.class,
+                () -> deploymentService.applyPipelineCallback(
+                        99L, DeploymentStatus.RUNNING, 1, null, null, null
+                )
         );
     }
 

@@ -2,6 +2,8 @@ server:
   port: 8081
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5433/smartdeploy_db}
     username: ${DB_USERNAME:smartdeploy_user}
@@ -23,6 +25,9 @@ smartdeploy:
     username: ${JENKINS_USERNAME:admin}
     token: ${JENKINS_API_TOKEN}
     job-name: ${JENKINS_JOB_NAME:smartdeploy}
+    # Clé partagée Jenkins ↔ SmartDeploy (credential Jenkins "smartdeploy-api-key").
+    # Obligatoire, sans valeur par défaut : export des manifests + webhook.
+    api-key: ${SMARTDEPLOY_JENKINS_API_KEY}
 
 prometheus:
   url: ${PROMETHEUS_URL:http://192.168.85.129:30090}

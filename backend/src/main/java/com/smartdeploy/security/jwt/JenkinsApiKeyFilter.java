@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,23 +19,61 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 
+/**
+ * Authentification service-à-service de Jenkins.
+ *
+ * Jenkins présente l'en-tête X-SmartDeploy-Api-Key (credential Jenkins
+ * "smartdeploy-api-key") sur les deux seules routes qu'il appelle :
+ *  - GET  /api/kubernetes/manifests/deployments/{id}/export
+ *  - POST /api/webhooks/jenkins
+ *
+ * Une clé valide donne uniquement le rôle ROLE_JENKINS, que SecurityConfig
+ * n'accorde que sur ces deux routes. Une clé absente ou invalide laisse la
+ * requête anonyme : Spring Security répond alors 401.
+ */
 @Component
 public class JenkinsApiKeyFilter extends OncePerRequestFilter {
 
-    @Value("${smartdeploy.jenkins.api-key:}")
-    private String expectedApiKey;
+    public static final String API_KEY_HEADER = "X-SmartDeploy-Api-Key";
+
+    private static final Logger log =
+            LoggerFactory.getLogger(JenkinsApiKeyFilter.class);
+
+    private final byte[] expectedApiKey;
+
+    public JenkinsApiKeyFilter(
+            // Aucune valeur par défaut : l'application refuse de démarrer
+            // si SMARTDEPLOY_JENKINS_API_KEY n'est pas fournie.
+            @Value("${smartdeploy.jenkins.api-key}") String expectedApiKey
+    ) {
+        if (expectedApiKey == null || expectedApiKey.isBlank()) {
+            throw new IllegalStateException(
+                    "smartdeploy.jenkins.api-key est vide : "
+                            + "définir la variable SMARTDEPLOY_JENKINS_API_KEY"
+            );
+        }
+        this.expectedApiKey =
+                expectedApiKey.trim().getBytes(StandardCharsets.UTF_8);
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
+        return !isJenkinsRoute(request);
+    }
 
+    static boolean isJenkinsRoute(HttpServletRequest request) {
+        String method = request.getMethod();
         String path = request.getServletPath();
 
-        return !(
-                request.getMethod().equals("GET")
-                        && path.matches(
-                        "^/api/kubernetes/manifests/deployments/[0-9]+/export$"
-                )
+        boolean manifestExport = "GET".equals(method)
+                && path.matches(
+                "^/api/kubernetes/manifests/deployments/[0-9]+/export$"
         );
+
+        boolean webhook = "POST".equals(method)
+                && "/api/webhooks/jenkins".equals(path);
+
+        return manifestExport || webhook;
     }
 
     @Override
@@ -43,32 +83,32 @@ public class JenkinsApiKeyFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String providedApiKey =
-                request.getHeader("X-SmartDeploy-Api-Key");
+        String providedApiKey = request.getHeader(API_KEY_HEADER);
 
-        if (providedApiKey != null && !expectedApiKey.isBlank()) {
+        if (providedApiKey != null) {
 
             boolean valid = MessageDigest.isEqual(
-                    expectedApiKey.getBytes(StandardCharsets.UTF_8),
-                    providedApiKey.getBytes(StandardCharsets.UTF_8)
+                    expectedApiKey,
+                    providedApiKey.trim().getBytes(StandardCharsets.UTF_8)
             );
-            System.out.println("JENKINS API KEY VALID: " + valid);
 
             if (valid) {
-
                 var authentication =
                         new UsernamePasswordAuthenticationToken(
                                 "jenkins-service",
                                 null,
-                                List.of(
-                                        new SimpleGrantedAuthority(
-                                                "ROLE_JENKINS"
-                                        )
-                                )
+                                List.of(new SimpleGrantedAuthority("ROLE_JENKINS"))
                         );
-
                 SecurityContextHolder.getContext()
                         .setAuthentication(authentication);
+            } else {
+                // Ne jamais journaliser la clé reçue.
+                log.warn(
+                        "Clé API Jenkins invalide sur {} {} depuis {}",
+                        request.getMethod(),
+                        request.getServletPath(),
+                        request.getRemoteAddr()
+                );
             }
         }
 

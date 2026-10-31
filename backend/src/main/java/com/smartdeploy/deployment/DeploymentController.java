@@ -33,10 +33,14 @@ public class DeploymentController {
             @Valid @RequestBody CreateDeploymentRequest request,
             @AuthenticationPrincipal User currentUser
     ) {
-        return deploymentService.create(
+        DeploymentResponse created = deploymentService.create(
                 request,
                 currentUser
         );
+
+        // Relecture après commit : si Jenkins a refusé le déclenchement,
+        // le déploiement est déjà FAILED et l'interface doit le voir.
+        return deploymentService.findById(created.id());
     }
 
     /* ==========================================================

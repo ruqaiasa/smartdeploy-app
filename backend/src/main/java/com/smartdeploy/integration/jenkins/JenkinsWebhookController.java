@@ -1,14 +1,23 @@
 package com.smartdeploy.integration.jenkins;
 
 import com.smartdeploy.deployment.DeploymentService;
-import com.smartdeploy.deployment.DeploymentStatus;
-import com.smartdeploy.deployment.UpdateDeploymentMetadataRequest;
-import com.smartdeploy.deployment.UpdateDeploymentStatusRequest;
+import com.smartdeploy.deployment.PipelineCallbackResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * Callbacks du pipeline Jenkins.
+ *
+ * Accès réservé au rôle JENKINS (en-tête X-SmartDeploy-Api-Key,
+ * voir JenkinsApiKeyFilter et SecurityConfig).
+ */
 @RestController
 @RequestMapping("/api/webhooks/jenkins")
 public class JenkinsWebhookController {
+
+    private static final Logger log =
+            LoggerFactory.getLogger(JenkinsWebhookController.class);
 
     private final DeploymentService deploymentService;
 
@@ -19,45 +28,28 @@ public class JenkinsWebhookController {
     }
 
     @PostMapping
-    public void receiveWebhook(
-
-            @RequestBody
-            JenkinsWebhookRequest request
-
+    public PipelineCallbackResult receiveWebhook(
+            @RequestBody JenkinsWebhookRequest request
     ) {
-
-        deploymentService.updateMetadata(
-
-
-                request.deploymentId(),
-
-                new UpdateDeploymentMetadataRequest(
-
-                        request.buildNumber(),
-
-                        request.logsUrl(),
-
-                        request.kubernetesDeploymentName()
-
-
-                )
-
-        );
-
-        deploymentService.updateStatus(
-
-                request.deploymentId(),
-
-                new UpdateDeploymentStatusRequest(
-
+        PipelineCallbackResult result =
+                deploymentService.applyPipelineCallback(
+                        request.deploymentId(),
                         request.status(),
+                        request.buildNumber(),
+                        request.logsUrl(),
+                        request.errorMessage(),
+                        request.kubernetesDeploymentName()
+                );
 
-                        request.errorMessage()
-
-                )
-
+        log.info(
+                "Callback Jenkins : déploiement {}, build #{}, statut reçu {} → {} ({})",
+                request.deploymentId(),
+                request.buildNumber(),
+                request.status(),
+                result.status(),
+                result.outcome()
         );
 
+        return result;
     }
-
 }

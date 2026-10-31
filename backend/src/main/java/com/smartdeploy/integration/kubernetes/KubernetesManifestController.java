@@ -138,7 +138,7 @@ public class KubernetesManifestController {
             @RequestParam(required = false) String frontendImage
     ) throws IOException {
 
-        // 1. RÃ©cupÃ©rer la configuration enregistrÃ©e dans PostgreSQL
+        // 1. Récupérer la configuration enregistrée dans PostgreSQL
         DeploymentKubernetesConfig savedConfig =
                 kubernetesConfigRepository
                         .findByDeploymentId(deploymentId)
@@ -149,7 +149,7 @@ public class KubernetesManifestController {
                                 )
                         );
 
-        // 2. Reconstruire la requÃªte Kubernetes
+        // 2. Reconstruire la requête Kubernetes
         KubernetesApplicationRequest request;
 
         try {
@@ -188,7 +188,7 @@ public class KubernetesManifestController {
             );
         }
 
-        // 3. GÃ©nÃ©rer les manifests
+        // 3. Générer les manifests
         KubernetesApplicationPreviewResponse preview =
                 generatorService.generateApplication(request);
 
@@ -202,7 +202,7 @@ public class KubernetesManifestController {
             );
         }
 
-        // 5. CrÃ©er l'archive ZIP
+        // 5. Créer l'archive ZIP
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
@@ -223,7 +223,7 @@ public class KubernetesManifestController {
             }
         }
 
-        // 6. Retourner le ZIP Ã  Jenkins
+        // 6. Retourner le ZIP à Jenkins
         return ResponseEntity.ok()
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,

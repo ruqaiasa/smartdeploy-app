@@ -12,6 +12,7 @@ import com.smartdeploy.version.BuildStatus;
 import com.smartdeploy.version.Version;
 import com.smartdeploy.version.VersionNotFoundException;
 import com.smartdeploy.version.VersionRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import com.smartdeploy.integration.jenkins.JenkinsService;
 import com.smartdeploy.integration.kubernetes.KubernetesNamespaceService;
 import com.smartdeploy.integration.kubernetes.KubernetesApplicationRequest;
 import com.smartdeploy.integration.kubernetes.KubernetesDatabaseRequest;
@@ -40,7 +40,7 @@ public class DeploymentService {
     private final VersionRepository versionRepository;
     private final EnvironmentRepository environmentRepository;
 
-    private final JenkinsService jenkinsService;
+    private final ApplicationEventPublisher eventPublisher;
     private final DeploymentKubernetesConfigRepository kubernetesConfigRepository;
     private final KubernetesNamespaceService kubernetesNamespaceService;
     private final KubernetesClient kubernetesClient;
@@ -54,7 +54,7 @@ public class DeploymentService {
             DeploymentRepository deploymentRepository,
             VersionRepository versionRepository,
             EnvironmentRepository environmentRepository,
-            JenkinsService jenkinsService,
+            ApplicationEventPublisher eventPublisher,
             DeploymentKubernetesConfigRepository kubernetesConfigRepository,
             KubernetesNamespaceService kubernetesNamespaceService,
             KubernetesClient kubernetesClient
@@ -62,7 +62,7 @@ public class DeploymentService {
         this.deploymentRepository = deploymentRepository;
         this.versionRepository = versionRepository;
         this.environmentRepository = environmentRepository;
-        this.jenkinsService = jenkinsService;
+        this.eventPublisher = eventPublisher;
         this.kubernetesConfigRepository = kubernetesConfigRepository;
         this.kubernetesNamespaceService = kubernetesNamespaceService;
         this.kubernetesClient = kubernetesClient;
@@ -198,9 +198,12 @@ public class DeploymentService {
         // Valider que le Secret Kubernetes existe si une base de données est configurée.
         validateDatabaseSecret(namespace, request.kubernetesConfig());
 
-        // En cas d'échec du déclenchement Jenkins, la transaction est annulée.
-        // Ne pas enregistrer FAILED puis relancer l'exception : cet état serait annulé.
-        jenkinsService.triggerDeployment(savedDeployment);
+        // Jenkins est déclenché APRÈS le commit (DeploymentPipelineLauncher) :
+        // le déploiement et sa configuration sont alors visibles pour le
+        // webhook et l'export des manifests. Un échec Jenkins devient FAILED.
+        eventPublisher.publishEvent(
+                new DeploymentPipelineRequestedEvent(savedDeployment.getId())
+        );
 
         return toResponse(savedDeployment);
     }
@@ -330,6 +333,155 @@ public class DeploymentService {
                 );
 
         return toResponse(savedDeployment);
+    }
+
+    /* ==========================================================
+     *              JENKINS PIPELINE CALLBACK (WEBHOOK)
+     * ==========================================================
+     *
+     * Contrairement à updateStatus (action manuelle, transitions
+     * strictes), ce traitement tolère la réalité d'un réseau :
+     *  - callback répété            → DUPLICATE, sans erreur ;
+     *  - callback tardif/hors ordre → IGNORED si le déploiement
+     *                                 est déjà terminé ;
+     *  - RUNNING perdu              → PENDING peut passer
+     *                                 directement à l'état final.
+     * Métadonnées et statut sont appliqués dans une seule transaction.
+     */
+    public PipelineCallbackResult applyPipelineCallback(
+            Long deploymentId,
+            DeploymentStatus newStatus,
+            Integer buildNumber,
+            String logsUrl,
+            String errorMessage,
+            String kubernetesDeploymentName
+    ) {
+        if (deploymentId == null) {
+            throw new DeploymentValidationException(
+                    "deploymentId est obligatoire"
+            );
+        }
+
+        if (newStatus == null
+                || newStatus == DeploymentStatus.PENDING
+                || newStatus == DeploymentStatus.ROLLED_BACK) {
+            throw new DeploymentValidationException(
+                    "Statut de callback Jenkins non autorisé : " + newStatus
+            );
+        }
+
+        Deployment deployment = deploymentRepository
+                .findActiveByIdForUpdate(deploymentId)
+                .orElseThrow(() ->
+                        new DeploymentNotFoundException(deploymentId)
+                );
+
+        // Un callback d'un autre build Jenkins ne doit pas modifier
+        // ce déploiement (relance manuelle du job, rejeu, etc.).
+        if (buildNumber != null
+                && deployment.getJenkinsBuildNumber() != null
+                && !buildNumber.equals(deployment.getJenkinsBuildNumber())) {
+            throw new DeploymentStateException(
+                    "Le déploiement " + deploymentId
+                            + " est associé au build Jenkins #"
+                            + deployment.getJenkinsBuildNumber()
+                            + ", callback reçu du build #" + buildNumber
+            );
+        }
+
+        DeploymentStatus currentStatus = deployment.getStatus();
+
+        if (isTerminal(currentStatus) && currentStatus != newStatus) {
+            return new PipelineCallbackResult(
+                    deploymentId,
+                    currentStatus,
+                    PipelineCallbackOutcome.IGNORED
+            );
+        }
+
+        applyPipelineMetadata(
+                deployment,
+                buildNumber,
+                logsUrl,
+                kubernetesDeploymentName
+        );
+
+        if (currentStatus == newStatus) {
+            deploymentRepository.saveAndFlush(deployment);
+            return new PipelineCallbackResult(
+                    deploymentId,
+                    currentStatus,
+                    PipelineCallbackOutcome.DUPLICATE
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        switch (newStatus) {
+            case RUNNING -> {
+                deployment.setStartedAt(now);
+                deployment.setFinishedAt(null);
+                deployment.setDurationSeconds(null);
+                deployment.setErrorMessage(null);
+            }
+            case SUCCESS -> completeDeployment(deployment, now, null);
+            case FAILED -> {
+                String normalizedError = normalizeNullableText(errorMessage);
+                completeDeployment(
+                        deployment,
+                        now,
+                        normalizedError == null
+                                ? "Échec signalé par Jenkins sans détail"
+                                : normalizedError
+                );
+            }
+            case CANCELLED -> completeDeployment(
+                    deployment,
+                    now,
+                    normalizeNullableText(errorMessage)
+            );
+            default -> throw new IllegalStateException(
+                    "Statut inattendu : " + newStatus
+            );
+        }
+
+        deployment.setStatus(newStatus);
+        deploymentRepository.saveAndFlush(deployment);
+
+        return new PipelineCallbackResult(
+                deploymentId,
+                newStatus,
+                PipelineCallbackOutcome.APPLIED
+        );
+    }
+
+    private void applyPipelineMetadata(
+            Deployment deployment,
+            Integer buildNumber,
+            String logsUrl,
+            String kubernetesDeploymentName
+    ) {
+        // Une valeur absente n'efface jamais une valeur déjà connue.
+        if (buildNumber != null) {
+            deployment.setJenkinsBuildNumber(buildNumber);
+        }
+
+        String normalizedLogsUrl = normalizeNullableText(logsUrl);
+        if (normalizedLogsUrl != null) {
+            deployment.setDeploymentLogsUrl(normalizedLogsUrl);
+        }
+
+        String normalizedName = normalizeNullableText(kubernetesDeploymentName);
+        if (normalizedName != null) {
+            deployment.setKubernetesDeploymentName(normalizedName);
+        }
+    }
+
+    private static boolean isTerminal(DeploymentStatus status) {
+        return status == DeploymentStatus.SUCCESS
+                || status == DeploymentStatus.FAILED
+                || status == DeploymentStatus.CANCELLED
+                || status == DeploymentStatus.ROLLED_BACK;
     }
 
     /* ==========================================================

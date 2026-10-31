@@ -42,7 +42,7 @@ public class JenkinsService {
 
         return new JenkinsBuildResponse(
                 queueUrl,
-                "Pipeline Jenkins dÃ©clenchÃ© avec succÃ¨s"
+                "Pipeline Jenkins déclenché avec succès"
         );
     }
 
@@ -85,7 +85,7 @@ public class JenkinsService {
         DeploymentKubernetesConfig config = kubernetesConfigRepository
                 .findByDeploymentId(deployment.getId())
                 .orElseThrow(() -> new JenkinsIntegrationException(
-                        "Configuration Kubernetes introuvable pour le dÃ©ploiement "
+                        "Configuration Kubernetes introuvable pour le déploiement "
                                 + deployment.getId()
                 ));
 
@@ -185,7 +185,7 @@ public class JenkinsService {
 
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             throw new JenkinsIntegrationException(
-                    "Configuration Kubernetes JSON invalide pour le dÃ©ploiement "
+                    "Configuration Kubernetes JSON invalide pour le déploiement "
                             + deployment.getId()
             );
         }
@@ -229,31 +229,31 @@ public class JenkinsService {
 
         if (deployment == null) {
             throw new JenkinsIntegrationException(
-                    "Le dÃ©ploiement Ã  transmettre Ã  Jenkins est absent"
+                    "Le déploiement à transmettre à Jenkins est absent"
             );
         }
 
         if (deployment.getId() == null) {
             throw new JenkinsIntegrationException(
-                    "Le dÃ©ploiement doit Ãªtre sauvegardÃ© avant de dÃ©clencher Jenkins"
+                    "Le déploiement doit être sauvegardé avant de déclencher Jenkins"
             );
         }
 
         if (deployment.getVersion() == null) {
             throw new JenkinsIntegrationException(
-                    "Aucune version n'est associÃ©e au dÃ©ploiement"
+                    "Aucune version n'est associée au déploiement"
             );
         }
 
         if (deployment.getVersion().getApplication() == null) {
             throw new JenkinsIntegrationException(
-                    "Aucune application n'est associÃ©e Ã  la version"
+                    "Aucune application n'est associée à la version"
             );
         }
 
         if (deployment.getEnvironment() == null) {
             throw new JenkinsIntegrationException(
-                    "Aucun environnement n'est associÃ© au dÃ©ploiement"
+                    "Aucun environnement n'est associé au déploiement"
             );
         }
 
@@ -263,7 +263,7 @@ public class JenkinsService {
                         .getRepositoryUrl()
         )) {
             throw new JenkinsIntegrationException(
-                    "L'URL du dÃ©pÃ´t Git de l'application est absente"
+                    "L'URL du dépôt Git de l'application est absente"
             );
         }
 

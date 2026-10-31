@@ -103,6 +103,9 @@ class DeploymentControllerTest {
                 currentUser
         )).thenReturn(response);
 
+        // Le contrôleur relit le déploiement après commit.
+        when(deploymentService.findById(10L)).thenReturn(response);
+
         mockMvc.perform(
                         post("/api/deployments")
                                 .contentType(
@@ -149,6 +152,7 @@ class DeploymentControllerTest {
 
         verify(deploymentService)
                 .create(request, currentUser);
+        verify(deploymentService).findById(10L);
     }
 
     @Test
