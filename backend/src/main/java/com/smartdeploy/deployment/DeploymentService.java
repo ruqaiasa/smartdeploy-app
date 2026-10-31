@@ -448,11 +448,46 @@ public class DeploymentService {
         deployment.setStatus(newStatus);
         deploymentRepository.saveAndFlush(deployment);
 
+        if (newStatus == DeploymentStatus.SUCCESS) {
+            markVersionBuilt(deployment);
+        }
+
         return new PipelineCallbackResult(
                 deploymentId,
                 newStatus,
                 PipelineCallbackOutcome.APPLIED
         );
+    }
+
+    /*
+     * Cycle de vie d'une version :
+     *  - PENDING : jamais construite et déployée avec succès ;
+     *  - SUCCESS : le pipeline Jenkins a construit son image, l'a publiée
+     *              et l'a déployée avec succès au moins une fois.
+     *
+     * Un échec de déploiement ne rend PAS la version FAILED : Jenkins ne
+     * précise pas l'étape en échec (build, qualité, rollout Kubernetes…),
+     * et une version FAILED ne serait plus déployable. Elle reste donc
+     * dans son état actuel et peut être redéployée.
+     */
+    private void markVersionBuilt(Deployment deployment) {
+        Version version = deployment.getVersion();
+
+        if (version == null || version.isDeleted()) {
+            return;
+        }
+
+        version.setBuildStatus(BuildStatus.SUCCESS);
+
+        if (deployment.getJenkinsBuildNumber() != null) {
+            version.setBuildNumber(deployment.getJenkinsBuildNumber());
+        }
+
+        if (deployment.getDeploymentLogsUrl() != null) {
+            version.setBuildLogsUrl(deployment.getDeploymentLogsUrl());
+        }
+
+        versionRepository.saveAndFlush(version);
     }
 
     private void applyPipelineMetadata(

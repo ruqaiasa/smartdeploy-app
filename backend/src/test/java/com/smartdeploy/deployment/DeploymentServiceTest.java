@@ -1198,6 +1198,58 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void applyPipelineCallback_shouldMarkPendingVersionAsBuiltOnSuccess() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.getVersion().setBuildStatus(BuildStatus.PENDING);
+        deployment.setJenkinsBuildNumber(44);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.SUCCESS, 44,
+                "http://jenkins/job/smartdeploy/44/", null, "ecommerce-backend"
+        );
+
+        Version version = deployment.getVersion();
+        assertEquals(BuildStatus.SUCCESS, version.getBuildStatus());
+        assertEquals(44, version.getBuildNumber());
+        assertEquals("http://jenkins/job/smartdeploy/44/", version.getBuildLogsUrl());
+        verify(versionRepository).saveAndFlush(version);
+    }
+
+    @Test
+    void applyPipelineCallback_shouldKeepVersionDeployableWhenPipelineFails() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.getVersion().setBuildStatus(BuildStatus.PENDING);
+        deployment.setJenkinsBuildNumber(44);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.FAILED, 44, null, "Rollout timeout", null
+        );
+
+        assertEquals(BuildStatus.PENDING, deployment.getVersion().getBuildStatus());
+        verify(versionRepository, never()).saveAndFlush(any(Version.class));
+    }
+
+    @Test
+    void applyPipelineCallback_shouldNotTouchVersionForIgnoredCallback() {
+        Deployment deployment = createDeployment(DeploymentStatus.FAILED);
+        deployment.getVersion().setBuildStatus(BuildStatus.PENDING);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        PipelineCallbackResult result = deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.SUCCESS, null, null, null, null
+        );
+
+        assertEquals(PipelineCallbackOutcome.IGNORED, result.outcome());
+        assertEquals(BuildStatus.PENDING, deployment.getVersion().getBuildStatus());
+        verify(versionRepository, never()).saveAndFlush(any(Version.class));
+    }
+
+    @Test
     void applyPipelineCallback_shouldRejectCallbackFromAnotherBuild() {
         Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
         deployment.setJenkinsBuildNumber(44);
