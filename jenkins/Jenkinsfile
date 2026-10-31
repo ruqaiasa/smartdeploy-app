@@ -81,6 +81,100 @@ def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentNa
 }
 
 
+/**
+ * Explication lisible de l'échec d'une étape, envoyée à SmartDeploy.
+ * Le détail complet reste dans la console Jenkins (lien « Build » de SmartDeploy).
+ */
+String failureHint(String stage) {
+    switch (stage) {
+        case 'Notify RUNNING':
+            return 'SmartDeploy a refusé la notification de démarrage (clé API Jenkins différente, déploiement annulé ou backend injoignable).'
+        case 'Validate Parameters':
+            return 'Paramètres de déploiement invalides : vérifiez l’image, la version et les chemins Docker.'
+        case 'Checkout Git':
+        case 'Verify Checkout':
+            return 'Impossible de récupérer le code : URL du dépôt ou branche introuvable.'
+        case 'Verify Git Commit':
+            return 'Le commit de la branche ne correspond pas au commit demandé par la version.'
+        case 'Build Maven':
+            return 'La compilation Maven a échoué : erreur de compilation ou test en échec.'
+        case 'Verify Artifact':
+            return 'Aucun fichier JAR produit par Maven : vérifiez le dossier du backend.'
+        case 'SonarQube Analysis':
+            return 'L’analyse SonarQube n’a pas pu s’exécuter : serveur SonarQube ou scanner indisponible.'
+        case 'Quality Gate':
+            return 'Le code ne respecte pas le Quality Gate SonarQube, ou SonarQube n’a pas répondu à temps.'
+        case 'Validate Dockerfile':
+            return 'Dockerfile du backend introuvable : vérifiez le dossier et le chemin du Dockerfile.'
+        case 'Docker Build':
+        case 'Docker Build Frontend':
+            return 'La construction de l’image Docker a échoué : erreur dans le Dockerfile ou dans le build applicatif.'
+        case 'Trivy Security Scan':
+        case 'Trivy Frontend Security Scan':
+            return 'Le scan de sécurité Trivy a échoué ou a détecté une vulnérabilité bloquante.'
+        case 'Check Docker Registry':
+        case 'Docker Push':
+        case 'Verify Registry':
+        case 'Docker Push Frontend':
+            return 'La registry Docker est injoignable ou a refusé l’image.'
+        case 'Checkout Frontend':
+            return 'Impossible de récupérer le code du frontend : dépôt ou branche introuvable.'
+        case 'Check Kubernetes':
+        case 'Prepare Kubernetes Namespace':
+            return 'Le cluster Kubernetes est injoignable depuis Jenkins.'
+        case 'Download Kubernetes Manifests':
+            return 'SmartDeploy n’a pas fourni les manifests (clé API, configuration ou backend injoignable).'
+        case 'Validate Kubernetes Manifests':
+        case 'Apply Kubernetes Manifests':
+            return 'Kubernetes a refusé les manifests générés.'
+        case 'Verify Kubernetes Rollout':
+            return 'Les pods ne sont pas devenus prêts dans le délai de 900 s.'
+        default:
+            return ''
+    }
+}
+
+/**
+ * Pods en difficulté dans le namespace (ImagePullBackOff, CrashLoopBackOff…),
+ * pour expliquer un échec de rollout sans ouvrir Kubernetes.
+ */
+String podProblems() {
+    if (!env.K8S_NAMESPACE) {
+        return ''
+    }
+    try {
+        def out = sh(
+            returnStdout: true,
+            script: '''
+                kubectl get pods -n "$K8S_NAMESPACE" \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{.status.containerStatuses[*].state.terminated.reason}{"\\n"}{end}' \
+                  2>/dev/null | awk 'NF > 1' | head -n 5 || true
+            '''
+        ).trim()
+        return out ? out.readLines().join(', ') : ''
+    } catch (ignored) {
+        return ''
+    }
+}
+
+/** Message d'échec complet : étape, cause probable, pods en erreur. */
+String failureMessage() {
+    def stage = env.SD_STAGE ?: 'inconnue'
+    def message = "Échec à l’étape « ${stage} »."
+    def hint = failureHint(stage)
+    if (hint) {
+        message += " ${hint}"
+    }
+    if (stage.contains('Kubernetes')) {
+        def pods = podProblems()
+        if (pods) {
+            message += " Pods en erreur : ${pods}."
+        }
+    }
+    return message.length() > 1500 ? message.substring(0, 1500) : message
+}
+
+
 pipeline {
 
     agent any
@@ -185,6 +279,7 @@ pipeline {
         // ========================================================
         stage('Notify RUNNING') {
             steps {
+                script { env.SD_STAGE = 'Notify RUNNING' }
                 script {
                     notifySmartDeploy('RUNNING', null, null, true)
                 }
@@ -198,6 +293,7 @@ pipeline {
         stage('Deployment Information') {
 
             steps {
+                script { env.SD_STAGE = 'Deployment Information' }
 
                 echo "======================================"
                 echo " SmartDeploy Deployment"
@@ -235,6 +331,7 @@ pipeline {
         stage('Validate Parameters') {
 
             steps {
+                script { env.SD_STAGE = 'Validate Parameters' }
 
                 script {
 
@@ -306,6 +403,7 @@ pipeline {
         stage('Checkout Git') {
 
             steps {
+                script { env.SD_STAGE = 'Checkout Git' }
 
                 deleteDir()
 
@@ -323,6 +421,7 @@ pipeline {
         stage('Verify Checkout') {
 
             steps {
+                script { env.SD_STAGE = 'Verify Checkout' }
 
                 sh '''
                     echo "======================================"
@@ -362,6 +461,7 @@ pipeline {
             }
 
             steps {
+                script { env.SD_STAGE = 'Verify Git Commit' }
 
                 script {
 
@@ -391,6 +491,7 @@ pipeline {
         stage('Build Maven') {
             when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
             steps {
+                script { env.SD_STAGE = 'Build Maven' }
                 script {
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
@@ -416,6 +517,7 @@ pipeline {
         stage('Verify Artifact') {
             when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
             steps {
+                script { env.SD_STAGE = 'Verify Artifact' }
                 script {
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
@@ -436,6 +538,7 @@ pipeline {
         stage('SonarQube Analysis') {
             when { expression { params.SONAR_MODE != 'SKIP' } }
             steps {
+                script { env.SD_STAGE = 'SonarQube Analysis' }
                 script {
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
@@ -475,6 +578,7 @@ pipeline {
         stage('Quality Gate') {
             when { expression { params.SONAR_MODE != 'SKIP' } }
             steps {
+                script { env.SD_STAGE = 'Quality Gate' }
                 timeout(time: 15, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
@@ -487,6 +591,7 @@ pipeline {
         // ========================================================
         stage('Validate Dockerfile') {
             steps {
+                script { env.SD_STAGE = 'Validate Dockerfile' }
                 script {
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
@@ -506,6 +611,7 @@ pipeline {
         stage('Prepare Deployment') {
 
             steps {
+                script { env.SD_STAGE = 'Prepare Deployment' }
 
                 script {
 
@@ -631,6 +737,7 @@ env.REGISTRY_IMAGE =
         // ========================================================
         stage('Docker Build') {
             steps {
+                script { env.SD_STAGE = 'Docker Build' }
                 script {
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
@@ -649,6 +756,7 @@ env.REGISTRY_IMAGE =
         stage('Verify Docker Image') {
 
             steps {
+                script { env.SD_STAGE = 'Verify Docker Image' }
 
                 sh '''
                     docker image inspect \
@@ -672,6 +780,7 @@ env.REGISTRY_IMAGE =
                 timeout(time: 20, unit: 'MINUTES')
             }
             steps {
+                script { env.SD_STAGE = 'Trivy Security Scan' }
                 sh '''
                     set -eu
                     mkdir -p security-reports
@@ -728,6 +837,7 @@ env.REGISTRY_IMAGE =
         stage('Docker Tag') {
 
             steps {
+                script { env.SD_STAGE = 'Docker Tag' }
 
                 sh '''
                     echo "======================================"
@@ -750,6 +860,7 @@ env.REGISTRY_IMAGE =
         stage('Check Docker Registry') {
 
             steps {
+                script { env.SD_STAGE = 'Check Docker Registry' }
 
                 sh '''
                     echo "======================================"
@@ -778,6 +889,7 @@ env.REGISTRY_IMAGE =
         stage('Docker Push') {
 
             steps {
+                script { env.SD_STAGE = 'Docker Push' }
 
                 sh '''
                     echo "======================================"
@@ -797,6 +909,7 @@ env.REGISTRY_IMAGE =
         stage('Verify Registry') {
 
             steps {
+                script { env.SD_STAGE = 'Verify Registry' }
 
                 sh '''
                     echo "======================================"
@@ -830,6 +943,7 @@ env.REGISTRY_IMAGE =
         stage('Checkout Frontend') {
             when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
             steps {
+                script { env.SD_STAGE = 'Checkout Frontend' }
                 dir('frontend-source') {
                     deleteDir()
                     git branch: params.FRONTEND_GIT_BRANCH.trim(),
@@ -841,6 +955,7 @@ env.REGISTRY_IMAGE =
         stage('Docker Build Frontend') {
             when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
             steps {
+                script { env.SD_STAGE = 'Docker Build Frontend' }
                 withEnv([
                     "FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}",
                     "FRONTEND_DOCKERFILE=${params.FRONTEND_DOCKERFILE_PATH.trim()}",
@@ -871,6 +986,7 @@ env.REGISTRY_IMAGE =
             when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
             options { timeout(time: 20, unit: 'MINUTES') }
             steps {
+                script { env.SD_STAGE = 'Trivy Frontend Security Scan' }
                 withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
                     sh '''
                         set -eu
@@ -921,6 +1037,7 @@ env.REGISTRY_IMAGE =
        stage('Docker Push Frontend') {
     when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
     steps {
+        script { env.SD_STAGE = 'Docker Push Frontend' }
         withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
             sh '''
                 set -eu
@@ -955,6 +1072,7 @@ env.REGISTRY_IMAGE =
 
         stage('Prepare Kubernetes Images') {
             steps {
+                script { env.SD_STAGE = 'Prepare Kubernetes Images' }
                 script {
                     // L'image backend existe maintenant dans le registry.
                     env.BACKEND_IMAGE_BUILT = env.REGISTRY_IMAGE
@@ -974,6 +1092,7 @@ env.REGISTRY_IMAGE =
         stage('Check Kubernetes') {
 
             steps {
+                script { env.SD_STAGE = 'Check Kubernetes' }
 
                 sh '''
                     echo "======================================"
@@ -996,6 +1115,7 @@ env.REGISTRY_IMAGE =
         stage('Prepare Kubernetes Namespace') {
 
             steps {
+                script { env.SD_STAGE = 'Prepare Kubernetes Namespace' }
 
                 sh '''
                     echo "======================================"
@@ -1022,6 +1142,7 @@ env.REGISTRY_IMAGE =
 
 stage('Download Kubernetes Manifests') {
     steps {
+        script { env.SD_STAGE = 'Download Kubernetes Manifests' }
 
         withCredentials([
             string(
@@ -1093,6 +1214,7 @@ stage('Download Kubernetes Manifests') {
 
 stage('Validate Kubernetes Manifests') {
     steps {
+        script { env.SD_STAGE = 'Validate Kubernetes Manifests' }
 
         sh '''
             set -eu
@@ -1118,6 +1240,7 @@ stage('Validate Kubernetes Manifests') {
 
 stage('Apply Kubernetes Manifests') {
     steps {
+        script { env.SD_STAGE = 'Apply Kubernetes Manifests' }
 
         sh '''
             set -eu
@@ -1232,6 +1355,7 @@ stage('Apply Kubernetes Manifests') {
 
         stage('Verify Kubernetes Rollout') {
             steps {
+                script { env.SD_STAGE = 'Verify Kubernetes Rollout' }
                 sh '''
                     set -eu
                     # Vérifie UNIQUEMENT les ressources de ce déploiement, pas tout le namespace.
@@ -1246,6 +1370,7 @@ stage('Apply Kubernetes Manifests') {
 
         stage('Verify Kubernetes Resources') {
             steps {
+                script { env.SD_STAGE = 'Verify Kubernetes Resources' }
                 sh '''
                     set -eu
                     kubectl get -n "$K8S_NAMESPACE" -f k8s-generated/ -o wide
@@ -1258,6 +1383,7 @@ stage('Apply Kubernetes Manifests') {
         stage('Deployment Completed') {
 
             steps {
+                script { env.SD_STAGE = 'Deployment Completed' }
 
                 echo "======================================"
 
@@ -1308,9 +1434,11 @@ stage('Apply Kubernetes Manifests') {
                 echo "======================================"
                 echo " PIPELINE FAILED"
                 echo "======================================"
+                def reason = failureMessage()
+                echo "Cause transmise à SmartDeploy : ${reason}"
                 notifySmartDeploy(
                     'FAILED',
-                    'Le pipeline Jenkins ou le déploiement Kubernetes a échoué',
+                    reason,
                     env.K8S_DEPLOYMENT_NAME ?: '',
                     false
                 )
