@@ -108,17 +108,8 @@ public class MonitoringService {
                 applicationName
         );
 
-        String restartCountQuery = """
-            sum(
-              kube_pod_container_status_restarts_total{
-                namespace="%s",
-                pod=~"%s-.*"
-              }
-            )
-            """.formatted(
-                namespace,
-                applicationName
-        );
+        String restartCountQuery =
+                restartCountQuery(namespace, applicationName);
 
         double cpuUsage =
                 prometheusClient.querySingleValue(
@@ -385,5 +376,52 @@ public class MonitoringService {
         );
 
         return metrics;
+    }
+
+    /* ==========================================================
+     * REDÉMARRAGES RÉCENTS
+     * ==========================================================
+     *
+     * kube_pod_container_status_restarts_total est un compteur cumulé
+     * depuis la création du pod : utilisé brut, il maintenait en alerte
+     * des applications stables depuis des jours. On compte désormais
+     * les redémarrages des 15 dernières minutes, sur tous les pods de
+     * l'application (backend, frontend) ET sa base PostgreSQL.
+     */
+    static final String RESTART_WINDOW = "15m";
+
+    static String restartCountQuery(String namespace, String applicationName) {
+        return """
+            round(
+              sum(
+                increase(
+                  kube_pod_container_status_restarts_total{
+                    namespace="%s",
+                    pod=~"%s"
+                  }[%s]
+                )
+              )
+            )
+            """.formatted(
+                namespace,
+                restartPodPattern(applicationName),
+                RESTART_WINDOW
+        );
+    }
+
+    /**
+     * « fullstack-demo-backend » → « (fullstack-demo-.*|postgresql-[0-9]+) » :
+     * le préfixe de l'application couvre backend et frontend ; postgresql-N
+     * est le pod du StatefulSet généré par SmartDeploy.
+     */
+    static String restartPodPattern(String applicationName) {
+        String prefix = applicationName;
+        for (String suffix : new String[] {"-backend", "-frontend"}) {
+            if (prefix.endsWith(suffix) && prefix.length() > suffix.length()) {
+                prefix = prefix.substring(0, prefix.length() - suffix.length());
+                break;
+            }
+        }
+        return "(" + prefix + "-.*|postgresql-[0-9]+)";
     }
 }

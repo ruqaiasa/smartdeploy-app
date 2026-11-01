@@ -147,7 +147,7 @@ public class AlertDetectionService {
                     AlertType.HIGH_RESTART_COUNT,
                     AlertSeverity.CRITICAL,
                     "Nombre élevé de redémarrages",
-                    "Le nombre de redémarrages des conteneurs a atteint un niveau critique.",
+                    "Au moins " + CRITICAL_RESTART_THRESHOLD + " redémarrages de conteneurs (application ou base de données) au cours des 15 dernières minutes.",
                     "restartCount",
                     (double) restartCount,
                     (double) CRITICAL_RESTART_THRESHOLD
@@ -165,7 +165,7 @@ public class AlertDetectionService {
                     AlertType.HIGH_RESTART_COUNT,
                     AlertSeverity.WARNING,
                     "Redémarrages répétés",
-                    "Plusieurs redémarrages de conteneurs ont été détectés.",
+                    "Plusieurs redémarrages de conteneurs (application ou base de données) au cours des 15 dernières minutes.",
                     "restartCount",
                     (double) restartCount,
                     (double) WARNING_RESTART_THRESHOLD

@@ -371,7 +371,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
               <div><dt>Pods disponibles</dt><dd>{{ monitoringStore.metrics.runningPods }}<span class="dp-muted"> / {{ monitoringStore.metrics.desiredPods }}</span></dd></div>
               <div><dt>Processeur</dt><dd>{{ formatMetric(monitoringStore.metrics.cpuUsagePercent, ' %') }}</dd></div>
               <div><dt>Mémoire</dt><dd>{{ formatMetric(monitoringStore.metrics.memoryUsageMb, ' Mo') }}</dd></div>
-              <div><dt>Redémarrages</dt><dd>{{ monitoringStore.metrics.restartCount }}</dd></div>
+              <div><dt>Redémarrages (15 dernières min)</dt><dd>{{ monitoringStore.metrics.restartCount }}</dd></div>
             </dl>
           </template>
 

@@ -267,7 +267,27 @@ public class KubernetesManifestGeneratorService {
                 .withMountPath("/var/lib/postgresql/data")
                 .endVolumeMount()
 
-                // Readiness probe
+                /*
+                 * Sondes PostgreSQL adaptées à un nœud partagé (Jenkins,
+                 * Docker, SonarQube et K3s sur la même machine) :
+                 *  - démarrage : jusqu'à 5 min avant toute autre sonde ;
+                 *  - vie       : simple connexion TCP, sans lancer de
+                 *                commande dans le conteneur, et tolérante
+                 *                (2 min d'échecs) avant un redémarrage ;
+                 *  - disponibilité : pg_isready, qui ne redémarre jamais
+                 *                le conteneur, mais retire le pod du Service.
+                 * L'ancienne sonde de vie « pg_isready » (5 s, 3 échecs)
+                 * redémarrait une base saine dès que le nœud était chargé.
+                 */
+                .withNewStartupProbe()
+                .withNewTcpSocket()
+                .withNewPort(5432)
+                .endTcpSocket()
+                .withPeriodSeconds(10)
+                .withTimeoutSeconds(5)
+                .withFailureThreshold(30)
+                .endStartupProbe()
+
                 .withNewReadinessProbe()
                 .withNewExec()
                 .addToCommand(
@@ -276,25 +296,18 @@ public class KubernetesManifestGeneratorService {
                         "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
                 )
                 .endExec()
-                .withInitialDelaySeconds(10)
                 .withPeriodSeconds(10)
-                .withTimeoutSeconds(5)
-                .withFailureThreshold(3)
+                .withTimeoutSeconds(10)
+                .withFailureThreshold(6)
                 .endReadinessProbe()
 
-                // Liveness probe
                 .withNewLivenessProbe()
-                .withNewExec()
-                .addToCommand(
-                        "sh",
-                        "-c",
-                        "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
-                )
-                .endExec()
-                .withInitialDelaySeconds(30)
+                .withNewTcpSocket()
+                .withNewPort(5432)
+                .endTcpSocket()
                 .withPeriodSeconds(20)
-                .withTimeoutSeconds(5)
-                .withFailureThreshold(3)
+                .withTimeoutSeconds(10)
+                .withFailureThreshold(6)
                 .endLivenessProbe()
 
                 // Resource limits
@@ -309,7 +322,7 @@ public class KubernetesManifestGeneratorService {
                 )
                 .addToLimits(
                         "cpu",
-                        new Quantity("500m")
+                        new Quantity("1000m")
                 )
                 .addToLimits(
                         "memory",
