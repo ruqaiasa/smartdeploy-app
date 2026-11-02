@@ -14,7 +14,10 @@ public record JenkinsWebhookRequest(
 
         String errorMessage,
 
-        String kubernetesDeploymentName
+        String kubernetesDeploymentName,
 
+        // Images publiées, par empreinte (absentes avec un ancien Jenkinsfile)
+        String backendImage,
+        String frontendImage
 ) {
 }

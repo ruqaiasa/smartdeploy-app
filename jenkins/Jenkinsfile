@@ -46,7 +46,9 @@ def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentNa
   "logsUrl": ${json(logsUrl)},
   "status": ${json(status)},
   "errorMessage": ${json(errorMessage)},
-  "kubernetesDeploymentName": ${json(k8sDeploymentName)}
+  "kubernetesDeploymentName": ${json(k8sDeploymentName)},
+  "backendImage": ${json(env.BACKEND_IMAGE_BUILT ?: '')},
+  "frontendImage": ${json(env.FRONTEND_IMAGE_BUILT ?: '')}
 }"""
 
     writeFile file: '.smartdeploy-callback.json', text: payload
@@ -80,6 +82,31 @@ def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentNa
     }
 }
 
+
+/**
+ * Référence par empreinte d'une image publiée dans la registry :
+ * « localhost:5000/app:1.0.0 » → « localhost:5000/app@sha256:... ».
+ * Repli sur la référence par tag (avec avertissement) si Docker ne
+ * fournit pas d'empreinte, pour ne jamais bloquer un déploiement.
+ */
+String resolveDigest(String taggedImage) {
+    def repository = taggedImage.replaceFirst(/:[^:\/]+$/, '')
+    def digestRef = ''
+    withEnv(["SD_IMAGE=${taggedImage}", "SD_REPOSITORY=${repository}"]) {
+        digestRef = sh(
+            returnStdout: true,
+            script: '''
+                docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$SD_IMAGE" \
+                  | grep "^${SD_REPOSITORY}@sha256:" | head -n 1 || true
+            '''
+        ).trim()
+    }
+    if (!digestRef) {
+        echo "AVERTISSEMENT : empreinte introuvable pour ${taggedImage}, utilisation du tag."
+        return taggedImage
+    }
+    return digestRef
+}
 
 /**
  * Explication lisible de l'échec d'une étape, envoyée à SmartDeploy.
@@ -1074,9 +1101,14 @@ env.REGISTRY_IMAGE =
             steps {
                 script { env.SD_STAGE = 'Prepare Kubernetes Images' }
                 script {
-                    // L'image backend existe maintenant dans le registry.
-                    env.BACKEND_IMAGE_BUILT = env.REGISTRY_IMAGE
-                    env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK' ? params.FRONTEND_IMAGE.trim() : ''
+                    // Les manifests référencent les images par EMPREINTE
+                    // (nom@sha256:...) et non par tag : chaque build produit
+                    // une référence unique, donc Kubernetes remplace réellement
+                    // les pods, et SmartDeploy sait exactement ce qui tourne.
+                    env.BACKEND_IMAGE_BUILT = resolveDigest(env.REGISTRY_IMAGE)
+                    env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK'
+                        ? resolveDigest(params.FRONTEND_IMAGE.trim())
+                        : ''
 
                     echo "Image backend : ${env.BACKEND_IMAGE_BUILT}"
                     if (params.DEPLOYMENT_MODE == 'FULL_STACK') {
@@ -1395,8 +1427,8 @@ stage('Apply Kubernetes Manifests') {
 
                 echo "Version : ${params.VERSION}"
 
-                echo "Docker Image :"
-                echo "${env.REGISTRY_IMAGE}"
+                echo "Image déployée (empreinte) :"
+                echo "${env.BACKEND_IMAGE_BUILT}"
 
                 echo "Namespace :"
                 echo "${env.K8S_NAMESPACE}"

@@ -383,7 +383,9 @@ class DeploymentControllerTest {
                 response.rollbackOfId(),
                 response.deleted(),
                 response.createdAt(),
-                response.updatedAt()
+                response.updatedAt(),
+                response.deployedBackendImage(),
+                response.deployedFrontendImage()
         );
 
         when(deploymentService.updateMetadata(
@@ -555,7 +557,9 @@ class DeploymentControllerTest {
                 rollbackOfId,
                 false,
                 now,
-                now
+                now,
+                null,
+                null
         );
     }
 }

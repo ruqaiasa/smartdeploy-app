@@ -44,7 +44,8 @@ public record DeploymentResponse(
 
         LocalDateTime createdAt,
 
-        LocalDateTime updatedAt
-
+        LocalDateTime updatedAt,
+        String deployedBackendImage,
+        String deployedFrontendImage
 ) {
 }

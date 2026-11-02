@@ -111,6 +111,23 @@ public class Deployment {
     )
     private String jenkinsQueueUrl;
 
+    /**
+     * Images réellement déployées, référencées par empreinte
+     * (ex. localhost:5000/app-backend@sha256:...), renvoyées par Jenkins.
+     * Base de la traçabilité et du rollback.
+     */
+    @Column(
+            name = "deployed_backend_image",
+            length = 500
+    )
+    private String deployedBackendImage;
+
+    @Column(
+            name = "deployed_frontend_image",
+            length = 500
+    )
+    private String deployedFrontendImage;
+
     @Column(
             name = "kubernetes_deployment_name",
             length = 255

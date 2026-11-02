@@ -1297,6 +1297,53 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void applyPipelineCallback_shouldStoreDeployedImagesAndPinThemOnVersion() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(55);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        String backend = "localhost:5000/fullstack-demo-backend@sha256:"
+                + "3f9a0c7e1b2d4a6f8e0c2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c6e8b0d2f4a";
+        String frontend = "localhost:5000/fullstack-demo-frontend@sha256:"
+                + "aa11bb22cc33dd44ee55ff6677889900aabbccddeeff00112233445566778899";
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.SUCCESS, 55, null, null,
+                "fullstack-demo-backend", backend, frontend
+        );
+
+        assertEquals(backend, deployment.getDeployedBackendImage());
+        assertEquals(frontend, deployment.getDeployedFrontendImage());
+        assertEquals(backend, deployment.getVersion().getDockerImage());
+    }
+
+    @Test
+    void applyPipelineCallback_shouldIgnoreInvalidImageReference() {
+        Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
+        deployment.setJenkinsBuildNumber(55);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(deployment));
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.RUNNING, 55, null, null, null,
+                "image avec espaces; rm -rf /", null
+        );
+
+        assertNull(deployment.getDeployedBackendImage());
+    }
+
+    @Test
+    void normalizeImageReference_shouldAcceptTagsAndDigests() {
+        assertEquals("localhost:5000/app:1.0.0",
+                DeploymentService.normalizeImageReference(" localhost:5000/app:1.0.0 "));
+        assertEquals("localhost:5000/app@sha256:abc123",
+                DeploymentService.normalizeImageReference("localhost:5000/app@sha256:abc123"));
+        assertNull(DeploymentService.normalizeImageReference(""));
+        assertNull(DeploymentService.normalizeImageReference("bad image"));
+    }
+
+    @Test
     void applyPipelineCallback_shouldRejectCallbackFromAnotherBuild() {
         Deployment deployment = createDeployment(DeploymentStatus.RUNNING);
         deployment.setJenkinsBuildNumber(44);

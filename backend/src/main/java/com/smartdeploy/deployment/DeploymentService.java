@@ -356,6 +356,22 @@ public class DeploymentService {
             String errorMessage,
             String kubernetesDeploymentName
     ) {
+        return applyPipelineCallback(
+                deploymentId, newStatus, buildNumber, logsUrl,
+                errorMessage, kubernetesDeploymentName, null, null
+        );
+    }
+
+    public PipelineCallbackResult applyPipelineCallback(
+            Long deploymentId,
+            DeploymentStatus newStatus,
+            Integer buildNumber,
+            String logsUrl,
+            String errorMessage,
+            String kubernetesDeploymentName,
+            String backendImage,
+            String frontendImage
+    ) {
         if (deploymentId == null) {
             throw new DeploymentValidationException(
                     "deploymentId est obligatoire"
@@ -413,7 +429,9 @@ public class DeploymentService {
                 deployment,
                 buildNumber,
                 logsUrl,
-                kubernetesDeploymentName
+                kubernetesDeploymentName,
+                backendImage,
+                frontendImage
         );
 
         if (currentStatus == newStatus) {
@@ -489,6 +507,11 @@ public class DeploymentService {
 
         version.setBuildStatus(BuildStatus.SUCCESS);
 
+        // La version garde la référence exacte de l'image construite.
+        if (deployment.getDeployedBackendImage() != null) {
+            version.setDockerImage(deployment.getDeployedBackendImage());
+        }
+
         if (deployment.getJenkinsBuildNumber() != null) {
             version.setBuildNumber(deployment.getJenkinsBuildNumber());
         }
@@ -504,8 +527,20 @@ public class DeploymentService {
             Deployment deployment,
             Integer buildNumber,
             String logsUrl,
-            String kubernetesDeploymentName
+            String kubernetesDeploymentName,
+            String backendImage,
+            String frontendImage
     ) {
+        String normalizedBackendImage = normalizeImageReference(backendImage);
+        if (normalizedBackendImage != null) {
+            deployment.setDeployedBackendImage(normalizedBackendImage);
+        }
+
+        String normalizedFrontendImage = normalizeImageReference(frontendImage);
+        if (normalizedFrontendImage != null) {
+            deployment.setDeployedFrontendImage(normalizedFrontendImage);
+        }
+
         // Une valeur absente n'efface jamais une valeur déjà connue.
         if (buildNumber != null) {
             deployment.setJenkinsBuildNumber(buildNumber);
@@ -520,6 +555,18 @@ public class DeploymentService {
         if (normalizedName != null) {
             deployment.setKubernetesDeploymentName(normalizedName);
         }
+    }
+
+    private static final java.util.regex.Pattern IMAGE_REFERENCE =
+            java.util.regex.Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,499}$");
+
+    /** Référence d'image acceptée telle quelle, ou null si absente / invalide. */
+    static String normalizeImageReference(String image) {
+        if (image == null || image.isBlank()) {
+            return null;
+        }
+        String trimmed = image.trim();
+        return IMAGE_REFERENCE.matcher(trimmed).matches() ? trimmed : null;
     }
 
     private static boolean isTerminal(DeploymentStatus status) {
@@ -896,7 +943,9 @@ public class DeploymentService {
                         : deployment.getRollbackOf().getId(),
                 deployment.isDeleted(),
                 deployment.getCreatedAt(),
-                deployment.getUpdatedAt()
+                deployment.getUpdatedAt(),
+                deployment.getDeployedBackendImage(),
+                deployment.getDeployedFrontendImage()
         );
     }
 

@@ -203,6 +203,16 @@ function formatMetric(value: number | null | undefined, unit = '') {
   return `${value.toFixed(1)}${unit}`
 }
 const HEALTH_LABELS: Record<string, string> = { HEALTHY: 'Sain', WARNING: 'À surveiller', CRITICAL: 'Critique' }
+/** « …@sha256:3f9a0c7e1b2d… » → « sha256:3f9a0c7 » ; un tag reste lisible tel quel. */
+function shortDigest(image: string) {
+  const at = image.indexOf('@sha256:')
+  return at >= 0 ? `sha256:${image.slice(at + 8, at + 15)}` : image.slice(image.lastIndexOf('/') + 1)
+}
+function imageTooltip(deployment: DeploymentResponse) {
+  return [deployment.deployedBackendImage, deployment.deployedFrontendImage]
+    .filter(Boolean)
+    .join('\n')
+}
 function hasReason(deployment: DeploymentResponse) {
   return !!deployment.errorMessage && (deployment.status === 'FAILED' || deployment.status === 'CANCELLED')
 }
@@ -309,6 +319,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M8 4h8v8M16 4l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
                 </a>
                 <span v-else class="dp-muted">—</span>
+                <small v-if="deployment.deployedBackendImage" class="dp-muted dp-block dp-digest"
+                  :title="imageTooltip(deployment)">{{ shortDigest(deployment.deployedBackendImage) }}</small>
               </td>
               <td class="dp-actions-cell">
                 <div class="dp-actions">
@@ -460,6 +472,7 @@ small.dp-muted { font-size: 12px; }
 
 .dp-build { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-variant-numeric: tabular-nums; text-decoration: none; }
 .dp-build:hover { text-decoration: underline; }
+.dp-digest { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; cursor: help; }
 
 .dp-actions-cell { width: 1%; }
 .dp-actions { display: flex; justify-content: flex-end; gap: 4px; }
