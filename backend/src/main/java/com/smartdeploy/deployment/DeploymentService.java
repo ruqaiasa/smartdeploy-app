@@ -584,6 +584,26 @@ public class DeploymentService {
         }
     }
 
+    /**
+     * Déploiement en service = le plus récent déploiement réussi de son
+     * environnement (un rollback réussi devient donc le nouveau déploiement
+     * en service). Calculé côté serveur : la liste est paginée et filtrée.
+     */
+    boolean isCurrentDeployment(Deployment deployment) {
+        if (deployment.getStatus() != DeploymentStatus.SUCCESS
+                || deployment.getEnvironment() == null
+                || deployment.getId() == null) {
+            return false;
+        }
+        return deploymentRepository
+                .findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                        deployment.getEnvironment(),
+                        DeploymentStatus.SUCCESS
+                )
+                .map(latest -> deployment.getId().equals(latest.getId()))
+                .orElse(false);
+    }
+
     private static final java.util.regex.Pattern IMAGE_REFERENCE =
             java.util.regex.Pattern.compile("^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,499}$");
 
@@ -726,11 +746,18 @@ public class DeploymentService {
         Deployment original =
                 findActiveDeploymentById(deploymentId);
 
-        if (original.getStatus()
-                != DeploymentStatus.SUCCESS) {
+        // Un déploiement réussi, ou remplacé par un rollback (retour « en avant »).
+        if (original.getStatus() != DeploymentStatus.SUCCESS
+                && original.getStatus() != DeploymentStatus.ROLLED_BACK) {
             throw new DeploymentStateException(
-                    "Seul un déploiement réussi peut servir "
+                    "Seul un déploiement réussi ou remplacé peut servir "
                             + "de référence pour un rollback"
+            );
+        }
+
+        if (isCurrentDeployment(original)) {
+            throw new DeploymentStateException(
+                    "Ce déploiement est déjà en service sur cet environnement"
             );
         }
 
@@ -1063,7 +1090,8 @@ public class DeploymentService {
                 deployment.getCreatedAt(),
                 deployment.getUpdatedAt(),
                 deployment.getDeployedBackendImage(),
-                deployment.getDeployedFrontendImage()
+                deployment.getDeployedFrontendImage(),
+                isCurrentDeployment(deployment)
         );
     }
 

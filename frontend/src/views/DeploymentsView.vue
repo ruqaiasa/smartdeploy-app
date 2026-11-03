@@ -23,7 +23,11 @@ const canDeleteDeployments = computed(() => authStore.hasRole('ADMIN'))
  */
 const ROLLBACK_AVAILABLE = true
 function canRollback(deployment: DeploymentResponse) {
-  return deployment.status === 'SUCCESS' && !!deployment.deployedBackendImage?.includes('@sha256:')
+  // Jamais vers le déploiement déjà en service ; possible vers un déploiement
+  // réussi plus ancien ou vers un déploiement remplacé (retour « en avant »).
+  return !deployment.current
+    && (deployment.status === 'SUCCESS' || deployment.status === 'ROLLED_BACK')
+    && !!deployment.deployedBackendImage?.includes('@sha256:')
 }
 
 const modalOpen = ref(false)
@@ -311,6 +315,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                 <span class="dp-status" :class="`is-${deployment.status.toLowerCase()}`">
                   <span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}
                 </span>
+                <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
               </td>
               <td data-label="Lancé">
                 <span :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
@@ -474,6 +479,7 @@ small.dp-muted { font-size: 12px; }
 .dp-status.is-pending { background: #fffbeb; color: #b45309; }
 .dp-status.is-cancelled, .dp-status.is-rolled_back { background: var(--soft); color: var(--muted); }
 
+.dp-live-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border: 1px solid #a7f3d0; border-radius: 999px; color: #047857; font-size: 11px; font-weight: 600; vertical-align: middle; }
 .dp-build { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-variant-numeric: tabular-nums; text-decoration: none; }
 .dp-build:hover { text-decoration: underline; }
 .dp-digest { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; cursor: help; }

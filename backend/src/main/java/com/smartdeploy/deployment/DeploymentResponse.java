@@ -46,6 +46,9 @@ public record DeploymentResponse(
 
         LocalDateTime updatedAt,
         String deployedBackendImage,
-        String deployedFrontendImage
+        String deployedFrontendImage,
+
+        // Vrai pour le déploiement actuellement en service dans son environnement
+        boolean current
 ) {
 }

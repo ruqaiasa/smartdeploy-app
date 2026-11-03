@@ -44,6 +44,8 @@ export interface DeploymentResponse {
   /** Images réellement déployées, référencées par empreinte (sha256). */
   deployedBackendImage?: string | null
   deployedFrontendImage?: string | null
+  /** Vrai pour le déploiement actuellement en service dans son environnement. */
+  current?: boolean
 }
 export type KubernetesDatabaseMode = 'EXTERNAL' | 'MANAGED'
 

@@ -1074,6 +1074,59 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void createRollback_shouldRejectDeploymentAlreadyInService() {
+        Deployment original = createDeployment(DeploymentStatus.SUCCESS);
+        original.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "b".repeat(64));
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(original));
+        when(deploymentRepository.findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                original.getEnvironment(), DeploymentStatus.SUCCESS))
+                .thenReturn(Optional.of(original));
+
+        DeploymentStateException exception = assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.createRollback(10L, createUser())
+        );
+        assertTrue(exception.getMessage().contains("déjà en service"));
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void createRollback_shouldAcceptReplacedDeploymentAsTarget() {
+        Deployment original = createDeployment(DeploymentStatus.ROLLED_BACK);
+        original.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "c".repeat(64));
+        DeploymentKubernetesConfig config = new DeploymentKubernetesConfig();
+        config.setNamespace("sd-dev-app");
+        config.setConfigurationJson("{}");
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(original));
+        when(kubernetesConfigRepository.findByDeploymentId(10L)).thenReturn(Optional.of(config));
+        when(deploymentRepository.saveAndFlush(any(Deployment.class))).thenAnswer(invocation -> {
+            Deployment rollback = invocation.getArgument(0);
+            rollback.setId(12L);
+            return rollback;
+        });
+
+        DeploymentResponse response = deploymentService.createRollback(10L, createUser());
+
+        assertEquals(DeploymentStatus.PENDING, response.status());
+        verify(eventPublisher).publishEvent(new DeploymentPipelineRequestedEvent(12L));
+    }
+
+    @Test
+    void isCurrentDeployment_shouldBeTrueOnlyForLatestSuccessfulDeployment() {
+        Deployment latest = createDeployment(DeploymentStatus.SUCCESS);
+        Deployment older = createDeployment(DeploymentStatus.SUCCESS);
+        older.setId(3L);
+        older.setEnvironment(latest.getEnvironment());
+        when(deploymentRepository.findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                latest.getEnvironment(), DeploymentStatus.SUCCESS))
+                .thenReturn(Optional.of(latest));
+
+        assertTrue(deploymentService.isCurrentDeployment(latest));
+        assertFalse(deploymentService.isCurrentDeployment(older));
+        assertFalse(deploymentService.isCurrentDeployment(createDeployment(DeploymentStatus.FAILED)));
+    }
+
+    @Test
     void createRollback_shouldThrowWhenOriginalDeploymentIsNotSuccessful() {
 
         Deployment original =

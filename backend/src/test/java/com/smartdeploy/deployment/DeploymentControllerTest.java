@@ -385,7 +385,8 @@ class DeploymentControllerTest {
                 response.createdAt(),
                 response.updatedAt(),
                 response.deployedBackendImage(),
-                response.deployedFrontendImage()
+                response.deployedFrontendImage(),
+                response.current()
         );
 
         when(deploymentService.updateMetadata(
@@ -559,7 +560,8 @@ class DeploymentControllerTest {
                 now,
                 now,
                 null,
-                null
+                null,
+                false
         );
     }
 }

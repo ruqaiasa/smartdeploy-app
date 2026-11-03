@@ -23,6 +23,12 @@ public interface DeploymentRepository extends
     /** Déploiements encore actifs, examinés par le garde-fou. */
     List<Deployment> findByStatusInAndDeletedFalse(Collection<DeploymentStatus> statuses);
 
+    /** Déploiement en service : le plus récent déploiement réussi de l'environnement. */
+    Optional<Deployment> findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+            Environment environment,
+            DeploymentStatus status
+    );
+
     /** Déploiements réussis d'un environnement, du plus récent au plus ancien. */
     List<Deployment> findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
             Environment environment,
