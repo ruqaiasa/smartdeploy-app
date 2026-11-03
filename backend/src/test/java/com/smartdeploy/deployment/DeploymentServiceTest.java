@@ -25,6 +25,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import io.fabric8.kubernetes.client.KubernetesClient;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -927,6 +928,14 @@ class DeploymentServiceTest {
                 createDeployment(
                         DeploymentStatus.SUCCESS
                 );
+        original.setDeployedBackendImage(
+                "localhost:5000/app-backend@sha256:" + "a".repeat(64)
+        );
+        DeploymentKubernetesConfig originalConfig = new DeploymentKubernetesConfig();
+        originalConfig.setNamespace("sd-dev-app");
+        originalConfig.setConfigurationJson("{}");
+        when(kubernetesConfigRepository.findByDeploymentId(10L))
+                .thenReturn(Optional.of(originalConfig));
 
         User currentUser =
                 createUser();
@@ -991,11 +1000,77 @@ class DeploymentServiceTest {
                 response.rollbackOfId()
         );
 
+        // La configuration est copiée et le pipeline est réellement déclenché.
+        verify(kubernetesConfigRepository).saveAndFlush(any(DeploymentKubernetesConfig.class));
+        verify(eventPublisher).publishEvent(new DeploymentPipelineRequestedEvent(11L));
+
         verify(
                 deploymentRepository
         ).saveAndFlush(
                 any(Deployment.class)
         );
+    }
+
+    @Test
+    void createRollback_shouldRejectDeploymentWithoutDigest() {
+        Deployment original = createDeployment(DeploymentStatus.SUCCESS);
+        original.setDeployedBackendImage("localhost:5000/app-backend:1.0.0");
+        when(deploymentRepository.findByIdAndDeletedFalse(10L))
+                .thenReturn(Optional.of(original));
+
+        assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.createRollback(10L, createUser())
+        );
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void applyPipelineCallback_shouldMarkReplacedDeploymentAfterSuccessfulRollback() {
+        Deployment target = createDeployment(DeploymentStatus.SUCCESS);
+        target.setId(5L);
+        Deployment current = createDeployment(DeploymentStatus.SUCCESS);
+        current.setId(9L);
+        Deployment rollback = createDeployment(DeploymentStatus.RUNNING);
+        rollback.setRollbackOf(target);
+        rollback.setJenkinsBuildNumber(60);
+        when(deploymentRepository.findActiveByIdForUpdate(10L))
+                .thenReturn(Optional.of(rollback));
+        when(deploymentRepository.findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                rollback.getEnvironment(), DeploymentStatus.SUCCESS))
+                .thenReturn(List.of(rollback, current, target));
+
+        deploymentService.applyPipelineCallback(
+                10L, DeploymentStatus.SUCCESS, 60, null, null, null
+        );
+
+        assertEquals(DeploymentStatus.ROLLED_BACK, current.getStatus());
+        assertEquals(DeploymentStatus.SUCCESS, target.getStatus());
+    }
+
+    @Test
+    void expireStaleDeployments_shouldFailOnlyDeploymentsBeyondTheirDelay() {
+        LocalDateTime now = LocalDateTime.now();
+        Deployment stalePending = createDeployment(DeploymentStatus.PENDING);
+        stalePending.setId(21L);
+        stalePending.setCreatedAt(now.minusMinutes(45));
+        Deployment recentRunning = createDeployment(DeploymentStatus.RUNNING);
+        recentRunning.setId(22L);
+        recentRunning.setStartedAt(now.minusMinutes(10));
+        when(deploymentRepository.findByStatusInAndDeletedFalse(any()))
+                .thenReturn(List.of(stalePending, recentRunning));
+        when(deploymentRepository.findActiveByIdForUpdate(21L)).thenReturn(Optional.of(stalePending));
+        when(deploymentRepository.findActiveByIdForUpdate(22L)).thenReturn(Optional.of(recentRunning));
+
+        int expired = deploymentService.expireStaleDeployments(
+                now, java.time.Duration.ofMinutes(30), java.time.Duration.ofMinutes(120)
+        );
+
+        assertEquals(1, expired);
+        assertEquals(DeploymentStatus.FAILED, stalePending.getStatus());
+        assertTrue(stalePending.getErrorMessage().startsWith("Délai dépassé."));
+        assertEquals(DeploymentStatus.RUNNING, recentRunning.getStatus());
     }
 
     @Test

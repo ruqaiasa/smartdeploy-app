@@ -139,18 +139,25 @@ const namespace = computed(() => selectedEnvironment.value?.namespace?.trim() ||
 const dockerTag = computed(() => {
   const version = selectedVersion.value
   const rawTag = String(version?.version || version?.id || 'latest').trim()
-  return rawTag.replace(/[^a-zA-Z0-9_.-]/g, '-').replace(/^[.-]+/, '') || 'latest'
+  // Même règle que le Jenkinsfile : minuscules, caractères sûrs uniquement.
+  return rawTag.toLowerCase().replace(/[^a-z0-9_.-]/g, '-').replace(/^[.-]+/, '') || 'latest'
 })
+/** Une image déjà construite est référencée par empreinte : on ne la reconstruit pas sous ce nom. */
+const isBuildableImage = (image?: string | null) => !!image?.trim() && !image.includes('@sha256:')
 const backendImage = computed(() => {
-  const existingImage = selectedVersion.value?.backendDockerImage?.trim()
-    || selectedVersion.value?.dockerImages?.backend?.trim()
-    || selectedVersion.value?.dockerImage?.trim()
+  const existingImage = [
+    selectedVersion.value?.backendDockerImage,
+    selectedVersion.value?.dockerImages?.backend,
+    selectedVersion.value?.dockerImage,
+  ].find(isBuildableImage)?.trim()
   if (existingImage) return existingImage
   return appSlug.value ? `localhost:5000/${appSlug.value}-backend:${dockerTag.value}` : ''
 })
 const frontendImage = computed(() => {
-  const existingImage = selectedVersion.value?.frontendDockerImage?.trim()
-    || selectedVersion.value?.dockerImages?.frontend?.trim()
+  const existingImage = [
+    selectedVersion.value?.frontendDockerImage,
+    selectedVersion.value?.dockerImages?.frontend,
+  ].find(isBuildableImage)?.trim()
   if (existingImage) return existingImage
   return appSlug.value ? `localhost:5000/${appSlug.value}-frontend:${dockerTag.value}` : ''
 })

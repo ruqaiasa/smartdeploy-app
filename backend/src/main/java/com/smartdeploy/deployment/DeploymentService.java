@@ -478,6 +478,7 @@ public class DeploymentService {
 
         if (newStatus == DeploymentStatus.SUCCESS) {
             markVersionBuilt(deployment);
+            markReplacedDeployment(deployment);
         }
 
         return new PipelineCallbackResult(
@@ -498,6 +499,32 @@ public class DeploymentService {
      * et une version FAILED ne serait plus déployable. Elle reste donc
      * dans son état actuel et peut être redéployée.
      */
+    /**
+     * Après un rollback réussi, le déploiement qui était en service avant
+     * lui (le plus récent réussi, hors cible du rollback) est marqué
+     * ROLLED_BACK, affiché « Remplacé » dans l'interface.
+     */
+    private void markReplacedDeployment(Deployment rollback) {
+        Deployment target = rollback.getRollbackOf();
+        if (target == null) {
+            return;
+        }
+
+        deploymentRepository
+                .findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                        rollback.getEnvironment(),
+                        DeploymentStatus.SUCCESS
+                )
+                .stream()
+                .filter(candidate -> !candidate.getId().equals(rollback.getId()))
+                .findFirst()
+                .filter(current -> !current.getId().equals(target.getId()))
+                .ifPresent(current -> {
+                    current.setStatus(DeploymentStatus.ROLLED_BACK);
+                    deploymentRepository.saveAndFlush(current);
+                });
+    }
+
     private void markVersionBuilt(Deployment deployment) {
         Version version = deployment.getVersion();
 
@@ -577,6 +604,64 @@ public class DeploymentService {
     }
 
     /* ==========================================================
+     *                  GARDE-FOU : DÉPLOIEMENTS BLOQUÉS
+     * ==========================================================
+     *
+     * Un déploiement resté PENDING ou RUNNING au-delà d'un délai
+     * (Jenkins arrêté, notification perdue...) verrouillerait son
+     * environnement indéfiniment. Il est marqué FAILED avec la raison.
+     */
+    public int expireStaleDeployments(
+            LocalDateTime now,
+            java.time.Duration pendingTimeout,
+            java.time.Duration runningTimeout
+    ) {
+        int expired = 0;
+
+        for (Deployment candidate : deploymentRepository.findByStatusInAndDeletedFalse(
+                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING))) {
+
+            Deployment deployment = deploymentRepository
+                    .findActiveByIdForUpdate(candidate.getId())
+                    .orElse(null);
+            if (deployment == null) {
+                continue;
+            }
+
+            String reason = null;
+
+            if (deployment.getStatus() == DeploymentStatus.PENDING
+                    && deployment.getCreatedAt() != null
+                    && deployment.getCreatedAt().isBefore(now.minus(pendingTimeout))) {
+                reason = "Le pipeline n'a pas démarré dans les "
+                        + pendingTimeout.toMinutes()
+                        + " minutes : Jenkins est peut-être arrêté ou sa file d'attente bloquée.";
+            }
+
+            LocalDateTime runningSince = deployment.getStartedAt() != null
+                    ? deployment.getStartedAt()
+                    : deployment.getCreatedAt();
+
+            if (deployment.getStatus() == DeploymentStatus.RUNNING
+                    && runningSince != null
+                    && runningSince.isBefore(now.minus(runningTimeout))) {
+                reason = "Aucune nouvelle du pipeline depuis "
+                        + runningTimeout.toMinutes()
+                        + " minutes : vérifiez le build dans Jenkins.";
+            }
+
+            if (reason != null) {
+                completeDeployment(deployment, now, "Délai dépassé. " + reason);
+                deployment.setStatus(DeploymentStatus.FAILED);
+                deploymentRepository.saveAndFlush(deployment);
+                expired++;
+            }
+        }
+
+        return expired;
+    }
+
+    /* ==========================================================
      *                  CANCEL (ACTION UTILISATEUR)
      * ==========================================================
      *
@@ -628,6 +713,12 @@ public class DeploymentService {
      * ==========================================================
      */
 
+    /*
+     * Rollback : redéploie EXACTEMENT les images (par empreinte) d'un
+     * déploiement réussi antérieur, sans reconstruire. Le nouveau
+     * déploiement reprend sa configuration Kubernetes et passe par le
+     * pipeline Jenkins en mode « rollback » (étapes de build sautées).
+     */
     public DeploymentResponse createRollback(
             Long deploymentId,
             User currentUser
@@ -640,6 +731,14 @@ public class DeploymentService {
             throw new DeploymentStateException(
                     "Seul un déploiement réussi peut servir "
                             + "de référence pour un rollback"
+            );
+        }
+
+        if (original.getDeployedBackendImage() == null
+                || !original.getDeployedBackendImage().contains("@sha256:")) {
+            throw new DeploymentStateException(
+                    "Ce déploiement est antérieur à la traçabilité par empreinte : "
+                            + "son image exacte est inconnue, le rollback est impossible"
             );
         }
 
@@ -660,6 +759,13 @@ public class DeploymentService {
             );
         }
 
+        DeploymentKubernetesConfig originalConfig = kubernetesConfigRepository
+                .findByDeploymentId(original.getId())
+                .orElseThrow(() -> new DeploymentStateException(
+                        "Configuration Kubernetes du déploiement "
+                                + original.getId() + " introuvable"
+                ));
+
         Deployment rollback = Deployment.builder()
                 .version(original.getVersion())
                 .environment(original.getEnvironment())
@@ -671,6 +777,18 @@ public class DeploymentService {
 
         Deployment savedRollback =
                 deploymentRepository.saveAndFlush(rollback);
+
+        DeploymentKubernetesConfig rollbackConfig = new DeploymentKubernetesConfig();
+        rollbackConfig.setDeployment(savedRollback);
+        rollbackConfig.setNamespace(originalConfig.getNamespace());
+        rollbackConfig.setApplicationType(originalConfig.getApplicationType());
+        rollbackConfig.setConfigurationJson(originalConfig.getConfigurationJson());
+        kubernetesConfigRepository.saveAndFlush(rollbackConfig);
+
+        // Même chemin qu'un déploiement : Jenkins après le commit.
+        eventPublisher.publishEvent(
+                new DeploymentPipelineRequestedEvent(savedRollback.getId())
+        );
 
         return toResponse(savedRollback);
     }

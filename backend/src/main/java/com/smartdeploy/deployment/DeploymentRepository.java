@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,15 @@ public interface DeploymentRepository extends
         JpaSpecificationExecutor<Deployment> {
 
     Optional<Deployment> findByIdAndDeletedFalse(Long id);
+
+    /** Déploiements encore actifs, examinés par le garde-fou. */
+    List<Deployment> findByStatusInAndDeletedFalse(Collection<DeploymentStatus> statuses);
+
+    /** Déploiements réussis d'un environnement, du plus récent au plus ancien. */
+    List<Deployment> findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+            Environment environment,
+            DeploymentStatus status
+    );
 
     /**
      * Lecture avec verrou d'écriture : sérialise les callbacks Jenkins

@@ -83,6 +83,33 @@ def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentNa
 }
 
 
+/** Vrai quand SmartDeploy demande un rollback (images fournies par empreinte). */
+boolean isRollback() {
+    return (params.ROLLBACK_BACKEND_IMAGE ?: '').trim() as boolean
+}
+
+/**
+ * Vérifie qu'une image référencée par empreinte existe dans la registry
+ * (« registre/nom@sha256:... »), avant de la redéployer.
+ */
+void verifyImageInRegistry(String imageRef) {
+    if (!(imageRef ==~ /^[a-z0-9.:\/-]+@sha256:[a-f0-9]{64}$/)) {
+        error("Image de rollback invalide (empreinte attendue) : ${imageRef}")
+    }
+    def registry = imageRef.substring(0, imageRef.indexOf('/'))
+    def repository = imageRef.substring(imageRef.indexOf('/') + 1, imageRef.indexOf('@'))
+    def digest = imageRef.substring(imageRef.indexOf('@') + 1)
+    withEnv(["SD_REGISTRY=${registry}", "SD_REPOSITORY=${repository}", "SD_DIGEST=${digest}"]) {
+        sh '''
+            set -eu
+            curl --fail --silent --show-error --connect-timeout 5 --max-time 30 \
+                -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+                -o /dev/null "http://${SD_REGISTRY}/v2/${SD_REPOSITORY}/manifests/${SD_DIGEST}"
+        '''
+    }
+    echo "Image présente dans la registry : ${imageRef}"
+}
+
 /**
  * Référence par empreinte d'une image publiée dans la registry :
  * « localhost:5000/app:1.0.0 » → « localhost:5000/app@sha256:... ».
@@ -154,8 +181,10 @@ String failureHint(String stage) {
         case 'Validate Kubernetes Manifests':
         case 'Apply Kubernetes Manifests':
             return 'Kubernetes a refusé les manifests générés.'
+        case 'Prepare Kubernetes Images':
+            return 'Images introuvables : en rollback, l’image visée n’est plus dans la registry ou son empreinte est invalide.'
         case 'Verify Kubernetes Rollout':
-            return 'Les pods ne sont pas devenus prêts dans le délai de 900 s.'
+            return 'Les pods ne sont pas devenus prêts dans le délai de 900 s (démarrage trop lent, sonde en échec ou ressources insuffisantes).'
         default:
             return ''
     }
@@ -174,10 +203,12 @@ String podProblems() {
             returnStdout: true,
             script: '''
                 kubectl get pods -n "$K8S_NAMESPACE" \
-                  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{.status.containerStatuses[*].state.terminated.reason}{"\\n"}{end}' \
-                  2>/dev/null | awk 'NF > 1' | head -n 5 || true
+                  -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" ready="}{.status.conditions[?(@.type=="Ready")].status}{" "}{.status.containerStatuses[*].state.waiting.reason}{.status.containerStatuses[*].state.terminated.reason}{"\\n"}{end}' \
+                  2>/dev/null | grep -v "ready=True" | head -n 5 || true
             '''
         ).trim()
+        // Ex. : « app-backend-7c9f Running ready=False » = pod lancé mais jamais prêt
+        // (démarrage lent, sonde en échec) ; « Pending » = pod non planifié.
         return out ? out.readLines().join(', ') : ''
     } catch (ignored) {
         return ''
@@ -257,6 +288,10 @@ pipeline {
         string(name: 'FRONTEND_REPLICAS', defaultValue: '2')
         string(name: 'BACKEND_REPLICAS', defaultValue: '1')
         string(name: 'DATABASE_MODE', defaultValue: 'EXTERNAL')
+
+        // Rollback : images exactes (par empreinte) à redéployer sans reconstruction.
+        string(name: 'ROLLBACK_BACKEND_IMAGE', defaultValue: '', description: 'Rollback : image backend par empreinte')
+        string(name: 'ROLLBACK_FRONTEND_IMAGE', defaultValue: '', description: 'Rollback : image frontend par empreinte')
     }
 
 
@@ -428,6 +463,7 @@ pipeline {
         // 4. CHECKOUT GIT
         // ========================================================
         stage('Checkout Git') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Checkout Git' }
@@ -446,6 +482,7 @@ pipeline {
         // 5. VÉRIFICATION GIT
         // ========================================================
         stage('Verify Checkout') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Verify Checkout' }
@@ -483,7 +520,7 @@ pipeline {
             when {
 
                 expression {
-                    return params.GIT_COMMIT?.trim()
+                    return !isRollback() && params.GIT_COMMIT?.trim()
                 }
             }
 
@@ -516,7 +553,7 @@ pipeline {
         // 7. MAVEN BUILD
         // ========================================================
         stage('Build Maven') {
-            when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
+            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
             steps {
                 script { env.SD_STAGE = 'Build Maven' }
                 script {
@@ -542,7 +579,7 @@ pipeline {
         }
 
         stage('Verify Artifact') {
-            when { expression { params.BUILD_STRATEGY == 'MAVEN' } }
+            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
             steps {
                 script { env.SD_STAGE = 'Verify Artifact' }
                 script {
@@ -563,7 +600,7 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            when { expression { params.SONAR_MODE != 'SKIP' } }
+            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
             steps {
                 script { env.SD_STAGE = 'SonarQube Analysis' }
                 script {
@@ -603,7 +640,7 @@ pipeline {
         }
 
         stage('Quality Gate') {
-            when { expression { params.SONAR_MODE != 'SKIP' } }
+            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
             steps {
                 script { env.SD_STAGE = 'Quality Gate' }
                 timeout(time: 15, unit: 'MINUTES') {
@@ -617,6 +654,7 @@ pipeline {
         // 9. DOCKERFILE
         // ========================================================
         stage('Validate Dockerfile') {
+            when { expression { !isRollback() } }
             steps {
                 script { env.SD_STAGE = 'Validate Dockerfile' }
                 script {
@@ -763,6 +801,7 @@ env.REGISTRY_IMAGE =
         // 11. DOCKER BUILD
         // ========================================================
         stage('Docker Build') {
+            when { expression { !isRollback() } }
             steps {
                 script { env.SD_STAGE = 'Docker Build' }
                 script {
@@ -781,6 +820,7 @@ env.REGISTRY_IMAGE =
         }
 
         stage('Verify Docker Image') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Verify Docker Image' }
@@ -803,6 +843,7 @@ env.REGISTRY_IMAGE =
         // TRIVY - VULNERABILITY SCAN OS + DEPENDANCES APPLICATIVES
         // ========================================================
         stage('Trivy Security Scan') {
+            when { expression { !isRollback() } }
             options {
                 timeout(time: 20, unit: 'MINUTES')
             }
@@ -862,6 +903,7 @@ env.REGISTRY_IMAGE =
 
 
         stage('Docker Tag') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Docker Tag' }
@@ -885,6 +927,7 @@ env.REGISTRY_IMAGE =
         // 14. REGISTRY CHECK
         // ========================================================
         stage('Check Docker Registry') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Check Docker Registry' }
@@ -914,6 +957,7 @@ env.REGISTRY_IMAGE =
         // 15. DOCKER PUSH
         // ========================================================
         stage('Docker Push') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Docker Push' }
@@ -934,6 +978,7 @@ env.REGISTRY_IMAGE =
         // 16. VERIFY REGISTRY
         // ========================================================
         stage('Verify Registry') {
+            when { expression { !isRollback() } }
 
             steps {
                 script { env.SD_STAGE = 'Verify Registry' }
@@ -968,7 +1013,7 @@ env.REGISTRY_IMAGE =
         // FRONTEND FULL STACK : CHECKOUT, BUILD, SCAN, PUSH
         // ========================================================
         stage('Checkout Frontend') {
-            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
             steps {
                 script { env.SD_STAGE = 'Checkout Frontend' }
                 dir('frontend-source') {
@@ -980,7 +1025,7 @@ env.REGISTRY_IMAGE =
         }
 
         stage('Docker Build Frontend') {
-            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
             steps {
                 script { env.SD_STAGE = 'Docker Build Frontend' }
                 withEnv([
@@ -1010,7 +1055,7 @@ env.REGISTRY_IMAGE =
         }
 
         stage('Trivy Frontend Security Scan') {
-            when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
             options { timeout(time: 20, unit: 'MINUTES') }
             steps {
                 script { env.SD_STAGE = 'Trivy Frontend Security Scan' }
@@ -1062,7 +1107,7 @@ env.REGISTRY_IMAGE =
         }
 
        stage('Docker Push Frontend') {
-    when { expression { params.DEPLOYMENT_MODE == 'FULL_STACK' } }
+    when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
     steps {
         script { env.SD_STAGE = 'Docker Push Frontend' }
         withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
@@ -1105,10 +1150,26 @@ env.REGISTRY_IMAGE =
                     // (nom@sha256:...) et non par tag : chaque build produit
                     // une référence unique, donc Kubernetes remplace réellement
                     // les pods, et SmartDeploy sait exactement ce qui tourne.
-                    env.BACKEND_IMAGE_BUILT = resolveDigest(env.REGISTRY_IMAGE)
-                    env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK'
-                        ? resolveDigest(params.FRONTEND_IMAGE.trim())
-                        : ''
+                    if (isRollback()) {
+                        // Rollback : aucune construction, on redéploie les images
+                        // exactes du déploiement visé, après vérification dans la registry.
+                        env.BACKEND_IMAGE_BUILT = params.ROLLBACK_BACKEND_IMAGE.trim()
+                        env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK'
+                            ? (params.ROLLBACK_FRONTEND_IMAGE ?: '').trim()
+                            : ''
+                        verifyImageInRegistry(env.BACKEND_IMAGE_BUILT)
+                        if (env.FRONTEND_IMAGE_BUILT) {
+                            verifyImageInRegistry(env.FRONTEND_IMAGE_BUILT)
+                        }
+                        // Pas de checkout en rollback : on repart d'un espace propre.
+                        sh 'rm -rf k8s-generated k8s-manifests.zip k8s-resources.txt k8s-deployments.txt k8s-workloads.txt'
+                        echo 'ROLLBACK : images redéployées sans reconstruction'
+                    } else {
+                        env.BACKEND_IMAGE_BUILT = resolveDigest(env.REGISTRY_IMAGE)
+                        env.FRONTEND_IMAGE_BUILT = params.DEPLOYMENT_MODE == 'FULL_STACK'
+                            ? resolveDigest(params.FRONTEND_IMAGE.trim())
+                            : ''
+                    }
 
                     echo "Image backend : ${env.BACKEND_IMAGE_BUILT}"
                     if (params.DEPLOYMENT_MODE == 'FULL_STACK') {

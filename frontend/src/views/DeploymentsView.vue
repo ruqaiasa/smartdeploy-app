@@ -18,11 +18,13 @@ const canManageDeployments = computed(() => authStore.hasRole('DEVOPS', 'ADMIN')
 const canDeleteDeployments = computed(() => authStore.hasRole('ADMIN'))
 
 /*
- * Rollback masqué tant que le backend ne relance pas réellement le pipeline :
- * aujourd'hui il crée un déploiement PENDING orphelin qui bloque
- * l'environnement. Passer à true une fois le lot « rollback » livré.
+ * Rollback : redéploie les images exactes (par empreinte) d'un déploiement
+ * réussi, sans reconstruction. Proposé uniquement quand l'empreinte est connue.
  */
-const ROLLBACK_AVAILABLE = false
+const ROLLBACK_AVAILABLE = true
+function canRollback(deployment: DeploymentResponse) {
+  return deployment.status === 'SUCCESS' && !!deployment.deployedBackendImage?.includes('@sha256:')
+}
 
 const modalOpen = ref(false)
 const monitoringOpen = ref(false)
@@ -142,7 +144,9 @@ async function cancelDeployment(deployment: DeploymentResponse) {
   try { await deploymentsStore.cancel(deployment.id) } catch { /* store */ }
 }
 async function rollback(deployment: DeploymentResponse) {
-  if (!window.confirm(`Revenir à la version ${deployment.version} sur ${deployment.environmentName} ?`)) return
+  const message = `Redéployer exactement ce déploiement (#${deployment.id}, version ${deployment.version}) sur ${deployment.environmentName} ?\n\n`
+    + 'Les images déjà construites sont réutilisées, sans reconstruction. Le déploiement actuel sera marqué « Remplacé » une fois le retour réussi.'
+  if (!window.confirm(message)) return
   try { await deploymentsStore.rollback(deployment.id) } catch { /* store */ }
 }
 async function removeDeployment(deployment: DeploymentResponse) {
@@ -297,7 +301,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <strong>{{ deployment.applicationName }}</strong>
                   <span class="dp-version">{{ deployment.version }}</span>
                 </div>
-                <small v-if="deployment.rollbackOfId" class="dp-muted">Rollback du déploiement #{{ deployment.rollbackOfId }}</small>
+                <small v-if="deployment.rollbackOfId" class="dp-muted">Retour au déploiement #{{ deployment.rollbackOfId }}</small>
               </td>
               <td data-label="Environnement">
                 <span>{{ deployment.environmentName }}</span>
@@ -327,8 +331,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <button v-if="deployment.status === 'SUCCESS'" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
                   <button v-if="canManageDeployments && ACTIVE_STATUSES.includes(deployment.status)" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
-                  <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && deployment.status === 'SUCCESS'" type="button" class="dp-action"
-                    :disabled="deploymentsStore.actionLoading" @click="rollback(deployment)">Rollback</button>
+                  <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
+                    :disabled="deploymentsStore.actionLoading" title="Redéployer exactement ces images" @click="rollback(deployment)">Revenir ici</button>
                   <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading || ACTIVE_STATUSES.includes(deployment.status)"
                     :title="ACTIVE_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours' : 'Supprimer de l’historique'"

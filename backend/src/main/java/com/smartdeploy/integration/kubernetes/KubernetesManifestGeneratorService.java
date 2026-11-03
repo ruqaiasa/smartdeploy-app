@@ -55,6 +55,9 @@ public class KubernetesManifestGeneratorService {
 
                 .withNewSpec()
                 .withReplicas(request.replicas())
+                // Aligné sur le délai de Jenkins (rollout status --timeout=900s) :
+                // Kubernetes ne déclare plus un rollout « en retard » avant lui.
+                .withProgressDeadlineSeconds(900)
 
                 .withNewSelector()
                 .addToMatchLabels(labels)
