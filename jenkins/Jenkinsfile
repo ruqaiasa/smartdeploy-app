@@ -233,129 +233,23 @@ String failureMessage() {
 }
 
 
-pipeline {
+// =====================================================================
+// CORPS DES ÉTAPES
+// Le contenu de chaque étape est placé dans une fonction : Jenkins compile
+// le bloc pipeline en une seule méthode Java, limitée à 64 Ko.
+// =====================================================================
 
-    agent any
-
-    options {
-        disableConcurrentBuilds()
-        // Jenkinsfile lu depuis le dépôt SmartDeploy : pas de checkout
-        // implicite, le pipeline clone lui-même l'application à déployer.
-        skipDefaultCheckout()
-    }
-
-
-    // ============================================================
-    // PARAMÈTRES REÇUS DEPUIS SMARTDEPLOY
-    // ============================================================
-    parameters {
-
-        string(name: 'DEPLOYMENT_ID', defaultValue: '')
-        string(name: 'APPLICATION_ID', defaultValue: '')
-        string(name: 'APPLICATION_NAME', defaultValue: '')
-        string(name: 'REPOSITORY_URL', defaultValue: '')
-
-        string(name: 'VERSION_ID', defaultValue: '')
-        string(name: 'VERSION', defaultValue: '')
-
-        string(name: 'GIT_BRANCH', defaultValue: '')
-        string(name: 'GIT_COMMIT', defaultValue: '')
-
-        string(name: 'DOCKER_IMAGE', defaultValue: '')
-
-        choice(name: 'BUILD_STRATEGY', choices: ['MAVEN', 'DOCKER_ONLY'], description: 'MAVEN compile dans Jenkins ; DOCKER_ONLY compile dans Docker')
-        choice(name: 'SONAR_MODE', choices: ['MAVEN', 'CLI', 'SKIP'], description: 'Analyse SonarQube Maven, CLI ou désactivée')
-        booleanParam(name: 'RUN_BACKEND_TESTS', defaultValue: false, description: 'Exécuter les tests Maven dans Jenkins (compatibilité historique : false)')
-        // Chemins relatifs au checkout backend ; '.' préserve BACKEND_ONLY.
-        string(name: 'BACKEND_BUILD_CONTEXT', defaultValue: '.', description: 'Dossier Maven/backend relatif au dépôt')
-        string(name: 'BACKEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Dockerfile relatif au contexte backend')
-
-        string(name: 'ENVIRONMENT_ID', defaultValue: '')
-        string(name: 'ENVIRONMENT_TYPE', defaultValue: '')
-        string(name: 'ENVIRONMENT_NAME', defaultValue: '')
-
-        string(name: 'KUBERNETES_NAMESPACE', defaultValue: '')
-        string(name: 'CLUSTER_URL', defaultValue: '')
-        string(name: 'DEPLOYMENT_MODE', defaultValue: 'BACKEND_ONLY')
-        string(name: 'FRONTEND_IMAGE', defaultValue: '')
-        string(name: 'BACKEND_IMAGE', defaultValue: '')
-
-        // Frontend : source Git et configuration Docker (facultatifs pour BACKEND_ONLY)
-        string(name: 'FRONTEND_REPOSITORY_URL', defaultValue: '', description: 'URL du dépôt Git frontend')
-        string(name: 'FRONTEND_GIT_BRANCH', defaultValue: 'main', description: 'Branche Git frontend')
-        string(name: 'FRONTEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Chemin du Dockerfile frontend')
-        string(name: 'FRONTEND_BUILD_CONTEXT', defaultValue: '.', description: 'Contexte de construction Docker frontend')
-        string(name: 'FRONTEND_REPLICAS', defaultValue: '2')
-        string(name: 'BACKEND_REPLICAS', defaultValue: '1')
-        string(name: 'DATABASE_MODE', defaultValue: 'EXTERNAL')
-
-        // Rollback : images exactes (par empreinte) à redéployer sans reconstruction.
-        string(name: 'ROLLBACK_BACKEND_IMAGE', defaultValue: '', description: 'Rollback : image backend par empreinte')
-        string(name: 'ROLLBACK_FRONTEND_IMAGE', defaultValue: '', description: 'Rollback : image frontend par empreinte')
-    }
-
-
-    // ============================================================
-    // VARIABLES GLOBALES
-    // ============================================================
-    environment {
-
-        // Backend SmartDeploy
-        SMARTDEPLOY_URL =
-            'http://192.168.85.1:8081'
-
-        // Jenkins
-        JENKINS_BASE_URL =
-            'http://192.168.85.129:8080'
-
-        // Docker
-        DOCKER_REGISTRY =
-            'localhost:5000'
-
-        // Kubernetes
-        KUBECONFIG =
-            '/var/lib/jenkins/.kube/config'
-
-        DEFAULT_K8S_NAMESPACE =
-            'smartdeploy-test'
-
-        // Les noms Kubernetes sont générés dynamiquement
-        // dans Prepare Deployment.
-
-        APP_CONTAINER_PORT =
-            '8080'
-
-        APP_NODE_PORT =
-            '30080'
-
-        // Passer a 'true' uniquement apres validation du rapport Trivy.
-        TRIVY_ENFORCE_GATE = 'false'
-    }
-
-
-    stages {
-
-
-        // ========================================================
-        // 1. SMARTDEPLOY → RUNNING
-        // ========================================================
-        stage('Notify RUNNING') {
-            steps {
-                script { env.SD_STAGE = 'Notify RUNNING' }
-                script {
+/** Étape « Notify RUNNING » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdNotifyRunning() {
+                 env.SD_STAGE = 'Notify RUNNING' 
+                
                     notifySmartDeploy('RUNNING', null, null, true)
-                }
+                
             }
-        }
 
-
-        // ========================================================
-        // 2. INFORMATIONS DU DÉPLOIEMENT
-        // ========================================================
-        stage('Deployment Information') {
-
-            steps {
-                script { env.SD_STAGE = 'Deployment Information' }
+/** Étape « Deployment Information » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDeploymentInformation() {
+                 env.SD_STAGE = 'Deployment Information' 
 
                 echo "======================================"
                 echo " SmartDeploy Deployment"
@@ -384,18 +278,12 @@ pipeline {
 
                 echo "======================================"
             }
-        }
 
+/** Étape « Validate Parameters » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdValidateParameters() {
+                 env.SD_STAGE = 'Validate Parameters' 
 
-        // ========================================================
-        // 3. VALIDATION DES PARAMÈTRES
-        // ========================================================
-        stage('Validate Parameters') {
-
-            steps {
-                script { env.SD_STAGE = 'Validate Parameters' }
-
-                script {
+                
 
                     if (!params.DEPLOYMENT_ID?.trim()) {
                         error("DEPLOYMENT_ID est vide")
@@ -454,19 +342,12 @@ pipeline {
                         }
                     }
                     echo "Paramètres SmartDeploy valides."
-                }
+                
             }
-        }
 
-
-        // ========================================================
-        // 4. CHECKOUT GIT
-        // ========================================================
-        stage('Checkout Git') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Checkout Git' }
+/** Étape « Checkout Git » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdCheckoutGit() {
+                 env.SD_STAGE = 'Checkout Git' 
 
                 deleteDir()
 
@@ -475,17 +356,10 @@ pipeline {
                     url: "${params.REPOSITORY_URL}"
                 )
             }
-        }
 
-
-        // ========================================================
-        // 5. VÉRIFICATION GIT
-        // ========================================================
-        stage('Verify Checkout') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Verify Checkout' }
+/** Étape « Verify Checkout » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyCheckout() {
+                 env.SD_STAGE = 'Verify Checkout' 
 
                 sh '''
                     echo "======================================"
@@ -509,25 +383,12 @@ pipeline {
                     git log -1 --oneline
                 '''
             }
-        }
 
+/** Étape « Verify Git Commit » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyGitCommit() {
+                 env.SD_STAGE = 'Verify Git Commit' 
 
-        // ========================================================
-        // 6. VÉRIFICATION OPTIONNELLE DU COMMIT
-        // ========================================================
-        stage('Verify Git Commit') {
-
-            when {
-
-                expression {
-                    return !isRollback() && params.GIT_COMMIT?.trim()
-                }
-            }
-
-            steps {
-                script { env.SD_STAGE = 'Verify Git Commit' }
-
-                script {
+                
 
                     def currentCommit =
                         sh(
@@ -544,19 +405,13 @@ pipeline {
                             "Le commit Git ne correspond pas au commit demandé"
                         )
                     }
-                }
+                
             }
-        }
 
-
-        // ========================================================
-        // 7. MAVEN BUILD
-        // ========================================================
-        stage('Build Maven') {
-            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
-            steps {
-                script { env.SD_STAGE = 'Build Maven' }
-                script {
+/** Étape « Build Maven » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdBuildMaven() {
+                 env.SD_STAGE = 'Build Maven' 
+                
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
                     dir(backendDir) {
@@ -574,15 +429,13 @@ pipeline {
                         '''
                         }
                     }
-                }
+                
             }
-        }
 
-        stage('Verify Artifact') {
-            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
-            steps {
-                script { env.SD_STAGE = 'Verify Artifact' }
-                script {
+/** Étape « Verify Artifact » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyArtifact() {
+                 env.SD_STAGE = 'Verify Artifact' 
+                
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
                     dir(backendDir) {
@@ -595,15 +448,13 @@ pipeline {
                             ls -lh "$JAR_FILE"
                         '''
                     }
-                }
+                
             }
-        }
 
-        stage('SonarQube Analysis') {
-            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
-            steps {
-                script { env.SD_STAGE = 'SonarQube Analysis' }
-                script {
+/** Étape « SonarQube Analysis » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdSonarqubeAnalysis() {
+                 env.SD_STAGE = 'SonarQube Analysis' 
+                
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
                     def projectKey = 'SmartDeploy-' + params.APPLICATION_ID.trim().replaceAll('[^a-zA-Z0-9_.:-]', '-') + '-Backend'
@@ -635,29 +486,21 @@ pipeline {
                             }
                         }
                     }
-                }
+                
             }
-        }
 
-        stage('Quality Gate') {
-            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
-            steps {
-                script { env.SD_STAGE = 'Quality Gate' }
+/** Étape « Quality Gate » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdQualityGate() {
+                 env.SD_STAGE = 'Quality Gate' 
                 timeout(time: 15, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
             }
-        }
 
-
-        // ========================================================
-        // 9. DOCKERFILE
-        // ========================================================
-        stage('Validate Dockerfile') {
-            when { expression { !isRollback() } }
-            steps {
-                script { env.SD_STAGE = 'Validate Dockerfile' }
-                script {
+/** Étape « Validate Dockerfile » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdValidateDockerfile() {
+                 env.SD_STAGE = 'Validate Dockerfile' 
+                
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
                     dir(backendDir) {
@@ -669,16 +512,14 @@ pipeline {
                             '''
                         }
                     }
-                }
+                
             }
-        }
 
-        stage('Prepare Deployment') {
+/** Étape « Prepare Deployment » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdPrepareDeployment() {
+                 env.SD_STAGE = 'Prepare Deployment' 
 
-            steps {
-                script { env.SD_STAGE = 'Prepare Deployment' }
-
-                script {
+                
 
                     // ------------------------------------------------
                     // Docker image
@@ -792,19 +633,13 @@ env.REGISTRY_IMAGE =
                     echo "Noms Kubernetes : déterminés après application des manifests"
 
                     echo "======================================"
-                }
+                
             }
-        }
 
-
-        // ========================================================
-        // 11. DOCKER BUILD
-        // ========================================================
-        stage('Docker Build') {
-            when { expression { !isRollback() } }
-            steps {
-                script { env.SD_STAGE = 'Docker Build' }
-                script {
+/** Étape « Docker Build » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDockerBuild() {
+                 env.SD_STAGE = 'Docker Build' 
+                
                     def backendDir = params.BACKEND_BUILD_CONTEXT?.trim() ?: '.'
                     if (backendDir == '.' && params.DEPLOYMENT_MODE == 'FULL_STACK' && fileExists('backend/pom.xml') && !fileExists('pom.xml')) { backendDir = 'backend' }
                     dir(backendDir) {
@@ -815,15 +650,12 @@ env.REGISTRY_IMAGE =
                             '''
                         }
                     }
-                }
+                
             }
-        }
 
-        stage('Verify Docker Image') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Verify Docker Image' }
+/** Étape « Verify Docker Image » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyDockerImage() {
+                 env.SD_STAGE = 'Verify Docker Image' 
 
                 sh '''
                     docker image inspect \
@@ -836,19 +668,10 @@ env.REGISTRY_IMAGE =
                     echo "$FULL_DOCKER_IMAGE"
                 '''
             }
-        }
 
-
-        // ========================================================
-        // TRIVY - VULNERABILITY SCAN OS + DEPENDANCES APPLICATIVES
-        // ========================================================
-        stage('Trivy Security Scan') {
-            when { expression { !isRollback() } }
-            options {
-                timeout(time: 20, unit: 'MINUTES')
-            }
-            steps {
-                script { env.SD_STAGE = 'Trivy Security Scan' }
+/** Étape « Trivy Security Scan » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdTrivySecurityScan() {
+                 env.SD_STAGE = 'Trivy Security Scan' 
                 sh '''
                     set -eu
                     mkdir -p security-reports
@@ -871,7 +694,7 @@ env.REGISTRY_IMAGE =
 
                     test -s security-reports/trivy-report.json
                 '''
-                script {
+                
                     if (env.TRIVY_ENFORCE_GATE == 'true') {
                         sh '''
                             # Bloquer si une vulnérabilité CRITICAL est detectee.
@@ -890,23 +713,12 @@ env.REGISTRY_IMAGE =
                     } else {
                         echo 'Trivy: scan OS + librairies valide (HIGH/CRITICAL), gate non bloquant.'
                     }
-                }
+                
             }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'security-reports/trivy-report.json',
-                                     allowEmptyArchive: true,
-                                     fingerprint: true
-                }
-            }
-        }
 
-
-        stage('Docker Tag') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Docker Tag' }
+/** Étape « Docker Tag » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDockerTag() {
+                 env.SD_STAGE = 'Docker Tag' 
 
                 sh '''
                     echo "======================================"
@@ -920,17 +732,10 @@ env.REGISTRY_IMAGE =
                     echo "$REGISTRY_IMAGE"
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 14. REGISTRY CHECK
-        // ========================================================
-        stage('Check Docker Registry') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Check Docker Registry' }
+/** Étape « Check Docker Registry » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdCheckDockerRegistry() {
+                 env.SD_STAGE = 'Check Docker Registry' 
 
                 sh '''
                     echo "======================================"
@@ -950,17 +755,10 @@ env.REGISTRY_IMAGE =
                     echo "Registry disponible."
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 15. DOCKER PUSH
-        // ========================================================
-        stage('Docker Push') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Docker Push' }
+/** Étape « Docker Push » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDockerPush() {
+                 env.SD_STAGE = 'Docker Push' 
 
                 sh '''
                     echo "======================================"
@@ -971,17 +769,10 @@ env.REGISTRY_IMAGE =
                         "$REGISTRY_IMAGE"
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 16. VERIFY REGISTRY
-        // ========================================================
-        stage('Verify Registry') {
-            when { expression { !isRollback() } }
-
-            steps {
-                script { env.SD_STAGE = 'Verify Registry' }
+/** Étape « Verify Registry » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyRegistry() {
+                 env.SD_STAGE = 'Verify Registry' 
 
                 sh '''
                     echo "======================================"
@@ -1003,31 +794,20 @@ env.REGISTRY_IMAGE =
                     echo "$REGISTRY_IMAGE"
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 17. VÉRIFICATION KUBERNETES
-        // ========================================================
-        // ========================================================
-        // FRONTEND FULL STACK : CHECKOUT, BUILD, SCAN, PUSH
-        // ========================================================
-        stage('Checkout Frontend') {
-            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
-            steps {
-                script { env.SD_STAGE = 'Checkout Frontend' }
+/** Étape « Checkout Frontend » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdCheckoutFrontend() {
+                 env.SD_STAGE = 'Checkout Frontend' 
                 dir('frontend-source') {
                     deleteDir()
                     git branch: params.FRONTEND_GIT_BRANCH.trim(),
                         url: params.FRONTEND_REPOSITORY_URL.trim()
                 }
             }
-        }
 
-        stage('Docker Build Frontend') {
-            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
-            steps {
-                script { env.SD_STAGE = 'Docker Build Frontend' }
+/** Étape « Docker Build Frontend » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDockerBuildFrontend() {
+                 env.SD_STAGE = 'Docker Build Frontend' 
                 withEnv([
                     "FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}",
                     "FRONTEND_DOCKERFILE=${params.FRONTEND_DOCKERFILE_PATH.trim()}",
@@ -1052,13 +832,10 @@ env.REGISTRY_IMAGE =
                     '''
                 }
             }
-        }
 
-        stage('Trivy Frontend Security Scan') {
-            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
-            options { timeout(time: 20, unit: 'MINUTES') }
-            steps {
-                script { env.SD_STAGE = 'Trivy Frontend Security Scan' }
+/** Étape « Trivy Frontend Security Scan » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdTrivyFrontendSecurityScan() {
+                 env.SD_STAGE = 'Trivy Frontend Security Scan' 
                 withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
                     sh '''
                         set -eu
@@ -1078,7 +855,7 @@ env.REGISTRY_IMAGE =
                             "$FRONTEND_TARGET_IMAGE"
                         test -s security-reports/trivy-frontend-report.json
                     '''
-                    script {
+                    
                         if (env.TRIVY_ENFORCE_GATE == 'true') {
                             sh '''
                                 trivy --config /dev/null image \
@@ -1094,22 +871,13 @@ env.REGISTRY_IMAGE =
                                     "$FRONTEND_TARGET_IMAGE"
                             '''
                         }
-                    }
+                    
                 }
             }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'security-reports/trivy-frontend-report.json',
-                                     allowEmptyArchive: true,
-                                     fingerprint: true
-                }
-            }
-        }
 
-       stage('Docker Push Frontend') {
-    when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
-    steps {
-        script { env.SD_STAGE = 'Docker Push Frontend' }
+/** Étape « Docker Push Frontend » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDockerPushFrontend() {
+         env.SD_STAGE = 'Docker Push Frontend' 
         withEnv(["FRONTEND_TARGET_IMAGE=${params.FRONTEND_IMAGE.trim()}"]) {
             sh '''
                 set -eu
@@ -1140,12 +908,11 @@ env.REGISTRY_IMAGE =
             '''
         }
     }
-}
 
-        stage('Prepare Kubernetes Images') {
-            steps {
-                script { env.SD_STAGE = 'Prepare Kubernetes Images' }
-                script {
+/** Étape « Prepare Kubernetes Images » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdPrepareKubernetesImages() {
+                 env.SD_STAGE = 'Prepare Kubernetes Images' 
+                
                     // Les manifests référencent les images par EMPREINTE
                     // (nom@sha256:...) et non par tag : chaque build produit
                     // une référence unique, donc Kubernetes remplace réellement
@@ -1178,14 +945,12 @@ env.REGISTRY_IMAGE =
                         }
                         echo "Image frontend : ${env.FRONTEND_IMAGE_BUILT}"
                     }
-                }
+                
             }
-        }
 
-        stage('Check Kubernetes') {
-
-            steps {
-                script { env.SD_STAGE = 'Check Kubernetes' }
+/** Étape « Check Kubernetes » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdCheckKubernetes() {
+                 env.SD_STAGE = 'Check Kubernetes' 
 
                 sh '''
                     echo "======================================"
@@ -1199,16 +964,10 @@ env.REGISTRY_IMAGE =
                     kubectl cluster-info
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 18. CRÉATION / VÉRIFICATION DU NAMESPACE
-        // ========================================================
-        stage('Prepare Kubernetes Namespace') {
-
-            steps {
-                script { env.SD_STAGE = 'Prepare Kubernetes Namespace' }
+/** Étape « Prepare Kubernetes Namespace » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdPrepareKubernetesNamespace() {
+                 env.SD_STAGE = 'Prepare Kubernetes Namespace' 
 
                 sh '''
                     echo "======================================"
@@ -1226,16 +985,10 @@ env.REGISTRY_IMAGE =
                         "$K8S_NAMESPACE"
                 '''
             }
-        }
 
-
-        // ========================================================
-        // 19. KUBERNETES DEPLOYMENT
-        // ======================================================== Les manifests sont générés à partir de la configuration sauvegardée.
-
-stage('Download Kubernetes Manifests') {
-    steps {
-        script { env.SD_STAGE = 'Download Kubernetes Manifests' }
+/** Étape « Download Kubernetes Manifests » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDownloadKubernetesManifests() {
+         env.SD_STAGE = 'Download Kubernetes Manifests' 
 
         withCredentials([
             string(
@@ -1298,16 +1051,10 @@ stage('Download Kubernetes Manifests') {
             '''
         }
     }
-}
 
-
-// ========================================================
-// VALIDATE KUBERNETES MANIFESTS
-// ========================================================
-
-stage('Validate Kubernetes Manifests') {
-    steps {
-        script { env.SD_STAGE = 'Validate Kubernetes Manifests' }
+/** Étape « Validate Kubernetes Manifests » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdValidateKubernetesManifests() {
+         env.SD_STAGE = 'Validate Kubernetes Manifests' 
 
         sh '''
             set -eu
@@ -1324,16 +1071,10 @@ stage('Validate Kubernetes Manifests') {
             echo "Validation Kubernetes terminée."
         '''
     }
-}
 
-
-// ========================================================
-// APPLY KUBERNETES MANIFESTS
-// ========================================================
-
-stage('Apply Kubernetes Manifests') {
-    steps {
-        script { env.SD_STAGE = 'Apply Kubernetes Manifests' }
+/** Étape « Apply Kubernetes Manifests » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdApplyKubernetesManifests() {
+         env.SD_STAGE = 'Apply Kubernetes Manifests' 
 
         sh '''
             set -eu
@@ -1356,7 +1097,7 @@ stage('Apply Kubernetes Manifests') {
             echo "Ressources Kubernetes appliquées."
         '''
 
-        script {
+        
 
             // ------------------------------------------------
             // Identifier le Deployment backend réel
@@ -1442,13 +1183,12 @@ stage('Apply Kubernetes Manifests') {
             echo "Namespace : ${env.K8S_NAMESPACE}"
 
             echo "======================================"
-        }
+        
     }
-}
 
-        stage('Verify Kubernetes Rollout') {
-            steps {
-                script { env.SD_STAGE = 'Verify Kubernetes Rollout' }
+/** Étape « Verify Kubernetes Rollout » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyKubernetesRollout() {
+                 env.SD_STAGE = 'Verify Kubernetes Rollout' 
                 sh '''
                     set -eu
                     # Vérifie UNIQUEMENT les ressources de ce déploiement, pas tout le namespace.
@@ -1459,24 +1199,20 @@ stage('Apply Kubernetes Manifests') {
                     done < k8s-workloads.txt
                 '''
             }
-        }
 
-        stage('Verify Kubernetes Resources') {
-            steps {
-                script { env.SD_STAGE = 'Verify Kubernetes Resources' }
+/** Étape « Verify Kubernetes Resources » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdVerifyKubernetesResources() {
+                 env.SD_STAGE = 'Verify Kubernetes Resources' 
                 sh '''
                     set -eu
                     kubectl get -n "$K8S_NAMESPACE" -f k8s-generated/ -o wide
                     kubectl get pods -n "$K8S_NAMESPACE" -o wide
                 '''
             }
-        }
 
-
-        stage('Deployment Completed') {
-
-            steps {
-                script { env.SD_STAGE = 'Deployment Completed' }
+/** Étape « Deployment Completed » (corps extrait du bloc pipeline : limite de taille de Jenkins). */
+void sdDeploymentCompleted() {
+                 env.SD_STAGE = 'Deployment Completed' 
 
                 echo "======================================"
 
@@ -1499,6 +1235,480 @@ stage('Apply Kubernetes Manifests') {
                 echo "Accès applicatif : voir les Services / Ingress générés."
 
                 echo "======================================"
+            }
+
+/** Récapitulatif de fin de pipeline. */
+void sdPostAlways() {
+
+            echo "======================================"
+
+            echo " Fin du pipeline SmartDeploy"
+
+            echo "======================================"
+
+            echo "Deployment SmartDeploy : ${params.DEPLOYMENT_ID}"
+
+            echo "Build Jenkins : ${env.BUILD_NUMBER}"
+
+
+            
+
+                if (env.REGISTRY_IMAGE) {
+
+                    echo "Docker Registry : ${env.REGISTRY_IMAGE}"
+                }
+
+
+                if (env.K8S_NAMESPACE) {
+
+                    echo "Kubernetes Namespace : ${env.K8S_NAMESPACE}"
+                }
+
+
+                if (env.K8S_DEPLOYMENT_NAME) {
+
+                    echo "Kubernetes Deployment : ${env.K8S_DEPLOYMENT_NAME}"
+                }
+
+
+                if (env.K8S_SERVICE_NAME) {
+
+                    echo "Kubernetes Service : ${env.K8S_SERVICE_NAME}"
+                }
+            
+
+
+            echo "======================================"
+        }
+
+pipeline {
+
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        // Jenkinsfile lu depuis le dépôt SmartDeploy : pas de checkout
+        // implicite, le pipeline clone lui-même l'application à déployer.
+        skipDefaultCheckout()
+    }
+
+
+    // ============================================================
+    // PARAMÈTRES REÇUS DEPUIS SMARTDEPLOY
+    // ============================================================
+    parameters {
+
+        string(name: 'DEPLOYMENT_ID', defaultValue: '')
+        string(name: 'APPLICATION_ID', defaultValue: '')
+        string(name: 'APPLICATION_NAME', defaultValue: '')
+        string(name: 'REPOSITORY_URL', defaultValue: '')
+
+        string(name: 'VERSION_ID', defaultValue: '')
+        string(name: 'VERSION', defaultValue: '')
+
+        string(name: 'GIT_BRANCH', defaultValue: '')
+        string(name: 'GIT_COMMIT', defaultValue: '')
+
+        string(name: 'DOCKER_IMAGE', defaultValue: '')
+
+        choice(name: 'BUILD_STRATEGY', choices: ['MAVEN', 'DOCKER_ONLY'], description: 'MAVEN compile dans Jenkins ; DOCKER_ONLY compile dans Docker')
+        choice(name: 'SONAR_MODE', choices: ['MAVEN', 'CLI', 'SKIP'], description: 'Analyse SonarQube Maven, CLI ou désactivée')
+        booleanParam(name: 'RUN_BACKEND_TESTS', defaultValue: false, description: 'Exécuter les tests Maven dans Jenkins (compatibilité historique : false)')
+        // Chemins relatifs au checkout backend ; '.' préserve BACKEND_ONLY.
+        string(name: 'BACKEND_BUILD_CONTEXT', defaultValue: '.', description: 'Dossier Maven/backend relatif au dépôt')
+        string(name: 'BACKEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Dockerfile relatif au contexte backend')
+
+        string(name: 'ENVIRONMENT_ID', defaultValue: '')
+        string(name: 'ENVIRONMENT_TYPE', defaultValue: '')
+        string(name: 'ENVIRONMENT_NAME', defaultValue: '')
+
+        string(name: 'KUBERNETES_NAMESPACE', defaultValue: '')
+        string(name: 'CLUSTER_URL', defaultValue: '')
+        string(name: 'DEPLOYMENT_MODE', defaultValue: 'BACKEND_ONLY')
+        string(name: 'FRONTEND_IMAGE', defaultValue: '')
+        string(name: 'BACKEND_IMAGE', defaultValue: '')
+
+        // Frontend : source Git et configuration Docker (facultatifs pour BACKEND_ONLY)
+        string(name: 'FRONTEND_REPOSITORY_URL', defaultValue: '', description: 'URL du dépôt Git frontend')
+        string(name: 'FRONTEND_GIT_BRANCH', defaultValue: 'main', description: 'Branche Git frontend')
+        string(name: 'FRONTEND_DOCKERFILE_PATH', defaultValue: 'Dockerfile', description: 'Chemin du Dockerfile frontend')
+        string(name: 'FRONTEND_BUILD_CONTEXT', defaultValue: '.', description: 'Contexte de construction Docker frontend')
+        string(name: 'FRONTEND_REPLICAS', defaultValue: '2')
+        string(name: 'BACKEND_REPLICAS', defaultValue: '1')
+        string(name: 'DATABASE_MODE', defaultValue: 'EXTERNAL')
+
+        // Rollback : images exactes (par empreinte) à redéployer sans reconstruction.
+        string(name: 'ROLLBACK_BACKEND_IMAGE', defaultValue: '', description: 'Rollback : image backend par empreinte')
+        string(name: 'ROLLBACK_FRONTEND_IMAGE', defaultValue: '', description: 'Rollback : image frontend par empreinte')
+    }
+
+
+    // ============================================================
+    // VARIABLES GLOBALES
+    // ============================================================
+    environment {
+
+        // Backend SmartDeploy
+        SMARTDEPLOY_URL =
+            'http://192.168.85.1:8081'
+
+        // Jenkins
+        JENKINS_BASE_URL =
+            'http://192.168.85.129:8080'
+
+        // Docker
+        DOCKER_REGISTRY =
+            'localhost:5000'
+
+        // Kubernetes
+        KUBECONFIG =
+            '/var/lib/jenkins/.kube/config'
+
+        DEFAULT_K8S_NAMESPACE =
+            'smartdeploy-test'
+
+        // Les noms Kubernetes sont générés dynamiquement
+        // dans Prepare Deployment.
+
+        APP_CONTAINER_PORT =
+            '8080'
+
+        APP_NODE_PORT =
+            '30080'
+
+        // Passer a 'true' uniquement apres validation du rapport Trivy.
+        TRIVY_ENFORCE_GATE = 'false'
+    }
+
+
+    stages {
+
+
+        // ========================================================
+        // 1. SMARTDEPLOY → RUNNING
+        // ========================================================
+        stage('Notify RUNNING') {
+            steps {
+                script { sdNotifyRunning() }
+            }
+        }
+
+
+        // ========================================================
+        // 2. INFORMATIONS DU DÉPLOIEMENT
+        // ========================================================
+        stage('Deployment Information') {
+
+            steps {
+                script { sdDeploymentInformation() }
+            }
+        }
+
+
+        // ========================================================
+        // 3. VALIDATION DES PARAMÈTRES
+        // ========================================================
+        stage('Validate Parameters') {
+
+            steps {
+                script { sdValidateParameters() }
+            }
+        }
+
+
+        // ========================================================
+        // 4. CHECKOUT GIT
+        // ========================================================
+        stage('Checkout Git') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdCheckoutGit() }
+            }
+        }
+
+
+        // ========================================================
+        // 5. VÉRIFICATION GIT
+        // ========================================================
+        stage('Verify Checkout') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdVerifyCheckout() }
+            }
+        }
+
+
+        // ========================================================
+        // 6. VÉRIFICATION OPTIONNELLE DU COMMIT
+        // ========================================================
+        stage('Verify Git Commit') {
+
+            when {
+
+                expression {
+                    return !isRollback() && params.GIT_COMMIT?.trim()
+                }
+            }
+
+            steps {
+                script { sdVerifyGitCommit() }
+            }
+        }
+
+
+        // ========================================================
+        // 7. MAVEN BUILD
+        // ========================================================
+        stage('Build Maven') {
+            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
+            steps {
+                script { sdBuildMaven() }
+            }
+        }
+
+        stage('Verify Artifact') {
+            when { expression { !isRollback() && (params.BUILD_STRATEGY == 'MAVEN') } }
+            steps {
+                script { sdVerifyArtifact() }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
+            steps {
+                script { sdSonarqubeAnalysis() }
+            }
+        }
+
+        stage('Quality Gate') {
+            when { expression { !isRollback() && (params.SONAR_MODE != 'SKIP') } }
+            steps {
+                script { sdQualityGate() }
+            }
+        }
+
+
+        // ========================================================
+        // 9. DOCKERFILE
+        // ========================================================
+        stage('Validate Dockerfile') {
+            when { expression { !isRollback() } }
+            steps {
+                script { sdValidateDockerfile() }
+            }
+        }
+
+        stage('Prepare Deployment') {
+
+            steps {
+                script { sdPrepareDeployment() }
+            }
+        }
+
+
+        // ========================================================
+        // 11. DOCKER BUILD
+        // ========================================================
+        stage('Docker Build') {
+            when { expression { !isRollback() } }
+            steps {
+                script { sdDockerBuild() }
+            }
+        }
+
+        stage('Verify Docker Image') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdVerifyDockerImage() }
+            }
+        }
+
+
+        // ========================================================
+        // TRIVY - VULNERABILITY SCAN OS + DEPENDANCES APPLICATIVES
+        // ========================================================
+        stage('Trivy Security Scan') {
+            when { expression { !isRollback() } }
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
+            steps {
+                script { sdTrivySecurityScan() }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'security-reports/trivy-report.json',
+                                     allowEmptyArchive: true,
+                                     fingerprint: true
+                }
+            }
+        }
+
+
+        stage('Docker Tag') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdDockerTag() }
+            }
+        }
+
+
+        // ========================================================
+        // 14. REGISTRY CHECK
+        // ========================================================
+        stage('Check Docker Registry') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdCheckDockerRegistry() }
+            }
+        }
+
+
+        // ========================================================
+        // 15. DOCKER PUSH
+        // ========================================================
+        stage('Docker Push') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdDockerPush() }
+            }
+        }
+
+
+        // ========================================================
+        // 16. VERIFY REGISTRY
+        // ========================================================
+        stage('Verify Registry') {
+            when { expression { !isRollback() } }
+
+            steps {
+                script { sdVerifyRegistry() }
+            }
+        }
+
+
+        // ========================================================
+        // 17. VÉRIFICATION KUBERNETES
+        // ========================================================
+        // ========================================================
+        // FRONTEND FULL STACK : CHECKOUT, BUILD, SCAN, PUSH
+        // ========================================================
+        stage('Checkout Frontend') {
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
+            steps {
+                script { sdCheckoutFrontend() }
+            }
+        }
+
+        stage('Docker Build Frontend') {
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
+            steps {
+                script { sdDockerBuildFrontend() }
+            }
+        }
+
+        stage('Trivy Frontend Security Scan') {
+            when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
+            options { timeout(time: 20, unit: 'MINUTES') }
+            steps {
+                script { sdTrivyFrontendSecurityScan() }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'security-reports/trivy-frontend-report.json',
+                                     allowEmptyArchive: true,
+                                     fingerprint: true
+                }
+            }
+        }
+
+       stage('Docker Push Frontend') {
+    when { expression { !isRollback() && (params.DEPLOYMENT_MODE == 'FULL_STACK') } }
+    steps {
+        script { sdDockerPushFrontend() }
+    }
+}
+
+        stage('Prepare Kubernetes Images') {
+            steps {
+                script { sdPrepareKubernetesImages() }
+            }
+        }
+
+        stage('Check Kubernetes') {
+
+            steps {
+                script { sdCheckKubernetes() }
+            }
+        }
+
+
+        // ========================================================
+        // 18. CRÉATION / VÉRIFICATION DU NAMESPACE
+        // ========================================================
+        stage('Prepare Kubernetes Namespace') {
+
+            steps {
+                script { sdPrepareKubernetesNamespace() }
+            }
+        }
+
+
+        // ========================================================
+        // 19. KUBERNETES DEPLOYMENT
+        // ======================================================== Les manifests sont générés à partir de la configuration sauvegardée.
+
+stage('Download Kubernetes Manifests') {
+    steps {
+        script { sdDownloadKubernetesManifests() }
+    }
+}
+
+
+// ========================================================
+// VALIDATE KUBERNETES MANIFESTS
+// ========================================================
+
+stage('Validate Kubernetes Manifests') {
+    steps {
+        script { sdValidateKubernetesManifests() }
+    }
+}
+
+
+// ========================================================
+// APPLY KUBERNETES MANIFESTS
+// ========================================================
+
+stage('Apply Kubernetes Manifests') {
+    steps {
+        script { sdApplyKubernetesManifests() }
+    }
+}
+
+        stage('Verify Kubernetes Rollout') {
+            steps {
+                script { sdVerifyKubernetesRollout() }
+            }
+        }
+
+        stage('Verify Kubernetes Resources') {
+            steps {
+                script { sdVerifyKubernetesResources() }
+            }
+        }
+
+
+        stage('Deployment Completed') {
+
+            steps {
+                script { sdDeploymentCompleted() }
             }
         }
     }
@@ -1557,46 +1767,7 @@ stage('Apply Kubernetes Manifests') {
         // ALWAYS
         // ========================================================
         always {
-
-            echo "======================================"
-
-            echo " Fin du pipeline SmartDeploy"
-
-            echo "======================================"
-
-            echo "Deployment SmartDeploy : ${params.DEPLOYMENT_ID}"
-
-            echo "Build Jenkins : ${env.BUILD_NUMBER}"
-
-
-            script {
-
-                if (env.REGISTRY_IMAGE) {
-
-                    echo "Docker Registry : ${env.REGISTRY_IMAGE}"
-                }
-
-
-                if (env.K8S_NAMESPACE) {
-
-                    echo "Kubernetes Namespace : ${env.K8S_NAMESPACE}"
-                }
-
-
-                if (env.K8S_DEPLOYMENT_NAME) {
-
-                    echo "Kubernetes Deployment : ${env.K8S_DEPLOYMENT_NAME}"
-                }
-
-
-                if (env.K8S_SERVICE_NAME) {
-
-                    echo "Kubernetes Service : ${env.K8S_SERVICE_NAME}"
-                }
-            }
-
-
-            echo "======================================"
+            script { sdPostAlways() }
         }
     }
 }
