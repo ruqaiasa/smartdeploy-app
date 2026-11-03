@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -225,6 +226,13 @@ class DeploymentServiceTest {
         verify(eventPublisher).publishEvent(
                 new DeploymentPipelineRequestedEvent(10L)
         );
+        // La création est tracée dans le journal d'activité.
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(events.capture());
+        assertTrue(events.getAllValues().stream().anyMatch(e ->
+                e instanceof com.smartdeploy.audit.AuditEvent audit
+                        && audit.action() == com.smartdeploy.audit.AuditAction.DEPLOYMENT_CREATED
+                        && audit.targetId().equals(10L)));
     }
 
     @Test

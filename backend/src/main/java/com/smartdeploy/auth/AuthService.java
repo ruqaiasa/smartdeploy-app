@@ -1,10 +1,14 @@
 package com.smartdeploy.auth;
 
+import com.smartdeploy.audit.AuditAction;
+import com.smartdeploy.audit.AuditEvent;
 import com.smartdeploy.security.jwt.JwtService;
 import com.smartdeploy.user.User;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,15 +24,18 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AuthService(
             AuthenticationManager authenticationManager,
             JwtService jwtService,
-            RefreshTokenService refreshTokenService
+            RefreshTokenService refreshTokenService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -38,15 +45,30 @@ public class AuthService {
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
-        Authentication authentication =
-                authenticationManager.authenticate(
-                        new UsernamePasswordAuthenticationToken(
-                                normalizedEmail,
-                                request.password()
-                        )
-                );
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            normalizedEmail,
+                            request.password()
+                    )
+            );
+        } catch (AuthenticationException exception) {
+            // Tracé même si la transaction est annulée (keepOnRollback).
+            eventPublisher.publishEvent(AuditEvent.securityFailure(
+                    AuditAction.LOGIN_FAILURE,
+                    normalizedEmail,
+                    "Échec de connexion : identifiants invalides ou compte inactif"
+            ));
+            throw exception;
+        }
 
         User user = (User) authentication.getPrincipal();
+
+        eventPublisher.publishEvent(AuditEvent.of(
+                AuditAction.LOGIN_SUCCESS, user.getEmail(), "USER", user.getId(),
+                null, null, "Connexion réussie"
+        ));
 
         String accessToken = generateAccessToken(user);
 

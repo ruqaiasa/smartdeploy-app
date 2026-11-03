@@ -182,6 +182,23 @@ const router = createRouter({
         },
 
         {
+          path: 'audit',
+          name: 'audit',
+
+          component: () =>
+            import(
+              '@/views/AuditView.vue'
+            ),
+
+          meta: {
+            title: 'Journal d’activité',
+            roles: [
+              'ADMIN',
+            ] satisfies UserRole[],
+          },
+        },
+
+        {
           path: 'users',
           name: 'users',
 

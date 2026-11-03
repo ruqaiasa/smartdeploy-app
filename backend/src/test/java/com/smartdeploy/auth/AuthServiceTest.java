@@ -5,6 +5,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.smartdeploy.audit.AuditAction;
+import com.smartdeploy.audit.AuditEvent;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.AuthenticationManager;
 
 import com.smartdeploy.user.Role;
@@ -28,6 +32,9 @@ class AuthServiceTest {
     private AuthenticationManager authenticationManager;
 
     @Mock
+    private ApplicationEventPublisher eventPublisher;
+
+    @Mock
     private JwtService jwtService;
 
     @Mock
@@ -40,7 +47,8 @@ class AuthServiceTest {
         authService = new AuthService(
                 authenticationManager,
                 jwtService,
-                refreshTokenService
+                refreshTokenService,
+                eventPublisher
         );
     }
 
@@ -161,6 +169,14 @@ class AuthServiceTest {
 
         verify(refreshTokenService, never())
                 .create(any(User.class));
+
+        // L'échec de connexion est tracé, à conserver même si la transaction échoue.
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        AuditEvent audit = (AuditEvent) event.getValue();
+        assertEquals(AuditAction.LOGIN_FAILURE, audit.action());
+        assertEquals("user@smartdeploy.com", audit.actor());
+        assertTrue(audit.keepOnRollback());
     }
     @Test
     void refresh_shouldRevokeOldTokenAndReturnNewTokens() {

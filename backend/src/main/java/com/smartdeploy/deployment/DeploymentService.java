@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.smartdeploy.environment.Environment;
 import com.smartdeploy.environment.EnvironmentNotFoundException;
 import com.smartdeploy.environment.EnvironmentRepository;
+import com.smartdeploy.audit.AuditAction;
+import com.smartdeploy.audit.AuditEvent;
 import com.smartdeploy.user.User;
 import com.smartdeploy.version.BuildStatus;
 import com.smartdeploy.version.Version;
@@ -203,6 +205,14 @@ public class DeploymentService {
         // webhook et l'export des manifests. Un échec Jenkins devient FAILED.
         eventPublisher.publishEvent(
                 new DeploymentPipelineRequestedEvent(savedDeployment.getId())
+        );
+
+        audit(
+                AuditAction.DEPLOYMENT_CREATED,
+                savedDeployment,
+                currentUser == null ? null : currentUser.getEmail(),
+                "Déploiement #" + savedDeployment.getId() + " de la version "
+                        + versionLabel(savedDeployment) + " lancé"
         );
 
         return toResponse(savedDeployment);
@@ -476,6 +486,8 @@ public class DeploymentService {
         deployment.setStatus(newStatus);
         deploymentRepository.saveAndFlush(deployment);
 
+        auditPipelineStatus(deployment, newStatus);
+
         if (newStatus == DeploymentStatus.SUCCESS) {
             markVersionBuilt(deployment);
             markReplacedDeployment(deployment);
@@ -522,6 +534,9 @@ public class DeploymentService {
                 .ifPresent(current -> {
                     current.setStatus(DeploymentStatus.ROLLED_BACK);
                     deploymentRepository.saveAndFlush(current);
+                    audit(AuditAction.DEPLOYMENT_REPLACED, current, "Système",
+                            "Déploiement #" + current.getId() + " remplacé par le rollback #"
+                                    + rollback.getId());
                 });
     }
 
@@ -582,6 +597,45 @@ public class DeploymentService {
         if (normalizedName != null) {
             deployment.setKubernetesDeploymentName(normalizedName);
         }
+    }
+
+    private void auditPipelineStatus(Deployment deployment, DeploymentStatus status) {
+        String build = deployment.getJenkinsBuildNumber() == null
+                ? "" : " (build Jenkins #" + deployment.getJenkinsBuildNumber() + ")";
+        String label = "Déploiement #" + deployment.getId() + " de la version " + versionLabel(deployment);
+        switch (status) {
+            case RUNNING -> audit(AuditAction.DEPLOYMENT_STARTED, deployment, "Jenkins",
+                    label + " démarré" + build);
+            case SUCCESS -> audit(AuditAction.DEPLOYMENT_SUCCEEDED, deployment, "Jenkins",
+                    label + " réussi" + build
+                            + (deployment.getRollbackOf() == null ? ""
+                            : ", retour au déploiement #" + deployment.getRollbackOf().getId()));
+            case FAILED -> audit(AuditAction.DEPLOYMENT_FAILED, deployment, "Jenkins",
+                    label + " échoué" + build
+                            + (deployment.getErrorMessage() == null ? "" : " : " + deployment.getErrorMessage()));
+            case CANCELLED -> audit(AuditAction.DEPLOYMENT_CANCELLED, deployment, "Jenkins",
+                    label + " annulé par Jenkins" + build);
+            default -> { }
+        }
+    }
+
+    /** Publie un événement d'audit sur un déploiement (enregistré après commit). */
+    private void audit(AuditAction action, Deployment deployment, String actor, String summary) {
+        String applicationName = deployment.getVersion() != null
+                && deployment.getVersion().getApplication() != null
+                ? deployment.getVersion().getApplication().getName()
+                : null;
+        String environmentName = deployment.getEnvironment() != null
+                ? deployment.getEnvironment().getName()
+                : null;
+        eventPublisher.publishEvent(AuditEvent.of(
+                action, actor, "DEPLOYMENT", deployment.getId(),
+                applicationName, environmentName, summary
+        ));
+    }
+
+    private static String versionLabel(Deployment deployment) {
+        return deployment.getVersion() == null ? "?" : deployment.getVersion().getVersion();
     }
 
     /**
@@ -674,6 +728,8 @@ public class DeploymentService {
                 completeDeployment(deployment, now, "Délai dépassé. " + reason);
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deploymentRepository.saveAndFlush(deployment);
+                audit(AuditAction.DEPLOYMENT_EXPIRED, deployment, "Système (garde-fou)",
+                        "Déploiement #" + deployment.getId() + " marqué en échec. " + reason);
                 expired++;
             }
         }
@@ -714,8 +770,11 @@ public class DeploymentService {
                 reason.length() <= 2000 ? reason : reason.substring(0, 2000)
         );
         deployment.setStatus(DeploymentStatus.CANCELLED);
+        Deployment saved = deploymentRepository.saveAndFlush(deployment);
 
-        return toResponse(deploymentRepository.saveAndFlush(deployment));
+        audit(AuditAction.DEPLOYMENT_CANCELLED, saved, author, reason);
+
+        return toResponse(saved);
     }
 
     void ensureCancellable(Deployment deployment) {
@@ -817,6 +876,11 @@ public class DeploymentService {
                 new DeploymentPipelineRequestedEvent(savedRollback.getId())
         );
 
+        audit(AuditAction.DEPLOYMENT_ROLLBACK_REQUESTED, savedRollback,
+                currentUser == null ? null : currentUser.getEmail(),
+                "Rollback #" + savedRollback.getId() + " vers le déploiement #"
+                        + original.getId() + " (version " + versionLabel(original) + ")");
+
         return toResponse(savedRollback);
     }
 
@@ -840,6 +904,9 @@ public class DeploymentService {
         deployment.setDeleted(true);
 
         deploymentRepository.saveAndFlush(deployment);
+
+        audit(AuditAction.DEPLOYMENT_DELETED, deployment, null,
+                "Déploiement #" + deployment.getId() + " supprimé de l'historique");
     }
 
     /* ==========================================================
