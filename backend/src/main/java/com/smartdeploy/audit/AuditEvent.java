@@ -5,6 +5,7 @@ package com.smartdeploy.audit;
  *
  * @param actor          auteur de l'action ; null = utilisateur authentifié
  *                       de la requête en cours, ou « Système »
+ * @param details        précision facultative, par exemple « avant → après »
  * @param keepOnRollback vrai pour un événement à conserver même si la
  *                       transaction échoue (ex. échec de connexion)
  */
@@ -16,6 +17,7 @@ public record AuditEvent(
         String applicationName,
         String environmentName,
         String summary,
+        String details,
         boolean keepOnRollback
 ) {
 
@@ -24,10 +26,19 @@ public record AuditEvent(
             String applicationName, String environmentName, String summary
     ) {
         return new AuditEvent(action, actor, targetType, targetId,
-                applicationName, environmentName, summary, false);
+                applicationName, environmentName, summary, null, false);
     }
 
+    public static AuditEvent withDetails(
+            AuditAction action, String actor, String targetType, Long targetId,
+            String summary, String details
+    ) {
+        return new AuditEvent(action, actor, targetType, targetId,
+                null, null, summary, details, false);
+    }
+
+    /** Événement de sécurité, conservé même si la transaction en cours échoue. */
     public static AuditEvent securityFailure(AuditAction action, String actor, String summary) {
-        return new AuditEvent(action, actor, "USER", null, null, null, summary, true);
+        return new AuditEvent(action, actor, "USER", null, null, null, summary, null, true);
     }
 }

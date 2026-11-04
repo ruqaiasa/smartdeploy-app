@@ -41,6 +41,20 @@ public class JenkinsApiKeyFilter extends OncePerRequestFilter {
 
     private final byte[] expectedApiKey;
 
+    /** Facultatif : absent dans les tests unitaires qui construisent la classe directement. */
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    private void publishAudit(com.smartdeploy.audit.AuditEvent event) {
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(event);
+        }
+    }
+
     public JenkinsApiKeyFilter(
             // Aucune valeur par défaut : l'application refuse de démarrer
             // si SMARTDEPLOY_JENKINS_API_KEY n'est pas fournie.
@@ -109,6 +123,12 @@ public class JenkinsApiKeyFilter extends OncePerRequestFilter {
                         request.getServletPath(),
                         request.getRemoteAddr()
                 );
+                publishAudit(new com.smartdeploy.audit.AuditEvent(
+                        com.smartdeploy.audit.AuditAction.API_KEY_REJECTED,
+                        "Appelant inconnu", "API", null, null, null,
+                        "Clé API Jenkins refusée sur " + request.getMethod() + " " + request.getServletPath(),
+                        "La clé reçue n'est jamais enregistrée", true
+                ));
             }
         }
 

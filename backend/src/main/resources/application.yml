@@ -28,6 +28,14 @@ smartdeploy:
     # Clé partagée Jenkins ↔ SmartDeploy (credential Jenkins "smartdeploy-api-key").
     # Obligatoire, sans valeur par défaut : export des manifests + webhook.
     api-key: ${SMARTDEPLOY_JENKINS_API_KEY}
+  notifications:
+    slack:
+      # Webhook entrant Slack : secret, à placer dans .env. Vide = notifications désactivées.
+      webhook-url: ${SMARTDEPLOY_SLACK_WEBHOOK_URL:}
+      # Actions notifiées (liste séparée par des virgules), voir SlackNotifier.DEFAULT_ACTIONS.
+      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED}
+  # Adresse de l'interface, utilisée pour les liens dans les notifications.
+  app-url: ${SMARTDEPLOY_APP_URL:http://localhost:5173}
 
 prometheus:
   url: ${PROMETHEUS_URL:http://192.168.85.129:30090}

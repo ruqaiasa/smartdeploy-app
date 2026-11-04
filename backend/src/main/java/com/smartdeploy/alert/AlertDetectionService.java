@@ -16,6 +16,27 @@ public class AlertDetectionService {
 
     private final AlertRepository alertRepository;
 
+    /** Facultatif : trace l'ouverture et la résolution des alertes dans le journal. */
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    private void publishAlertEvent(com.smartdeploy.audit.AuditAction action, Alert alert,
+                                   Application application, Environment environment, String summary) {
+        if (eventPublisher == null) {
+            return;
+        }
+        eventPublisher.publishEvent(com.smartdeploy.audit.AuditEvent.of(
+                action, "Système (supervision)", "ALERT", alert.getId(),
+                application == null ? null : application.getName(),
+                environment == null ? null : environment.getName(),
+                summary
+        ));
+    }
+
     public AlertDetectionService(AlertRepository alertRepository) {
         this.alertRepository = alertRepository;
     }
@@ -234,7 +255,16 @@ public class AlertDetectionService {
                 thresholdValue
         );
 
-        alertRepository.save(alert);
+        Alert saved = alertRepository.save(alert);
+
+        publishAlertEvent(com.smartdeploy.audit.AuditAction.ALERT_OPENED, saved, application, environment,
+                "[" + severity + "] " + title + " : " + message
+                        + (currentValue == null ? "" : " (valeur " + formatValue(currentValue)
+                        + (thresholdValue == null ? "" : ", seuil " + formatValue(thresholdValue)) + ")"));
+    }
+
+    private static String formatValue(Double value) {
+        return value == Math.rint(value) ? String.valueOf(value.longValue()) : String.format("%.2f", value);
     }
 
     private void resolveAlert(
@@ -252,7 +282,9 @@ public class AlertDetectionService {
                 )
                 .ifPresent(alert -> {
                     alert.resolve();
-                    alertRepository.save(alert);
+                    Alert saved = alertRepository.save(alert);
+                    publishAlertEvent(com.smartdeploy.audit.AuditAction.ALERT_RESOLVED, saved,
+                            application, environment, saved.getTitle() + " : retour à la normale");
                 });
     }
 }

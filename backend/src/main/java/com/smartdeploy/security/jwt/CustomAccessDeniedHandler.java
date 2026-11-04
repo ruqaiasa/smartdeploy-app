@@ -22,6 +22,21 @@ public class CustomAccessDeniedHandler implements AccessDeniedHandler {
         this.objectMapper = objectMapper;
     }
 
+    /** Facultatif : absent dans les tests unitaires qui construisent la classe directement. */
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    private void publishAudit(com.smartdeploy.audit.AuditEvent event) {
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(event);
+        }
+    }
+
+
     @Override
     public void handle(
             HttpServletRequest request,
@@ -36,6 +51,13 @@ public class CustomAccessDeniedHandler implements AccessDeniedHandler {
                 "Vous n'avez pas les permissions nécessaires",
                 Map.of()
         );
+
+        publishAudit(new com.smartdeploy.audit.AuditEvent(
+                com.smartdeploy.audit.AuditAction.ACCESS_DENIED,
+                null, null, null, null, null,
+                "Accès refusé : " + request.getMethod() + " " + request.getServletPath(),
+                "Permissions insuffisantes pour cette action", true
+        ));
 
         response.setStatus(HttpStatus.FORBIDDEN.value());
         response.setContentType("application/json");

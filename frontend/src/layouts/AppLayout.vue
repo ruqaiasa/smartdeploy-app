@@ -13,6 +13,7 @@ import {
 
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
+import DeploymentToasts from '@/components/DeploymentToasts.vue'
 
 import {
   useAlertsStore,
@@ -233,6 +234,9 @@ onUnmounted(() => {
       <main class="page-content">
         <RouterView />
       </main>
+
+      <!-- Notifications de fin de déploiement, sur toutes les pages -->
+      <DeploymentToasts />
     </section>
 
     <!-- =====================================================

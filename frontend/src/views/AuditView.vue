@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getAuditLogs } from '@/api/audit.api'
-import type { AuditAction, AuditLogResponse } from '@/types/audit'
+import { getAuditLogs, sendTestNotification, verifyAuditIntegrity } from '@/api/audit.api'
+import type { AuditAction, AuditIntegrityReport, AuditLogResponse, NotificationTestResult } from '@/types/audit'
 
 /* ---------------------------------------------------------------
  * Libellés, catégories et tonalités des actions
@@ -9,6 +9,18 @@ import type { AuditAction, AuditLogResponse } from '@/types/audit'
 const ACTION_LABELS: Record<AuditAction, string> = {
   LOGIN_SUCCESS: 'Connexion',
   LOGIN_FAILURE: 'Connexion refusée',
+  LOGOUT: 'Déconnexion',
+  ACCESS_DENIED: 'Accès refusé',
+  API_KEY_REJECTED: 'Clé API refusée',
+  SUSPICIOUS_ACTIVITY: 'Activité suspecte',
+  RESOURCE_CREATED: 'Création',
+  RESOURCE_UPDATED: 'Modification',
+  RESOURCE_DELETED: 'Suppression',
+  USER_ROLE_CHANGED: 'Rôle modifié',
+  USER_STATUS_CHANGED: 'Statut de compte',
+  ACTION_FAILED: 'Action échouée',
+  ALERT_OPENED: 'Alerte ouverte',
+  ALERT_RESOLVED: 'Alerte résolue',
   DEPLOYMENT_CREATED: 'Déploiement lancé',
   DEPLOYMENT_STARTED: 'Pipeline démarré',
   DEPLOYMENT_SUCCEEDED: 'Déploiement réussi',
@@ -19,9 +31,21 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   DEPLOYMENT_EXPIRED: 'Délai dépassé',
   DEPLOYMENT_DELETED: 'Déploiement supprimé',
 }
-const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral'> = {
+const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral' | 'warning'> = {
   LOGIN_SUCCESS: 'success',
   LOGIN_FAILURE: 'danger',
+  LOGOUT: 'neutral',
+  ACCESS_DENIED: 'danger',
+  API_KEY_REJECTED: 'danger',
+  SUSPICIOUS_ACTIVITY: 'danger',
+  RESOURCE_CREATED: 'info',
+  RESOURCE_UPDATED: 'info',
+  RESOURCE_DELETED: 'neutral',
+  USER_ROLE_CHANGED: 'warning',
+  USER_STATUS_CHANGED: 'warning',
+  ACTION_FAILED: 'danger',
+  ALERT_OPENED: 'warning',
+  ALERT_RESOLVED: 'success',
   DEPLOYMENT_CREATED: 'info',
   DEPLOYMENT_STARTED: 'info',
   DEPLOYMENT_SUCCEEDED: 'success',
@@ -34,7 +58,14 @@ const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral
 }
 const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   { key: 'all', label: 'Tout', actions: [] },
-  { key: 'security', label: 'Sécurité', actions: ['LOGIN_SUCCESS', 'LOGIN_FAILURE'] },
+  {
+    key: 'security', label: 'Sécurité',
+    actions: ['LOGIN_SUCCESS', 'LOGIN_FAILURE', 'LOGOUT', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'SUSPICIOUS_ACTIVITY'],
+  },
+  {
+    key: 'admin', label: 'Administration',
+    actions: ['RESOURCE_CREATED', 'RESOURCE_UPDATED', 'RESOURCE_DELETED', 'USER_ROLE_CHANGED', 'USER_STATUS_CHANGED'],
+  },
   {
     key: 'deployments', label: 'Déploiements',
     actions: ['DEPLOYMENT_CREATED', 'DEPLOYMENT_STARTED', 'DEPLOYMENT_SUCCEEDED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_DELETED'],
@@ -43,7 +74,10 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
     key: 'recovery', label: 'Annulations et rollbacks',
     actions: ['DEPLOYMENT_CANCELLED', 'DEPLOYMENT_ROLLBACK_REQUESTED', 'DEPLOYMENT_REPLACED', 'DEPLOYMENT_EXPIRED'],
   },
-  { key: 'failures', label: 'Échecs', actions: ['LOGIN_FAILURE', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'] },
+  {
+    key: 'failures', label: 'Échecs et alertes',
+    actions: ['SUSPICIOUS_ACTIVITY', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
+  },
 ]
 
 /* ---------------------------------------------------------------
@@ -59,6 +93,10 @@ const totalPages = ref(0)
 const category = ref('all')
 const searchInput = ref('')
 const search = ref('')
+const integrity = ref<AuditIntegrityReport | null>(null)
+const verifying = ref(false)
+const notificationResult = ref<NotificationTestResult | null>(null)
+const sendingTest = ref(false)
 let requestSequence = 0
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -92,6 +130,29 @@ async function load() {
   }
 }
 
+async function testSlack() {
+  sendingTest.value = true
+  try {
+    notificationResult.value = await sendTestNotification()
+  } catch {
+    notificationResult.value = { sent: false, message: 'Le serveur n’a pas répondu.' }
+  } finally {
+    sendingTest.value = false
+  }
+}
+async function checkIntegrity() {
+  verifying.value = true
+  try {
+    integrity.value = await verifyAuditIntegrity()
+  } catch {
+    integrity.value = {
+      valid: false, checkedEntries: 0, unchainedEntries: 0, firstInvalidId: null,
+      message: 'Vérification impossible : le serveur n’a pas répondu.', verifiedAt: new Date().toISOString(),
+    }
+  } finally {
+    verifying.value = false
+  }
+}
 function reload() {
   page.value = 0
   void load()
@@ -154,10 +215,29 @@ function target(log: AuditLogResponse) {
     <header class="au-header">
       <div>
         <h1>Journal d’activité</h1>
-        <p>Qui a fait quoi, et quand : connexions, déploiements, annulations et rollbacks.</p>
+        <p>Qui a fait quoi, quand et d’où : sécurité, administration, déploiements et rollbacks.</p>
       </div>
-      <button type="button" class="au-btn au-btn-ghost" :disabled="loading" @click="load">Actualiser</button>
+      <div class="au-header-actions">
+        <button type="button" class="au-btn au-btn-ghost" :disabled="sendingTest" @click="testSlack">
+          {{ sendingTest ? 'Envoi…' : 'Tester Slack' }}
+        </button>
+        <button type="button" class="au-btn au-btn-ghost" :disabled="verifying" @click="checkIntegrity">
+          {{ verifying ? 'Vérification…' : 'Vérifier l’intégrité' }}
+        </button>
+        <button type="button" class="au-btn au-btn-ghost" :disabled="loading" @click="load">Actualiser</button>
+      </div>
     </header>
+
+    <div v-if="notificationResult" class="au-integrity" :class="notificationResult.sent ? 'is-valid' : 'is-broken'" role="status">
+      <strong>{{ notificationResult.sent ? 'Notification envoyée' : 'Notification non envoyée' }}</strong>
+      <span>{{ notificationResult.message }}</span>
+    </div>
+
+    <div v-if="integrity" class="au-integrity" :class="integrity.valid ? 'is-valid' : 'is-broken'" role="status">
+      <strong>{{ integrity.valid ? 'Intégrité vérifiée' : 'Altération détectée' }}</strong>
+      <span>{{ integrity.message }}</span>
+      <span class="au-muted">Chaque entrée contient l’empreinte SHA-256 de la précédente : toute modification ou suppression directe en base rompt la chaîne.</span>
+    </div>
 
     <label class="au-search">
       <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M13.2 13.2L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
@@ -192,9 +272,15 @@ function target(log: AuditLogResponse) {
           <tr v-for="log in logs" :key="log.id">
             <td data-label="Date"><span :title="formatDate(log.occurredAt)">{{ formatRelative(log.occurredAt) }}</span></td>
             <td data-label="Action"><span class="au-action" :class="`is-${ACTION_TONES[log.action] ?? 'neutral'}`">{{ ACTION_LABELS[log.action] ?? log.action }}</span></td>
-            <td data-label="Auteur" class="au-actor">{{ log.actor }}</td>
+            <td data-label="Auteur" class="au-actor">
+              {{ log.actor }}
+              <small v-if="log.ipAddress" class="au-muted au-block" :title="log.userAgent ?? ''">{{ log.ipAddress }}</small>
+            </td>
             <td data-label="Cible"><span v-if="target(log)">{{ target(log) }}</span><span v-else class="au-muted">—</span></td>
-            <td data-label="Détail" class="au-summary">{{ log.summary }}</td>
+            <td data-label="Détail" class="au-summary">
+              {{ log.summary }}
+              <small v-if="log.details" class="au-muted au-block">{{ log.details }}</small>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -247,7 +333,14 @@ function target(log: AuditLogResponse) {
 .au-action.is-danger { background: #fef2f2; color: #b91c1c; }
 .au-action.is-info { background: var(--color-primary-light, #f0f6ff); color: var(--accent); }
 .au-action.is-neutral { background: var(--soft); color: var(--muted); }
+.au-action.is-warning { background: #fffbeb; color: #b45309; }
+.au-block { display: block; margin-top: 2px; font-size: 12px; }
+.au-header-actions { display: flex; gap: 8px; }
+.au-integrity { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid; border-radius: 10px; font-size: 13px; }
+.au-integrity.is-valid { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
+.au-integrity.is-broken { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
 .au-actor { white-space: nowrap; }
+.au-actor .au-block { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .au-table td[data-label="Date"] { white-space: nowrap; color: var(--muted); }
 .au-summary { color: var(--ink); line-height: 1.5; }
 .au-muted { color: var(--muted); }

@@ -8,6 +8,22 @@ public enum AuditAction {
     // Sécurité
     LOGIN_SUCCESS,
     LOGIN_FAILURE,
+    LOGOUT,
+    ACCESS_DENIED,
+    API_KEY_REJECTED,
+    SUSPICIOUS_ACTIVITY,
+
+    // Administration (applications, environnements, versions, utilisateurs, secrets)
+    RESOURCE_CREATED,
+    RESOURCE_UPDATED,
+    RESOURCE_DELETED,
+    USER_ROLE_CHANGED,
+    USER_STATUS_CHANGED,
+    ACTION_FAILED,
+
+    // Supervision
+    ALERT_OPENED,
+    ALERT_RESOLVED,
 
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,

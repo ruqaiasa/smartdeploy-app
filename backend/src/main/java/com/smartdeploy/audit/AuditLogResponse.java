@@ -11,13 +11,17 @@ public record AuditLogResponse(
         String applicationName,
         String environmentName,
         String summary,
+        String details,
+        String ipAddress,
+        String userAgent,
         LocalDateTime occurredAt
 ) {
     static AuditLogResponse from(AuditLog log) {
         return new AuditLogResponse(
                 log.getId(), log.getAction(), log.getActor(), log.getTargetType(),
                 log.getTargetId(), log.getApplicationName(), log.getEnvironmentName(),
-                log.getSummary(), log.getOccurredAt()
+                log.getSummary(), log.getDetails(), log.getIpAddress(), log.getUserAgent(),
+                log.getOccurredAt()
         );
     }
 }

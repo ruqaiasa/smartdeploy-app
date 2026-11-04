@@ -1,6 +1,18 @@
 export type AuditAction =
   | 'LOGIN_SUCCESS'
   | 'LOGIN_FAILURE'
+  | 'LOGOUT'
+  | 'ACCESS_DENIED'
+  | 'API_KEY_REJECTED'
+  | 'SUSPICIOUS_ACTIVITY'
+  | 'RESOURCE_CREATED'
+  | 'RESOURCE_UPDATED'
+  | 'RESOURCE_DELETED'
+  | 'USER_ROLE_CHANGED'
+  | 'USER_STATUS_CHANGED'
+  | 'ACTION_FAILED'
+  | 'ALERT_OPENED'
+  | 'ALERT_RESOLVED'
   | 'DEPLOYMENT_CREATED'
   | 'DEPLOYMENT_STARTED'
   | 'DEPLOYMENT_SUCCEEDED'
@@ -20,7 +32,19 @@ export interface AuditLogResponse {
   applicationName: string | null
   environmentName: string | null
   summary: string
+  details: string | null
+  ipAddress: string | null
+  userAgent: string | null
   occurredAt: string
+}
+
+export interface AuditIntegrityReport {
+  valid: boolean
+  checkedEntries: number
+  unchainedEntries: number
+  firstInvalidId: number | null
+  message: string
+  verifiedAt: string
 }
 
 export interface AuditLogPageResponse {
@@ -38,4 +62,9 @@ export interface AuditLogSearchParams {
   size?: number
   actions?: AuditAction[]
   search?: string
+}
+
+export interface NotificationTestResult {
+  sent: boolean
+  message: string
 }

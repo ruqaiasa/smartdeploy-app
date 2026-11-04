@@ -6,8 +6,11 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * Entrée du journal d'activité : qui a fait quoi, quand, et sur quoi.
- * Les entrées ne sont jamais modifiées.
+ * Entrée du journal d'activité : qui a fait quoi, quand, d'où, et sur quoi.
+ *
+ * Les entrées forment une chaîne : chacune contient l'empreinte de la
+ * précédente et la sienne (voir AuditChain). Toute modification ou
+ * suppression directe en base rompt la chaîne et devient détectable.
  */
 @Entity
 @Table(
@@ -28,7 +31,7 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = AuditActionConverter.class)
     @Column(nullable = false, length = 50)
     private AuditAction action;
 
@@ -50,6 +53,23 @@ public class AuditLog {
     @Column(nullable = false, length = 1000)
     private String summary;
 
+    @Column(length = 2000)
+    private String details;
+
+    @Column(name = "ip_address", length = 64)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 255)
+    private String userAgent;
+
     @Column(name = "occurred_at", nullable = false, updatable = false)
     private LocalDateTime occurredAt;
+
+    /** Empreinte de l'entrée précédente (chaîne d'intégrité). */
+    @Column(name = "previous_hash", length = 64)
+    private String previousHash;
+
+    /** Empreinte SHA-256 de cette entrée, incluant previousHash. */
+    @Column(length = 64)
+    private String hash;
 }

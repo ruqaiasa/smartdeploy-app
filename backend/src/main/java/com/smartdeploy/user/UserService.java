@@ -19,6 +19,20 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    /** Facultatif : absent dans les tests unitaires qui construisent la classe directement. */
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    private void publishAudit(com.smartdeploy.audit.AuditEvent event) {
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(event);
+        }
+    }
+
     public UserService(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder
@@ -202,8 +216,14 @@ public class UserService {
          * est déjà le rôle actuel.
          */
         if (user.getRole() != request.role()) {
+            Role previousRole = user.getRole();
             user.setRole(request.role());
             revokeExistingTokens(user);
+            publishAudit(com.smartdeploy.audit.AuditEvent.withDetails(
+                    com.smartdeploy.audit.AuditAction.USER_ROLE_CHANGED, null, "USER", user.getId(),
+                    "Rôle de " + user.getEmail() + " modifié",
+                    "Rôle : " + previousRole + " → " + request.role()
+            ));
         }
 
         User updatedUser = userRepository.saveAndFlush(user);
@@ -233,6 +253,12 @@ public class UserService {
         if (user.isEnabled() != request.enabled()) {
             user.setEnabled(request.enabled());
             revokeExistingTokens(user);
+            publishAudit(com.smartdeploy.audit.AuditEvent.withDetails(
+                    com.smartdeploy.audit.AuditAction.USER_STATUS_CHANGED, null, "USER", user.getId(),
+                    "Compte de " + user.getEmail() + (request.enabled() ? " réactivé" : " désactivé"),
+                    "Statut : " + (request.enabled() ? "désactivé → actif" : "actif → désactivé")
+                            + ". Sessions en cours révoquées."
+            ));
         }
 
         User updatedUser = userRepository.saveAndFlush(user);

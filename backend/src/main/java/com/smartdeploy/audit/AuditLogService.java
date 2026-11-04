@@ -41,7 +41,8 @@ public class AuditLogService {
                     builder.like(builder.lower(root.<String>get("actor")), pattern),
                     builder.like(builder.lower(root.<String>get("summary")), pattern),
                     builder.like(builder.lower(builder.coalesce(root.<String>get("applicationName"), "")), pattern),
-                    builder.like(builder.lower(builder.coalesce(root.<String>get("environmentName"), "")), pattern)
+                    builder.like(builder.lower(builder.coalesce(root.<String>get("environmentName"), "")), pattern),
+                    builder.like(builder.lower(builder.coalesce(root.<String>get("ipAddress"), "")), pattern)
             ));
         }
 

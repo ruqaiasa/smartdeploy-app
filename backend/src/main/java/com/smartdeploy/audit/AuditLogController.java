@@ -13,9 +13,11 @@ import java.util.List;
 public class AuditLogController {
 
     private final AuditLogService auditLogService;
+    private final AuditIntegrityService auditIntegrityService;
 
-    public AuditLogController(AuditLogService auditLogService) {
+    public AuditLogController(AuditLogService auditLogService, AuditIntegrityService auditIntegrityService) {
         this.auditLogService = auditLogService;
+        this.auditIntegrityService = auditIntegrityService;
     }
 
     @GetMapping
@@ -27,5 +29,12 @@ public class AuditLogController {
             @RequestParam(required = false) String search
     ) {
         return auditLogService.search(page, size, actions, search);
+    }
+
+    /** Vérifie la chaîne d'empreintes : toute modification ou suppression directe est détectée. */
+    @GetMapping("/integrity")
+    @PreAuthorize("hasRole('ADMIN')")
+    public AuditIntegrityReport verifyIntegrity() {
+        return auditIntegrityService.verify();
     }
 }
