@@ -28,55 +28,89 @@ public class GuardMetricsCollector {
     }
 
     public GuardSnapshot collect(String namespace, String prefix, long secondsSinceStart, int baselineMinutes) {
+        Reader reader = new Reader(namespace, prefix);
+        String cpu = GuardQueries.cpuPercent(namespace, prefix);
+        String memory = GuardQueries.memoryMb(namespace, prefix);
+
+        GuardSnapshot snapshot = new GuardSnapshot(
+                intOrNull(reader.scalar("pods attendus", GuardQueries.desiredPods(namespace, prefix))),
+                intOrNull(reader.scalar("pods indisponibles", GuardQueries.unavailablePods(namespace, prefix))),
+                intOrNull(reader.scalar("redémarrages", GuardQueries.restartsSince(namespace, prefix, secondsSinceStart))),
+                reader.labels("conteneurs bloqués", GuardQueries.blockedContainers(namespace, prefix),
+                        metric -> metric.path("pod").asText() + " : " + metric.path("reason").asText()),
+                reader.labels("arrêts OOMKilled", GuardQueries.oomKilled(namespace, prefix), metric -> metric.path("pod").asText()),
+                reader.scalar("mémoire / limite", GuardQueries.memoryLimitRatio(namespace, prefix)),
+                reader.scalar("CPU", cpu),
+                reader.scalar("mémoire", memory),
+                reader.scalar("CPU de référence", GuardQueries.baseline(cpu, secondsSinceStart, baselineMinutes)),
+                reader.scalar("mémoire de référence", GuardQueries.baseline(memory, secondsSinceStart, baselineMinutes))
+        );
+
+        // Toutes les requêtes ont échoué : Prometheus est réellement injoignable.
+        if (reader.failures == reader.queries) {
+            log.warn("Gardien : Prometheus injoignable pour {} / {} ({})", namespace, prefix, reader.lastError);
+            return null;
+        }
+        return snapshot;
+    }
+
+    /**
+     * Exécute chaque requête isolément : une requête en erreur rend seulement
+     * son contrôle « non mesuré », sans invalider les autres mesures.
+     */
+    private final class Reader {
+        private final String namespace;
+        private final String prefix;
+        private int queries;
+        private int failures;
+        private String lastError;
+
+        private Reader(String namespace, String prefix) {
+            this.namespace = namespace;
+            this.prefix = prefix;
+        }
+
+        Double scalar(String name, String query) {
+            JsonNode results = run(name, query);
+            if (results == null || !results.isArray() || results.isEmpty()) {
+                return null;
+            }
+            JsonNode value = results.get(0).path("value");
+            return value.isArray() && value.size() >= 2 ? parse(value.get(1).asText()) : null;
+        }
+
+        List<String> labels(String name, String query, Function<JsonNode, String> format) {
+            JsonNode results = run(name, query);
+            if (results == null || !results.isArray()) {
+                return List.of();
+            }
+            List<String> values = new ArrayList<>();
+            for (JsonNode result : results) {
+                values.add(format.apply(result.path("metric")));
+            }
+            return values.stream().distinct().sorted().toList();
+        }
+
+        private JsonNode run(String name, String query) {
+            queries++;
+            try {
+                return MAPPER.readTree(prometheusClient.query(query)).path("data").path("result");
+            } catch (Exception exception) {
+                failures++;
+                lastError = exception.getMessage();
+                log.warn("Gardien : requête « {} » en erreur pour {} / {} : {}", name, namespace, prefix, exception.getMessage());
+                return null;
+            }
+        }
+    }
+
+    /** Valeur Prometheus, ou null si non mesurable (NaN, +Inf, -Inf, texte invalide). */
+    static Double parse(String text) {
         try {
-            String cpu = GuardQueries.cpuPercent(namespace, prefix);
-            String memory = GuardQueries.memoryMb(namespace, prefix);
-            return new GuardSnapshot(
-                    intOrNull(scalar(GuardQueries.desiredPods(namespace, prefix))),
-                    intOrNull(scalar(GuardQueries.unavailablePods(namespace, prefix))),
-                    intOrNull(scalar(GuardQueries.restartsSince(namespace, prefix, secondsSinceStart))),
-                    labels(GuardQueries.blockedContainers(namespace, prefix),
-                            metric -> metric.path("pod").asText() + " : " + metric.path("reason").asText()),
-                    labels(GuardQueries.oomKilled(namespace, prefix), metric -> metric.path("pod").asText()),
-                    scalar(GuardQueries.memoryLimitRatio(namespace, prefix)),
-                    scalar(cpu),
-                    scalar(memory),
-                    scalar(GuardQueries.baseline(cpu, secondsSinceStart, baselineMinutes)),
-                    scalar(GuardQueries.baseline(memory, secondsSinceStart, baselineMinutes))
-            );
-        } catch (RuntimeException exception) {
-            log.warn("Gardien : lecture Prometheus impossible pour {} / {} : {}", namespace, prefix, exception.getMessage());
+            double value = Double.parseDouble(text);
+            return Double.isNaN(value) || Double.isInfinite(value) ? null : value;
+        } catch (NumberFormatException exception) {
             return null;
-        }
-    }
-
-    /** Première valeur du résultat, ou null si la série est absente (non mesurable). */
-    private Double scalar(String query) {
-        JsonNode results = results(query);
-        if (!results.isArray() || results.isEmpty()) {
-            return null;
-        }
-        JsonNode value = results.get(0).path("value");
-        if (!value.isArray() || value.size() < 2) {
-            return null;
-        }
-        double parsed = Double.parseDouble(value.get(1).asText());
-        return Double.isNaN(parsed) || Double.isInfinite(parsed) ? null : parsed;
-    }
-
-    private List<String> labels(String query, Function<JsonNode, String> format) {
-        List<String> values = new ArrayList<>();
-        for (JsonNode result : results(query)) {
-            values.add(format.apply(result.path("metric")));
-        }
-        return values.stream().distinct().sorted().toList();
-    }
-
-    private JsonNode results(String query) {
-        try {
-            return MAPPER.readTree(prometheusClient.query(query)).path("data").path("result");
-        } catch (Exception exception) {
-            throw new IllegalStateException("Réponse Prometheus illisible", exception);
         }
     }
 

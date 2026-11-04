@@ -58,10 +58,16 @@ public final class GuardQueries {
                 .formatted(ns, podPattern(prefix));
     }
 
+    /**
+     * Les deux côtés sont d'abord regroupés par conteneur : cAdvisor publie
+     * souvent plusieurs séries pour un même conteneur (ancienne et nouvelle
+     * instance), ce qui ferait échouer l'association (« many-to-one matching
+     * must be explicit »).
+     */
     static String memoryLimitRatio(String ns, String prefix) {
         String selector = "namespace=\"%s\",pod=~\"%s\"".formatted(ns, podPattern(prefix));
-        return ("max(container_memory_working_set_bytes{%s,container!=\"\",container!=\"POD\"}"
-                + " / on(namespace,pod,container) kube_pod_container_resource_limits{%s,resource=\"memory\"})")
+        return ("max(max by (namespace,pod,container) (container_memory_working_set_bytes{%s,container!=\"\",container!=\"POD\"})"
+                + " / on(namespace,pod,container) max by (namespace,pod,container) (kube_pod_container_resource_limits{%s,resource=\"memory\"}))")
                 .formatted(selector, selector);
     }
 
