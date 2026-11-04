@@ -20,7 +20,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -226,21 +228,35 @@ public class DeploymentGuardService {
     }
 
     /**
-     * Cible du retour arrière : le dernier déploiement remplacé sur
-     * l'environnement, antérieur à celui-ci et tracé par empreinte. Aucune
-     * cible si le déploiement dégradé est lui-même un retour arrière.
+     * Cible du retour arrière : le dernier déploiement sain de l'environnement.
+     * Après un déploiement normal, le précédent reste « Réussi » (seul un
+     * retour arrière marque explicitement le déploiement remplacé) : les
+     * candidats sont donc les déploiements réussis ou remplacés, antérieurs,
+     * tracés par empreinte, et que le gardien n'a pas lui-même jugés dégradés.
+     * Aucune cible si le déploiement dégradé est lui-même un retour arrière.
      */
     Optional<Deployment> rollbackTarget(Deployment deployment) {
         if (deployment.getRollbackOf() != null) {
             return Optional.empty();
         }
-        return deploymentRepository
-                .findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(deployment.getEnvironment(), DeploymentStatus.ROLLED_BACK)
-                .stream()
+        List<Deployment> candidates = new ArrayList<>();
+        for (DeploymentStatus status : List.of(DeploymentStatus.SUCCESS, DeploymentStatus.ROLLED_BACK)) {
+            candidates.addAll(deploymentRepository
+                    .findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(deployment.getEnvironment(), status));
+        }
+        return candidates.stream()
+                .filter(candidate -> !candidate.getId().equals(deployment.getId()))
                 .filter(candidate -> candidate.getCreatedAt() != null && deployment.getCreatedAt() != null
                         && candidate.getCreatedAt().isBefore(deployment.getCreatedAt()))
                 .filter(candidate -> candidate.getDeployedBackendImage() != null && !candidate.getDeployedBackendImage().isBlank())
-                .findFirst();
+                .filter(candidate -> !judgedDegraded(candidate.getId()))
+                .max(Comparator.comparing(Deployment::getCreatedAt));
+    }
+
+    private boolean judgedDegraded(Long deploymentId) {
+        return guardRepository.findFirstByDeploymentIdOrderByIdDesc(deploymentId)
+                .map(guard -> guard.getStatus() == GuardStatus.DEGRADED)
+                .orElse(false);
     }
 
     private void close(DeploymentGuard guard, Deployment deployment, GuardStatus status, AuditAction action,

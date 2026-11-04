@@ -221,4 +221,32 @@ class DeploymentGuardServiceTest {
         service.apply(persistent, deployment, ok(), true, T0.plusMinutes(10));
         assertEquals(GuardStatus.HEALTHY_WITH_WARNINGS, persistent.getStatus());
     }
+
+    @Test
+    void shouldProposeTheDeploymentThatWasInServiceEvenIfStillMarkedSuccessful() {
+        // Cas réel du déploiement #117 : le témoin #116 est resté « Réussi » (déploiement normal
+        // ensuite), le #115 a été « Remplacé » par un retour arrière plus ancien.
+        Deployment replacedByRollback = deployment(115L, DeploymentStatus.ROLLED_BACK, T0.minusMinutes(30), "registry/backend@sha256:cb6", environment);
+        Deployment witness = deployment(116L, DeploymentStatus.SUCCESS, T0.minusMinutes(20), "registry/backend@sha256:20d", environment);
+        when(deploymentRepository.findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.SUCCESS))
+                .thenReturn(List.of(deployment, witness));
+        when(deploymentRepository.findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.ROLLED_BACK))
+                .thenReturn(List.of(replacedByRollback));
+
+        assertEquals(116L, service(T0).rollbackTarget(deployment).orElseThrow().getId());
+    }
+
+    @Test
+    void shouldNeverProposeADeploymentJudgedDegraded() {
+        Deployment healthy = deployment(110L, DeploymentStatus.SUCCESS, T0.minusHours(2), "registry/backend@sha256:ok", environment);
+        Deployment degraded = deployment(111L, DeploymentStatus.SUCCESS, T0.minusHours(1), "registry/backend@sha256:ko", environment);
+        when(deploymentRepository.findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.SUCCESS))
+                .thenReturn(List.of(deployment, degraded, healthy));
+        DeploymentGuard degradedGuard = watching();
+        degradedGuard.setDeploymentId(111L);
+        degradedGuard.setStatus(GuardStatus.DEGRADED);
+        when(guardRepository.findFirstByDeploymentIdOrderByIdDesc(111L)).thenReturn(Optional.of(degradedGuard));
+
+        assertEquals(110L, service(T0).rollbackTarget(deployment).orElseThrow().getId());
+    }
 }
