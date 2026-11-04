@@ -8,6 +8,7 @@ import io.fabric8.kubernetes.client.utils.Serialization;
 import io.fabric8.kubernetes.api.model.apps.StatefulSet;
 import io.fabric8.kubernetes.api.model.apps.StatefulSetBuilder;
 import io.fabric8.kubernetes.api.model.Quantity;
+import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import java.util.LinkedHashMap;
 import java.util.Objects;
@@ -184,9 +185,9 @@ public class KubernetesManifestGeneratorService {
                 );
 
         return new KubernetesFullStackPreviewResponse(
-                generateDeployment(frontendConfig),
+                withResources(generateDeployment(frontendConfig), ContainerResourceProfile.FRONTEND),
                 generateService(frontendConfig),
-                generateDeployment(backendConfig),
+                withResources(generateDeployment(backendConfig), ContainerResourceProfile.BACKEND),
                 generateService(backendConfig)
         );
     }
@@ -423,7 +424,7 @@ public class KubernetesManifestGeneratorService {
 
             manifests.put(
                     "frontend-deployment.yaml",
-                    generateDeployment(config)
+                    withResources(generateDeployment(config), ContainerResourceProfile.FRONTEND)
             );
 
             manifests.put(
@@ -448,9 +449,12 @@ public class KubernetesManifestGeneratorService {
 
             manifests.put(
                     "backend-deployment.yaml",
-                    request.database() != null
-                            ? generateBackendWithDatabase(config, request.database())
-                            : generateDeployment(config)
+                    withResources(
+                            request.database() != null
+                                    ? generateBackendWithDatabase(config, request.database())
+                                    : generateDeployment(config),
+                            ContainerResourceProfile.BACKEND
+                    )
             );
 
             manifests.put(
@@ -489,6 +493,23 @@ public class KubernetesManifestGeneratorService {
 
         return new KubernetesApplicationPreviewResponse(manifests);
     }
+    /**
+     * Ajoute les ressources (réservées et maximales) aux conteneurs d'un
+     * Deployment généré. Sans limite, une application qui s'emballe peut
+     * priver les autres de ressources sur le nœud.
+     */
+    String withResources(String deploymentYaml, ContainerResourceProfile profile) {
+        Deployment deployment = Serialization.unmarshal(deploymentYaml, Deployment.class);
+        deployment.getSpec().getTemplate().getSpec().getContainers().forEach(container ->
+                container.setResources(new ResourceRequirementsBuilder()
+                        .addToRequests("cpu", new Quantity(profile.requestCpu()))
+                        .addToRequests("memory", new Quantity(profile.requestMemory()))
+                        .addToLimits("cpu", new Quantity(profile.limitCpu()))
+                        .addToLimits("memory", new Quantity(profile.limitMemory()))
+                        .build()));
+        return Serialization.asYaml(deployment);
+    }
+
     public String generateBackendWithDatabase(
             KubernetesDeploymentConfigRequest config,
             KubernetesDatabaseRequest database
