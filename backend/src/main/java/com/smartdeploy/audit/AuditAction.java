@@ -25,6 +25,11 @@ public enum AuditAction {
     ALERT_OPENED,
     ALERT_RESOLVED,
 
+    // Gardien de déploiement
+    GUARD_PASSED,
+    GUARD_DEGRADED,
+    GUARD_INCONCLUSIVE,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

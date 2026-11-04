@@ -21,6 +21,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   ACTION_FAILED: 'Action échouée',
   ALERT_OPENED: 'Alerte ouverte',
   ALERT_RESOLVED: 'Alerte résolue',
+  GUARD_PASSED: 'Validé par le gardien',
+  GUARD_DEGRADED: 'Dégradation détectée',
+  GUARD_INCONCLUSIVE: 'Garde non concluante',
   DEPLOYMENT_CREATED: 'Déploiement lancé',
   DEPLOYMENT_STARTED: 'Pipeline démarré',
   DEPLOYMENT_SUCCEEDED: 'Déploiement réussi',
@@ -46,6 +49,9 @@ const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral
   ACTION_FAILED: 'danger',
   ALERT_OPENED: 'warning',
   ALERT_RESOLVED: 'success',
+  GUARD_PASSED: 'success',
+  GUARD_DEGRADED: 'danger',
+  GUARD_INCONCLUSIVE: 'neutral',
   DEPLOYMENT_CREATED: 'info',
   DEPLOYMENT_STARTED: 'info',
   DEPLOYMENT_SUCCEEDED: 'success',
@@ -68,7 +74,7 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   },
   {
     key: 'deployments', label: 'Déploiements',
-    actions: ['DEPLOYMENT_CREATED', 'DEPLOYMENT_STARTED', 'DEPLOYMENT_SUCCEEDED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_DELETED'],
+    actions: ['DEPLOYMENT_CREATED', 'DEPLOYMENT_STARTED', 'DEPLOYMENT_SUCCEEDED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_DELETED', 'GUARD_PASSED', 'GUARD_DEGRADED', 'GUARD_INCONCLUSIVE'],
   },
   {
     key: 'recovery', label: 'Annulations et rollbacks',
@@ -76,7 +82,7 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   },
   {
     key: 'failures', label: 'Échecs et alertes',
-    actions: ['SUSPICIOUS_ACTIVITY', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
+    actions: ['SUSPICIOUS_ACTIVITY', 'GUARD_DEGRADED', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
   },
 ]
 

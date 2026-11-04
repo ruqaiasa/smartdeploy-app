@@ -31,6 +31,9 @@ public final class SlackMessageBuilder {
             case USER_STATUS_CHANGED -> "🔐 Statut d'un compte modifié";
             case ALERT_OPENED -> "⚠️ Alerte de supervision";
             case ALERT_RESOLVED -> "✅ Alerte résolue";
+            case GUARD_DEGRADED -> "🛡️ Dégradation détectée par le gardien";
+            case GUARD_PASSED -> "🛡️ Déploiement validé par le gardien";
+            case GUARD_INCONCLUSIVE -> "🛡️ Surveillance non concluante";
             default -> "ℹ️ SmartDeploy";
         };
     }

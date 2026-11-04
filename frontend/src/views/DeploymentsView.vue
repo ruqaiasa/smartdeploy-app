@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
+import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.vue'
+import DeploymentGuardPanel from '@/components/deployments/DeploymentGuardPanel.vue'
+import { getDeploymentGuards } from '@/api/guard.api'
+import type { DeploymentGuard } from '@/types/guard'
 import { useApplicationsStore } from '@/stores/applications'
 import { useDeploymentsStore } from '@/stores/deployments'
 import { useEnvironmentsStore } from '@/stores/environments'
@@ -121,7 +125,46 @@ onMounted(async () => {
     environmentsStore.loadEnvironments({ page: 0, size: 100, active: true }),
   ])
 })
+/* ---------------------------------------------------------------
+ * Gardien de déploiement : verdict et preuves après la mise en service
+ * --------------------------------------------------------------- */
+const guards = ref<Record<number, DeploymentGuard>>({})
+const guardDeployment = ref<DeploymentResponse | null>(null)
+let guardTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadGuards() {
+  const ids = deploymentsStore.deployments
+    .filter(d => d.status === 'SUCCESS' || d.status === 'ROLLED_BACK')
+    .map(d => d.id)
+  try {
+    const list = await getDeploymentGuards(ids)
+    guards.value = Object.fromEntries(list.map(g => [g.deploymentId, g]))
+  } catch {
+    // Le gardien est un complément : son indisponibilité ne bloque pas la page.
+  }
+}
+const hasWatchingGuards = computed(() => Object.values(guards.value).some(g => g.status === 'WATCHING'))
+watch(() => deploymentsStore.deployments, () => { void loadGuards() })
+watch(hasWatchingGuards, watching => {
+  if (watching && !guardTimer) {
+    guardTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadGuards()
+    }, 15_000)
+  } else if (!watching && guardTimer) {
+    clearInterval(guardTimer)
+    guardTimer = null
+  }
+})
+function openGuard(deployment: DeploymentResponse) { guardDeployment.value = deployment }
+async function rollbackToTarget(targetId: number) {
+  try {
+    await deploymentsStore.rollback(targetId)
+    guardDeployment.value = null
+  } catch { /* store */ }
+}
+
 onBeforeUnmount(() => {
+  if (guardTimer) clearInterval(guardTimer)
   stopPolling()
   if (searchTimer) clearTimeout(searchTimer)
 })
@@ -316,6 +359,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}
                 </span>
                 <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
+                <DeploymentGuardBadge v-if="guards[deployment.id]" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
               </td>
               <td data-label="Lancé">
                 <span :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
@@ -365,6 +409,17 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
     <DeploymentFormModal :open="modalOpen" :applications="applicationsStore.applications"
       :environments="environmentsStore.environments" :loading="deploymentsStore.actionLoading"
       @close="closeModal" @submit="submitDeployment" />
+
+    <!-- Garde de déploiement : verdict, chronologie et preuves -->
+    <DeploymentGuardPanel
+      v-if="guardDeployment && guards[guardDeployment.id]"
+      :guard="guards[guardDeployment.id]!"
+      :deployment="guardDeployment"
+      :can-rollback="ROLLBACK_AVAILABLE && canManageDeployments"
+      :busy="deploymentsStore.actionLoading"
+      @close="guardDeployment = null"
+      @rollback="rollbackToTarget"
+    />
 
     <!-- Monitoring d'un déploiement -->
     <Teleport to="body">

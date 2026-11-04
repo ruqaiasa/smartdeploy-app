@@ -33,7 +33,14 @@ smartdeploy:
       # Webhook entrant Slack : secret, à placer dans .env. Vide = notifications désactivées.
       webhook-url: ${SMARTDEPLOY_SLACK_WEBHOOK_URL:}
       # Actions notifiées (liste séparée par des virgules), voir SlackNotifier.DEFAULT_ACTIONS.
-      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED}
+      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED}
+  # Gardien de déploiement : surveillance après chaque mise en service.
+  guard:
+    enabled: ${SMARTDEPLOY_GUARD_ENABLED:true}
+    window-minutes: ${SMARTDEPLOY_GUARD_WINDOW_MINUTES:10}
+    baseline-minutes: 15
+    critical-confirmations: 2
+    interval-ms: 30000
   # Adresse de l'interface, utilisée pour les liens dans les notifications.
   app-url: ${SMARTDEPLOY_APP_URL:http://localhost:5173}
 

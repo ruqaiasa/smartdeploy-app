@@ -22,7 +22,7 @@ public class SlackNotifier {
     private static final Logger log = LoggerFactory.getLogger(SlackNotifier.class);
 
     static final String DEFAULT_ACTIONS = "DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,"
-            + "DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED";
+            + "DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED";
 
     private final SlackClient slackClient;
     private final String webhookUrl;
