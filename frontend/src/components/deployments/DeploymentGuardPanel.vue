@@ -24,7 +24,7 @@ const STATUS_TITLES: Record<DeploymentGuard['status'], string> = {
   INCONCLUSIVE: 'Surveillance non concluante',
   SUPERSEDED: 'Surveillance interrompue',
 }
-const LEVEL_LABELS: Record<GuardLevel, string> = { OK: 'Conforme', UNKNOWN: 'Non mesuré', WARNING: 'Avertissement', CRITICAL: 'Critique' }
+const LEVEL_LABELS: Record<GuardLevel, string> = { OK: 'Conforme', UNKNOWN: 'Non évalué', WARNING: 'Avertissement', CRITICAL: 'Critique' }
 const ORDER: Record<GuardLevel, number> = { CRITICAL: 0, WARNING: 1, OK: 2, UNKNOWN: 3 }
 
 const tone = computed(() => ({

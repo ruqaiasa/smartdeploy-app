@@ -60,6 +60,10 @@ public class DeploymentGuard {
     @Column(name = "consecutive_critical", nullable = false)
     private int consecutiveCritical;
 
+    /** Avertissements consécutifs : seuls les avertissements persistants comptent. */
+    @Column(name = "consecutive_warnings", nullable = false, columnDefinition = "integer default 0")
+    private int consecutiveWarnings;
+
     @Column(name = "warnings_seen", nullable = false)
     private boolean warningsSeen;
 

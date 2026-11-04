@@ -22,10 +22,22 @@ public final class GuardEvaluator {
     static final double MEMORY_FACTOR = 1.5;
     static final double MEMORY_MIN_INCREASE_MB = 100.0;
 
+    /**
+     * Période de démarrage : la JVM et les caches consomment beaucoup de
+     * processeur et de mémoire juste après la mise en service. Les dérives ne
+     * sont pas jugées pendant ces 3 minutes ; les contrôles critiques, eux,
+     * restent actifs dès la première seconde.
+     */
+    static final long WARMUP_SECONDS = 180;
+
     private GuardEvaluator() {
     }
 
     public static GuardEvaluation evaluate(GuardSnapshot snapshot) {
+        return evaluate(snapshot, Long.MAX_VALUE);
+    }
+
+    public static GuardEvaluation evaluate(GuardSnapshot snapshot, long secondsSinceStart) {
         if (snapshot == null) {
             GuardCheck unavailable = new GuardCheck("prometheus", "Lecture des métriques", GuardLevel.UNKNOWN,
                     "Prometheus injoignable", null, "Aucune mesure possible pour cette évaluation.");
@@ -38,14 +50,28 @@ public final class GuardEvaluator {
         checks.add(restarts(snapshot));
         checks.add(outOfMemory(snapshot));
         checks.add(memoryLimit(snapshot));
-        checks.add(cpuDrift(snapshot));
-        checks.add(memoryDrift(snapshot));
+        if (secondsSinceStart < WARMUP_SECONDS) {
+            checks.add(warmingUp("cpu_drift", "CPU par rapport à avant le déploiement",
+                    snapshot.cpuPercent() == null ? "non mesuré" : percent(snapshot.cpuPercent()), secondsSinceStart));
+            checks.add(warmingUp("memory_drift", "Mémoire par rapport à avant le déploiement",
+                    snapshot.memoryMb() == null ? "non mesurée" : megabytes(snapshot.memoryMb()), secondsSinceStart));
+        } else {
+            checks.add(cpuDrift(snapshot));
+            checks.add(memoryDrift(snapshot));
+        }
 
         GuardLevel level = checks.stream().map(GuardCheck::level)
                 .filter(l -> l == GuardLevel.CRITICAL || l == GuardLevel.WARNING)
                 .max(Enum::compareTo)
                 .orElse(GuardLevel.OK);
         return new GuardEvaluation(level, List.copyOf(checks));
+    }
+
+    private static GuardCheck warmingUp(String key, String label, String observed, long secondsSinceStart) {
+        long remaining = Math.max(0, WARMUP_SECONDS - secondsSinceStart);
+        return new GuardCheck(key, label, GuardLevel.UNKNOWN, observed, "démarrage en cours",
+                "Période de démarrage : dérive non évaluée pendant les 3 premières minutes (encore "
+                        + remaining + " s).");
     }
 
     private static GuardCheck availability(GuardSnapshot s) {

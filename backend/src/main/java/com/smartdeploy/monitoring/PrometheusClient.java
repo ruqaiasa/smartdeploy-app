@@ -26,10 +26,7 @@ public class PrometheusClient {
 
     public String query(String promQlQuery) {
 
-        String encodedQuery = UriUtils.encodeQueryParam(
-                promQlQuery,
-                StandardCharsets.UTF_8
-        );
+        String encodedQuery = encode(promQlQuery);
 
         URI uri = URI.create(
                 "/api/v1/query?query=" + encodedQuery
@@ -81,10 +78,7 @@ public class PrometheusClient {
             int step
     ) {
 
-        String encodedQuery = UriUtils.encodeQueryParam(
-                promQlQuery,
-                StandardCharsets.UTF_8
-        );
+        String encodedQuery = encode(promQlQuery);
 
         URI uri = URI.create(
                 "/api/v1/query_range" +
@@ -161,5 +155,15 @@ public class PrometheusClient {
                     exception
             );
         }
+    }
+
+    /**
+     * Encode une requête PromQL pour l'URL. encodeQueryParam laisse le signe
+     * « + » tel quel (caractère autorisé), mais Prometheus, comme tout serveur
+     * Go, le décode en espace : « sum(a) + sum(b) » arrivait tronquée et
+     * était rejetée. Le « + » est donc encodé explicitement.
+     */
+    static String encode(String promQlQuery) {
+        return UriUtils.encodeQueryParam(promQlQuery, StandardCharsets.UTF_8).replace("+", "%2B");
     }
 }

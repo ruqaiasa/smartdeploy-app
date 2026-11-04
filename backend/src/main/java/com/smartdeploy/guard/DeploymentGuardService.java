@@ -42,6 +42,8 @@ public class DeploymentGuardService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentGuardService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
     static final String GUARD_ACTOR = "Gardien de déploiement";
+    /** Nombre d'évaluations consécutives pour qu'un avertissement soit retenu. */
+    static final int PERSISTENT_WARNINGS = 3;
 
     private final DeploymentGuardRepository guardRepository;
     private final DeploymentRepository deploymentRepository;
@@ -157,7 +159,7 @@ public class DeploymentGuardService {
         // Hors transaction : Prometheus peut être lent.
         GuardSnapshot snapshot = collector.collect(current.getNamespace(), current.getApplicationPrefix(),
                 secondsSinceStart, properties.baselineMinutes());
-        GuardEvaluation evaluation = GuardEvaluator.evaluate(snapshot);
+        GuardEvaluation evaluation = GuardEvaluator.evaluate(snapshot, secondsSinceStart);
 
         transactions.executeWithoutResult(status -> {
             DeploymentGuard guard = guardRepository.findById(guardId).orElse(null);
@@ -184,7 +186,9 @@ public class DeploymentGuardService {
         guard.setLastEvaluatedAt(now);
         guard.setChecksJson(toJson(evaluation.checks()));
         guard.setConsecutiveCritical(evaluation.level() == GuardLevel.CRITICAL ? guard.getConsecutiveCritical() + 1 : 0);
-        if (evaluation.level() == GuardLevel.WARNING) {
+        // Un avertissement ne compte que s'il persiste (environ 1 min 30).
+        guard.setConsecutiveWarnings(evaluation.level() == GuardLevel.WARNING ? guard.getConsecutiveWarnings() + 1 : 0);
+        if (guard.getConsecutiveWarnings() >= PERSISTENT_WARNINGS) {
             guard.setWarningsSeen(true);
         }
 

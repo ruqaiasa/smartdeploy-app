@@ -67,4 +67,21 @@ class GuardEvaluatorTest {
     void shouldReportUnknownWhenPrometheusIsUnreachable() {
         assertEquals(GuardLevel.UNKNOWN, GuardEvaluator.evaluate(null).level());
     }
+
+    @Test
+    void shouldNotJudgeResourceDriftDuringWarmUp() {
+        GuardSnapshot startup = new GuardSnapshot(4, 0, 0, List.of(), List.of(), null, 39.0, 993.0, 11.0, 811.0);
+
+        GuardEvaluation early = GuardEvaluator.evaluate(startup, 7);
+        assertEquals(GuardLevel.OK, early.level(), "le démarrage de la JVM n'est pas une anomalie");
+        assertEquals(GuardLevel.UNKNOWN, early.checks().stream().filter(c -> c.key().equals("cpu_drift")).findFirst().orElseThrow().level());
+
+        assertEquals(GuardLevel.WARNING, GuardEvaluator.evaluate(startup, 240).level(), "après 3 minutes, la dérive est jugée");
+    }
+
+    @Test
+    void shouldKeepCriticalChecksActiveDuringWarmUp() {
+        GuardSnapshot crash = new GuardSnapshot(4, 1, 2, List.of("backend-7f9 : CrashLoopBackOff"), List.of(), null, 5.0, 300.0, 11.0, 811.0);
+        assertEquals(GuardLevel.CRITICAL, GuardEvaluator.evaluate(crash, 30).level());
+    }
 }

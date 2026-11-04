@@ -202,4 +202,23 @@ class DeploymentGuardServiceTest {
         assertEquals(GuardStatus.SUPERSEDED, guard.getStatus());
         verify(publisher, never()).publishEvent(any());
     }
+
+    @Test
+    void shouldOnlyRetainPersistentWarnings() {
+        GuardEvaluation warning = GuardEvaluator.evaluate(new GuardSnapshot(3, 0, 1, List.of(), List.of(), 0.4, 12.0, 410.0, 10.0, 400.0));
+        DeploymentGuard guard = watching();
+        DeploymentGuardService service = service(T0.plusMinutes(10));
+
+        service.apply(guard, deployment, warning, true, T0.plusMinutes(4));
+        service.apply(guard, deployment, ok(), true, T0.plusMinutes(5));
+        service.apply(guard, deployment, ok(), true, T0.plusMinutes(10));
+        assertEquals(GuardStatus.HEALTHY, guard.getStatus(), "un avertissement isolé n'émet pas de réserve");
+
+        DeploymentGuard persistent = watching();
+        for (int i = 0; i < DeploymentGuardService.PERSISTENT_WARNINGS; i++) {
+            service.apply(persistent, deployment, warning, true, T0.plusMinutes(4).plusSeconds(30L * i));
+        }
+        service.apply(persistent, deployment, ok(), true, T0.plusMinutes(10));
+        assertEquals(GuardStatus.HEALTHY_WITH_WARNINGS, persistent.getStatus());
+    }
 }
