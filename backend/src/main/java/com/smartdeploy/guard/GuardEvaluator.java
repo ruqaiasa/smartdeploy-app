@@ -24,11 +24,13 @@ public final class GuardEvaluator {
 
     /**
      * Période de démarrage : la JVM et les caches consomment beaucoup de
-     * processeur et de mémoire juste après la mise en service. Les dérives ne
-     * sont pas jugées pendant ces 3 minutes ; les contrôles critiques, eux,
-     * restent actifs dès la première seconde.
+     * processeur et de mémoire juste après la mise en service, d'autant plus
+     * que le conteneur est limité à un cœur. Le CPU étant mesuré en moyenne
+     * sur une fenêtre glissante de 2 minutes, ce pic reste visible environ
+     * 2 minutes après sa fin : 3 minutes de démarrage + 2 minutes de fenêtre.
+     * Les contrôles critiques, eux, restent actifs dès la première seconde.
      */
-    static final long WARMUP_SECONDS = 180;
+    static final long WARMUP_SECONDS = 300;
 
     private GuardEvaluator() {
     }
@@ -70,7 +72,7 @@ public final class GuardEvaluator {
     private static GuardCheck warmingUp(String key, String label, String observed, long secondsSinceStart) {
         long remaining = Math.max(0, WARMUP_SECONDS - secondsSinceStart);
         return new GuardCheck(key, label, GuardLevel.UNKNOWN, observed, "démarrage en cours",
-                "Période de démarrage : dérive non évaluée pendant les 3 premières minutes (encore "
+                "Période de démarrage : dérive non évaluée pendant les 5 premières minutes (encore "
                         + remaining + " s).");
     }
 

@@ -29,6 +29,7 @@ public enum AuditAction {
     GUARD_PASSED,
     GUARD_DEGRADED,
     GUARD_INCONCLUSIVE,
+    GUARD_AUTO_ROLLBACK,
 
     // Analyste d'incidents
     INCIDENT_ANALYZED,

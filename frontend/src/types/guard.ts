@@ -25,6 +25,7 @@ export interface DeploymentGuard {
   checks: GuardCheck[]
   evaluations: number
   rollbackTargetId: number | null
+  autoRollbackDeploymentId: number | null
   startedAt: string
   endsAt: string
   lastEvaluatedAt: string | null

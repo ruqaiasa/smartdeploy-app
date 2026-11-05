@@ -76,7 +76,9 @@ class GuardEvaluatorTest {
         assertEquals(GuardLevel.OK, early.level(), "le démarrage de la JVM n'est pas une anomalie");
         assertEquals(GuardLevel.UNKNOWN, early.checks().stream().filter(c -> c.key().equals("cpu_drift")).findFirst().orElseThrow().level());
 
-        assertEquals(GuardLevel.WARNING, GuardEvaluator.evaluate(startup, 240).level(), "après 3 minutes, la dérive est jugée");
+        assertEquals(GuardLevel.OK, GuardEvaluator.evaluate(startup, 240).level(),
+                "à 4 minutes, la fenêtre de mesure de 2 minutes contient encore le pic de démarrage");
+        assertEquals(GuardLevel.WARNING, GuardEvaluator.evaluate(startup, 330).level(), "après 5 minutes, la dérive est jugée");
     }
 
     @Test

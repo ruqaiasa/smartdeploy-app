@@ -60,6 +60,10 @@ public class DeploymentGuard {
     @Column(name = "consecutive_critical", nullable = false)
     private int consecutiveCritical;
 
+    /** Avertissements retenus (persistants), avec leurs mesures : la raison des réserves. */
+    @Column(name = "retained_warnings", length = 1000)
+    private String retainedWarnings;
+
     /** Avertissements consécutifs : seuls les avertissements persistants comptent. */
     @Column(name = "consecutive_warnings", nullable = false, columnDefinition = "integer default 0")
     private int consecutiveWarnings;
@@ -70,6 +74,10 @@ public class DeploymentGuard {
     /** Déploiement vers lequel un retour arrière est proposé (si dégradé). */
     @Column(name = "rollback_target_id")
     private Long rollbackTargetId;
+
+    /** Retour arrière lancé automatiquement par le gardien, le cas échéant. */
+    @Column(name = "auto_rollback_deployment_id")
+    private Long autoRollbackDeploymentId;
 
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;

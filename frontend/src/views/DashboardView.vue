@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DoraPanel from '@/components/dashboard/DoraPanel.vue'
 import {
   computed,
   onMounted,
@@ -125,6 +126,9 @@ onMounted(async () => {
         Voir les déploiements →
       </RouterLink>
     </div>
+
+    <!-- Indicateurs DORA -->
+    <DoraPanel />
 
     <div
       v-if="dashboardStore.loading"

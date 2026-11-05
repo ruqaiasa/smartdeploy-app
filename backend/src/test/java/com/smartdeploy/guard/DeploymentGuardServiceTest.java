@@ -220,6 +220,8 @@ class DeploymentGuardServiceTest {
         }
         service.apply(persistent, deployment, ok(), true, T0.plusMinutes(10));
         assertEquals(GuardStatus.HEALTHY_WITH_WARNINGS, persistent.getStatus());
+        assertTrue(persistent.getVerdict().contains("Redémarrages depuis le déploiement : 1"),
+                "le verdict cite l'avertissement retenu, même si la dernière évaluation est normale");
     }
 
     @Test

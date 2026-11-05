@@ -79,8 +79,13 @@ public class AlertScheduler {
         );
 
         for (Deployment deployment : deploymentsToMonitor) {
-
-            evaluateDeployment(deployment);
+            try {
+                evaluateDeployment(deployment);
+            } catch (PrometheusUnreachableException exception) {
+                // Une seule ligne par cycle : inutile de répéter l'erreur pour chaque déploiement.
+                LOGGER.warn("Alertes non évaluées : Prometheus injoignable ({})", exception.getMessage());
+                return;
+            }
         }
     }
     private void evaluateDeployment(
@@ -123,14 +128,22 @@ public class AlertScheduler {
                     deployment.getId()
             );
 
+        } catch (org.springframework.web.client.ResourceAccessException exception) {
+            throw new PrometheusUnreachableException(exception.getMessage());
         } catch (Exception exception) {
-
             LOGGER.error(
                     "Impossible d'évaluer les alertes du déploiement #{} ({})",
                     deployment.getId(),
                     deployment.getKubernetesDeploymentName(),
                     exception
             );
+        }
+    }
+
+    /** Prometheus ne répond pas : le cycle d'évaluation est interrompu. */
+    static final class PrometheusUnreachableException extends RuntimeException {
+        PrometheusUnreachableException(String message) {
+            super(message);
         }
     }
 }

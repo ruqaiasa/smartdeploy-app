@@ -34,6 +34,7 @@ public final class SlackMessageBuilder {
             case GUARD_DEGRADED -> "🛡️ Dégradation détectée par le gardien";
             case GUARD_PASSED -> "🛡️ Déploiement validé par le gardien";
             case GUARD_INCONCLUSIVE -> "🛡️ Surveillance non concluante";
+            case GUARD_AUTO_ROLLBACK -> "↩️ Retour arrière automatique";
             case INCIDENT_ANALYZED -> "🔎 Analyse de l'incident";
             default -> "ℹ️ SmartDeploy";
         };

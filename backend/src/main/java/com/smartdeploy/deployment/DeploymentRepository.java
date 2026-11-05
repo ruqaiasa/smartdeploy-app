@@ -72,4 +72,13 @@ public interface DeploymentRepository extends
             }
     )
     List<Deployment> findTop5ByDeletedFalseOrderByCreatedAtDesc();
+
+    /** Score de confiance : derniers déploiements d'un environnement. */
+    List<Deployment> findTop10ByEnvironment_IdAndDeletedFalseOrderByCreatedAtDesc(Long environmentId);
+
+    /** Score de confiance : historique d'une version, tous environnements. */
+    List<Deployment> findByVersion_IdAndDeletedFalse(Long versionId);
+
+    /** Indicateurs DORA : déploiements d'une période. */
+    List<Deployment> findByCreatedAtAfterAndDeletedFalse(java.time.LocalDateTime after);
 }

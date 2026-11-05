@@ -46,7 +46,9 @@ const steps = computed(() => {
     { label: 'Verdict', detail: STATUS_TITLES[g.status], at: g.decidedAt, done: g.status !== 'WATCHING' },
   ]
   if (g.status === 'DEGRADED' && g.rollbackTargetId) {
-    list.push({ label: 'Retour arrière proposé', detail: `Vers le déploiement #${g.rollbackTargetId}`, at: g.decidedAt, done: true })
+    list.push(g.autoRollbackDeploymentId
+      ? { label: 'Retour automatique', detail: `Déploiement #${g.autoRollbackDeploymentId} vers #${g.rollbackTargetId}`, at: g.decidedAt, done: true }
+      : { label: 'Retour arrière proposé', detail: `Vers le déploiement #${g.rollbackTargetId}`, at: g.decidedAt, done: true })
   }
   return list
 })
@@ -77,7 +79,12 @@ function confirmRollback() {
         <div class="gp-verdict" :class="`is-${tone}`">
           <strong>{{ STATUS_TITLES[guard.status] }}</strong>
           <span>{{ guard.verdict }}</span>
-          <div v-if="guard.status === 'DEGRADED' && guard.rollbackTargetId && canRollback" class="gp-verdict-actions">
+          <div v-if="guard.autoRollbackDeploymentId" class="gp-verdict-actions">
+            <span class="gp-auto">
+              Retour arrière automatique lancé : déploiement #{{ guard.autoRollbackDeploymentId }}, vers le déploiement sain #{{ guard.rollbackTargetId }}.
+            </span>
+          </div>
+          <div v-else-if="guard.status === 'DEGRADED' && guard.rollbackTargetId && canRollback" class="gp-verdict-actions">
             <button type="button" class="gp-btn gp-btn-danger" :disabled="busy" @click="confirmRollback">
               Revenir au déploiement #{{ guard.rollbackTargetId }}
             </button>
@@ -147,6 +154,7 @@ function confirmRollback() {
 .gp-verdict.is-neutral { border-color: var(--line); background: var(--color-gray-50, #f9fafb); color: var(--muted); }
 .gp-verdict-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
 .gp-hint { font-size: 12.5px; opacity: .85; }
+.gp-auto { padding: 6px 10px; border-radius: 8px; background: #fff; color: #1e3a8a; font-weight: 600; font-size: 13px; }
 .gp-btn { padding: 8px 14px; border: 1px solid transparent; border-radius: 8px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .gp-btn-danger { background: #dc2626; color: #fff; }
 .gp-btn-danger:hover:not(:disabled) { background: #b91c1c; }

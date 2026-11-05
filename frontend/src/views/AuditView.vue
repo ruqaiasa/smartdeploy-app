@@ -24,6 +24,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   GUARD_PASSED: 'Validé par le gardien',
   GUARD_DEGRADED: 'Dégradation détectée',
   GUARD_INCONCLUSIVE: 'Garde non concluante',
+  GUARD_AUTO_ROLLBACK: 'Retour automatique',
   INCIDENT_ANALYZED: 'Incident analysé',
   DEPLOYMENT_CREATED: 'Déploiement lancé',
   DEPLOYMENT_STARTED: 'Pipeline démarré',
@@ -53,6 +54,7 @@ const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral
   GUARD_PASSED: 'success',
   GUARD_DEGRADED: 'danger',
   GUARD_INCONCLUSIVE: 'neutral',
+  GUARD_AUTO_ROLLBACK: 'warning',
   INCIDENT_ANALYZED: 'warning',
   DEPLOYMENT_CREATED: 'info',
   DEPLOYMENT_STARTED: 'info',
@@ -76,7 +78,7 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   },
   {
     key: 'deployments', label: 'Déploiements',
-    actions: ['DEPLOYMENT_CREATED', 'DEPLOYMENT_STARTED', 'DEPLOYMENT_SUCCEEDED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_DELETED', 'GUARD_PASSED', 'GUARD_DEGRADED', 'GUARD_INCONCLUSIVE', 'INCIDENT_ANALYZED'],
+    actions: ['DEPLOYMENT_CREATED', 'DEPLOYMENT_STARTED', 'DEPLOYMENT_SUCCEEDED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_DELETED', 'GUARD_PASSED', 'GUARD_DEGRADED', 'GUARD_INCONCLUSIVE', 'GUARD_AUTO_ROLLBACK', 'INCIDENT_ANALYZED'],
   },
   {
     key: 'recovery', label: 'Annulations et rollbacks',

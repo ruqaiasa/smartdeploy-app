@@ -11,6 +11,7 @@ public record DeploymentGuardResponse(
         List<GuardCheck> checks,
         int evaluations,
         Long rollbackTargetId,
+        Long autoRollbackDeploymentId,
         LocalDateTime startedAt,
         LocalDateTime endsAt,
         LocalDateTime lastEvaluatedAt,

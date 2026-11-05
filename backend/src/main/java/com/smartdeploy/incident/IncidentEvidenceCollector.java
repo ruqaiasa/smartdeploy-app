@@ -203,7 +203,10 @@ public class IncidentEvidenceCollector {
                             && (belongsToApplication(event.getInvolvedObject().getName(), context.applicationPrefix())
                             || Objects.equals(event.getInvolvedObject().getName(), context.applicationPrefix() + "-backend")
                             || Objects.equals(event.getInvolvedObject().getName(), context.applicationPrefix() + "-frontend")))
-                    .sorted(Comparator.comparing(IncidentEvidenceCollector::timestamp).reversed())
+                    // Les événements répétés d'abord (la cause), puis les plus récents : un échec
+                    // isolé pendant un démarrage normal (×1) passe après un échec répété (×121).
+                    .sorted(Comparator.comparingInt(IncidentEvidenceCollector::count).reversed()
+                            .thenComparing(Comparator.comparing(IncidentEvidenceCollector::timestamp).reversed()))
                     .limit(MAX_EVENTS)
                     .map(event -> "Warning " + event.getReason() + " " + event.getInvolvedObject().getKind().toLowerCase()
                             + "/" + event.getInvolvedObject().getName() + " : " + event.getMessage()
@@ -213,6 +216,10 @@ public class IncidentEvidenceCollector {
             notes.add("Événements Kubernetes indisponibles : " + reason(exception));
             return List.of();
         }
+    }
+
+    static int count(Event event) {
+        return event.getCount() == null ? 1 : event.getCount();
     }
 
     private static String timestamp(Event event) {

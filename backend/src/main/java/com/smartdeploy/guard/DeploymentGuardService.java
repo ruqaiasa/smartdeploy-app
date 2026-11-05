@@ -190,8 +190,11 @@ public class DeploymentGuardService {
         guard.setConsecutiveCritical(evaluation.level() == GuardLevel.CRITICAL ? guard.getConsecutiveCritical() + 1 : 0);
         // Un avertissement ne compte que s'il persiste (environ 1 min 30).
         guard.setConsecutiveWarnings(evaluation.level() == GuardLevel.WARNING ? guard.getConsecutiveWarnings() + 1 : 0);
-        if (guard.getConsecutiveWarnings() >= PERSISTENT_WARNINGS) {
+        if (guard.getConsecutiveWarnings() >= PERSISTENT_WARNINGS && !guard.isWarningsSeen()) {
             guard.setWarningsSeen(true);
+            // Preuve des réserves : sans elle, le verdict final ne montrerait
+            // que la dernière évaluation, souvent redevenue normale.
+            guard.setRetainedWarnings(abbreviate(describe(evaluation.warnings()), 1000));
         }
 
         if (guard.getConsecutiveCritical() >= properties.criticalConfirmations()) {
@@ -205,9 +208,11 @@ public class DeploymentGuardService {
             close(guard, deployment, GuardStatus.INCONCLUSIVE, AuditAction.GUARD_INCONCLUSIVE,
                     "Aucune métrique exploitable pendant la surveillance : verdict impossible.", null, now);
         } else if (guard.isWarningsSeen()) {
+            String reasons = guard.getRetainedWarnings() == null ? "" : guard.getRetainedWarnings();
             close(guard, deployment, GuardStatus.HEALTHY_WITH_WARNINGS, AuditAction.GUARD_PASSED,
-                    "Aucune anomalie critique en " + properties.windowMinutes() + " minutes, avec des avertissements.",
-                    describe(evaluation.warnings()), now);
+                    abbreviate("Aucune anomalie critique en " + properties.windowMinutes()
+                            + " minutes, avec des avertissements persistants" + (reasons.isEmpty() ? "." : " : " + reasons + "."), 1000),
+                    reasons, now);
         } else {
             close(guard, deployment, GuardStatus.HEALTHY, AuditAction.GUARD_PASSED,
                     "Déploiement sain : aucune anomalie en " + properties.windowMinutes() + " minutes.", null, now);
@@ -271,6 +276,10 @@ public class DeploymentGuardService {
         log.info("Gardien : déploiement #{} → {}", deployment.getId(), status);
     }
 
+    private static String abbreviate(String text, int max) {
+        return text == null || text.length() <= max ? text : text.substring(0, max - 1) + "…";
+    }
+
     private static String describe(List<GuardCheck> checks) {
         return checks.stream()
                 .map(check -> check.label() + " : " + check.observed()
@@ -302,6 +311,7 @@ public class DeploymentGuardService {
     DeploymentGuardResponse toResponse(DeploymentGuard guard) {
         return new DeploymentGuardResponse(guard.getId(), guard.getDeploymentId(), guard.getStatus(), guard.getVerdict(),
                 fromJson(guard.getChecksJson()), guard.getEvaluations(), guard.getRollbackTargetId(),
+                guard.getAutoRollbackDeploymentId(),
                 guard.getStartedAt(), guard.getEndsAt(), guard.getLastEvaluatedAt(), guard.getDecidedAt());
     }
 

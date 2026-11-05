@@ -10,6 +10,7 @@
  *
  * La requête envoyée au backend (CreateDeploymentRequest) est inchangée.
  */
+import ConfidenceScoreCard from '@/components/deployments/ConfidenceScoreCard.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { getVersionsByApplication } from '@/api/versions.api'
 import { listKubernetesSecrets, createKubernetesSecret, type KubernetesSecretSummary } from '@/api/kubernetesSecrets.api'
@@ -587,6 +588,7 @@ async function submitForm() {
 
           <!-- Étape 4 : options avancées, puis récapitulatif -->
           <template v-if="currentStep === 4 && selectedApplication && selectedEnvironment">
+            <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />
             <section class="dfm-section dfm-advanced">
               <button type="button" class="dfm-disclosure" :aria-expanded="showAdvanced" @click="showAdvanced = !showAdvanced">
                 <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" :class="{ 'is-open': showAdvanced }"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
