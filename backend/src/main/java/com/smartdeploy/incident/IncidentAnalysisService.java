@@ -119,10 +119,25 @@ public class IncidentAnalysisService {
                 deployment.getEnvironment().getName(),
                 deployment.getVersion().getVersion(),
                 deployment.getEnvironment().getNamespace(),
-                name == null || name.isBlank() ? null : GuardQueries.applicationPrefix(name),
+                applicationPrefix(name, deployment.getVersion().getApplication().getName()),
                 deployment.getJenkinsBuildNumber(),
                 deployment.getErrorMessage()
         ), deployment.getStatus() == DeploymentStatus.FAILED);
+    }
+
+    /**
+     * Préfixe des ressources Kubernetes. Si le déploiement a échoué avant
+     * d'enregistrer son nom Kubernetes, il est déduit du nom de l'application,
+     * selon la même convention (« fullstack-demo-backend » → « fullstack-demo »).
+     */
+    static String applicationPrefix(String kubernetesName, String applicationName) {
+        if (kubernetesName != null && !kubernetesName.isBlank()) {
+            return GuardQueries.applicationPrefix(kubernetesName);
+        }
+        if (applicationName == null || applicationName.isBlank()) {
+            return null;
+        }
+        return applicationName.trim().toLowerCase().replaceAll("[^a-z0-9-]+", "-").replaceAll("(^-+|-+$)", "");
     }
 
     static IncidentAnalysisResponse toResponse(IncidentAnalysis analysis) {

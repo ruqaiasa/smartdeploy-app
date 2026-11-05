@@ -67,7 +67,10 @@ public final class IncidentRuleCatalog {
                     "L'analyse Trivy n'a pas abouti dans le délai imparti, souvent à cause d'une image très volumineuse.",
                     "Réduire la taille de l'image (construction en plusieurs étapes, image de base légère) ou augmenter le délai d'analyse.",
                     regex("Trivy"),
-                    List.of(regex("context deadline exceeded"), regex("timeout")),
+                    // Uniquement les délais propres à l'analyse : « timeout » seul reconnaissait
+                    // n'importe quelle option de délai du log (« --connect-timeout », « timeout=10 »).
+                    List.of(regex("context deadline exceeded"), regex("(scan|analysis) (timed out|timeout)"),
+                            regex("trivy.*(timed out|deadline)")),
                     BUILD),
             new IncidentRule("REGISTRY_UNAVAILABLE", "Registre d'images inaccessible",
                     "L'image n'a pas pu être publiée ou téléchargée : le registre Docker privé ne répond pas.",
@@ -106,7 +109,10 @@ public final class IncidentRuleCatalog {
                     "Le conteneur s'arrête peu après son démarrage, puis Kubernetes le redémarre en boucle.",
                     "Lire l'exception citée dans les logs du conteneur ; revenir à la version précédente en attendant la correction.",
                     regex("Kubernetes"),
-                    List.of(regex("CrashLoopBackOff"), regex("Back-off restarting failed container"), regex("exit code [1-9]"),
+                    // « exit code » seul reconnaissait aussi des messages banals (PostgreSQL) :
+                    // seul l'état de pod formaté par l'analyste est retenu.
+                    List.of(regex("CrashLoopBackOff"), regex("Back-off restarting failed container"),
+                            regex("dernier arrêt : Error \\(exit code [1-9]"),
                             regex("Redémarrages depuis le déploiement : [2-9]"), regex("Exception in thread \"main\""),
                             regex("APPLICATION FAILED TO START")),
                     RUNTIME).asSymptom(),

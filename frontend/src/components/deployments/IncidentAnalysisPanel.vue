@@ -17,6 +17,10 @@ const loading = ref(true)
 const rerunning = ref(false)
 const error = ref('')
 let attempts = 0
+const isRecent = computed(() => {
+  const end = props.deployment.finishedAt ?? props.deployment.updatedAt
+  return !end || Date.now() - new Date(end).getTime() < 2 * 60_000
+})
 let timer: ReturnType<typeof setTimeout> | null = null
 
 const CONFIDENCE: Record<IncidentAnalysis['confidence'], { label: string; tone: string }> = {
@@ -46,8 +50,10 @@ async function load() {
   } catch {
     error.value = 'Impossible de charger l’analyse.'
   }
-  // L'analyse démarre à la fin du déploiement : on l'attend jusqu'à 30 s.
-  if (!analysis.value && attempts++ < 10) {
+  // Une analyse automatique n'est attendue que pour un incident récent
+  // (fin du déploiement il y a moins de 2 minutes) ; sinon, on propose
+  // directement de la lancer.
+  if (!analysis.value && isRecent.value && attempts++ < 10) {
     timer = setTimeout(load, 3000)
     return
   }
@@ -88,8 +94,9 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
           </button>
         </header>
 
-        <p v-if="loading" class="ia-muted">Analyse en cours : collecte du log Jenkins, de l’état des pods et des événements Kubernetes…</p>
-        <p v-else-if="!analysis" class="ia-muted">Aucune analyse n’est disponible pour ce déploiement.</p>
+        <p v-if="loading" class="ia-muted">Analyse automatique en cours : collecte du log Jenkins, de l’état des pods et des événements Kubernetes…</p>
+        <p v-else-if="!analysis && !rerunning" class="ia-muted">Ce déploiement n’a pas encore été analysé. Lancez l’analyse ci-dessous.</p>
+        <p v-if="rerunning" class="ia-muted">Analyse en cours : collecte du log Jenkins, de l’état des pods et des événements Kubernetes…</p>
 
         <template v-if="analysis">
           <div class="ia-cause" :class="analysis.code === 'UNKNOWN' ? 'is-unknown' : 'is-found'">
@@ -126,10 +133,10 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 
         <p v-if="error" class="ia-error" role="alert">{{ error }}</p>
 
-        <footer v-if="canRerun && !loading" class="ia-footer">
+        <footer v-if="canRerun" class="ia-footer">
           <span class="ia-muted">Le diagnostic repose uniquement sur les preuves citées : aucune cause n’est supposée.</span>
           <button type="button" class="ia-btn" :disabled="rerunning" @click="rerun">
-            {{ rerunning ? 'Analyse…' : 'Relancer l’analyse' }}
+            {{ rerunning ? 'Analyse…' : analysis ? 'Relancer l’analyse' : 'Lancer l’analyse' }}
           </button>
         </footer>
       </section>

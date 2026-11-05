@@ -70,6 +70,13 @@ public final class IncidentAnalyzer {
     private static Match score(IncidentRule rule, IncidentEvidence evidence) {
         boolean stageMatched = evidence.failedStage() != null && rule.stage() != null
                 && rule.stage().matcher(evidence.failedStage()).find();
+        // Quand l'étape en échec est connue, une signature de construction
+        // (log Jenkins) propre à une autre étape ne peut pas être retenue :
+        // ses motifs proviendraient d'étapes qui ont réussi.
+        if (evidence.failedStage() != null && !stageMatched && rule.sources().contains(Source.JENKINS)
+                && !rule.sources().contains(Source.POD)) {
+            return new Match(rule, 0, 0, false, List.of());
+        }
         Set<String> lines = new LinkedHashSet<>();
         int patternsFound = 0;
         for (Pattern pattern : rule.patterns()) {

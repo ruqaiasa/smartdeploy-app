@@ -12,6 +12,8 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -33,6 +35,8 @@ public class IncidentEvidenceCollector {
     static final int CONTAINER_TAIL_LINES = 80;
     static final int MAX_EVENTS = 12;
     static final int MAX_LOGGED_PODS = 2;
+    /** Un arrêt plus ancien n'est pas considéré comme lié à l'incident en cours. */
+    static final long RECENT_MINUTES = 60;
 
     private static final Pattern STAGE = Pattern.compile("«\\s*(.+?)\\s*»");
     private static final Pattern ANSI = Pattern.compile("\\u001B\\[[;\\d]*[A-Za-z]");
@@ -121,9 +125,8 @@ public class IncidentEvidenceCollector {
                     ? List.of() : pod.getStatus().getContainerStatuses();
             for (ContainerStatus status : statuses) {
                 podLines.add(describe(pod.getMetadata().getName(), status));
-                boolean waitingBadly = status.getState() != null && status.getState().getWaiting() != null;
                 int restarts = status.getRestartCount() == null ? 0 : status.getRestartCount();
-                if (restarts > 0 || waitingBadly) {
+                if (isTroubled(status, Instant.now())) {
                     troubled.add(new String[] {pod.getMetadata().getName(), status.getName(), String.valueOf(restarts)});
                 }
             }
@@ -132,6 +135,29 @@ public class IncidentEvidenceCollector {
         troubled.sort(Comparator.comparingInt((String[] t) -> Integer.parseInt(t[2])).reversed());
         for (String[] container : troubled.stream().limit(MAX_LOGGED_PODS).toList()) {
             logLines.addAll(containerLog(context.namespace(), container[0], container[1], Integer.parseInt(container[2]) > 0, notes));
+        }
+    }
+
+    /**
+     * Conteneur en difficulté : bloqué, non prêt, ou arrêté dans la dernière
+     * heure. Un redémarrage ancien (par exemple au redémarrage de la machine
+     * virtuelle) n'est pas une preuve de l'incident en cours.
+     */
+    static boolean isTroubled(ContainerStatus status, Instant now) {
+        if (status.getState() != null && status.getState().getWaiting() != null) {
+            return true;
+        }
+        if (!Boolean.TRUE.equals(status.getReady())) {
+            return true;
+        }
+        if (status.getLastState() == null || status.getLastState().getTerminated() == null) {
+            return false;
+        }
+        String finishedAt = status.getLastState().getTerminated().getFinishedAt();
+        try {
+            return finishedAt != null && Duration.between(Instant.parse(finishedAt), now).toMinutes() < RECENT_MINUTES;
+        } catch (RuntimeException exception) {
+            return false;
         }
     }
 

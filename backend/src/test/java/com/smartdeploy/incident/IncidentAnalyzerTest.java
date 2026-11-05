@@ -95,4 +95,53 @@ class IncidentAnalyzerTest {
         assertEquals(IncidentDiagnosis.UNKNOWN, diagnosis.code());
         assertEquals(IncidentDiagnosis.Confidence.LOW, diagnosis.confidence());
     }
+
+    /** Cas réel (déploiement #121) : des options de délai banales ne prouvent pas un délai d'analyse. */
+    @Test
+    void shouldNotMistakeOrdinaryTimeoutOptionsForAScanTimeout() {
+        IncidentEvidence evidence = new IncidentEvidence(null, null, List.of(
+                "+ curl --fail --silent --show-error --connect-timeout 3 --max-time 10 http://localhost:5000/v2/",
+                "> git --version # timeout=10",
+                "> git fetch --tags --force --progress -- https://github.com/ruqaiasa/fullstack-app-deploy-render.git # timeout=10"),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+
+        assertNotEquals("SCAN_TIMEOUT", IncidentAnalyzer.analyze(evidence).code());
+    }
+
+    /** Une signature d'une étape réussie (Trivy non bloquant) ne l'emporte pas sur l'étape en échec. */
+    @Test
+    void shouldIgnoreSignaturesFromStagesThatSucceeded() {
+        IncidentEvidence evidence = new IncidentEvidence("Verify Kubernetes Rollout",
+                "Échec à l'étape « Verify Kubernetes Rollout ».",
+                List.of("Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 1, CRITICAL: 2)"),
+                List.of("fullstack-demo-frontend-8498/fullstack-demo-frontend : Running, non prêt ; 0 redémarrage(s)"),
+                List.of("Warning Unhealthy pod/fullstack-demo-frontend-8498 : Readiness probe failed: dial tcp 10.42.0.57:80: connect: connection refused"),
+                List.of(), List.of(), List.of());
+
+        IncidentDiagnosis diagnosis = IncidentAnalyzer.analyze(evidence);
+        assertEquals("PROBE_FAILURE", diagnosis.code());
+        assertEquals(IncidentDiagnosis.Confidence.HIGH, diagnosis.confidence());
+    }
+
+    @Test
+    void shouldDeriveTheKubernetesPrefixFromTheApplicationName() {
+        assertEquals("fullstack-demo", IncidentAnalysisService.applicationPrefix(null, "fullstack-demo"));
+        assertEquals("fullstack-demo", IncidentAnalysisService.applicationPrefix("fullstack-demo-backend", "autre"));
+        assertEquals("mon-app", IncidentAnalysisService.applicationPrefix("", "Mon App"));
+    }
+
+    /** Cas réel (déploiement #120) : un message banal de PostgreSQL ne doit pas servir de preuve. */
+    @Test
+    void shouldNotCiteOrdinaryDatabaseMessagesAsEvidence() {
+        IncidentEvidence evidence = new IncidentEvidence("Verify Kubernetes Rollout", "Échec à l'étape « Verify Kubernetes Rollout ».",
+                List.of(),
+                List.of("postgresql-0/postgresql : Running, prêt ; dernier arrêt : Unknown (exit code 255) ; 1 redémarrage(s)"),
+                List.of("Warning BackOff pod/fullstack-demo-backend-75d5 : Back-off restarting failed container fullstack-demo-backend (×6)"),
+                List.of("2026-11-03 15:26:50.799 UTC [1] LOG:  background worker \"logical replication launcher\" (PID 33) exited with exit code 1"),
+                List.of(), List.of());
+
+        IncidentDiagnosis diagnosis = IncidentAnalyzer.analyze(evidence);
+        assertEquals("CRASH_LOOP", diagnosis.code());
+        assertTrue(diagnosis.evidence().stream().noneMatch(line -> line.contains("postgresql") || line.contains("replication")));
+    }
 }
