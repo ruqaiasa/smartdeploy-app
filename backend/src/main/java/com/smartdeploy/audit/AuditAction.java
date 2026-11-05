@@ -30,6 +30,9 @@ public enum AuditAction {
     GUARD_DEGRADED,
     GUARD_INCONCLUSIVE,
 
+    // Analyste d'incidents
+    INCIDENT_ANALYZED,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
 import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.vue'
 import DeploymentGuardPanel from '@/components/deployments/DeploymentGuardPanel.vue'
+import IncidentAnalysisPanel from '@/components/deployments/IncidentAnalysisPanel.vue'
 import { getDeploymentGuards } from '@/api/guard.api'
 import type { DeploymentGuard } from '@/types/guard'
 import { useApplicationsStore } from '@/stores/applications'
@@ -156,6 +157,12 @@ watch(hasWatchingGuards, watching => {
   }
 })
 function openGuard(deployment: DeploymentResponse) { guardDeployment.value = deployment }
+
+/* Analyse d'incident : échecs de pipeline et dégradations détectées par le gardien */
+const analysisDeployment = ref<DeploymentResponse | null>(null)
+function hasIncident(deployment: DeploymentResponse) {
+  return deployment.status === 'FAILED' || guards.value[deployment.id]?.status === 'DEGRADED'
+}
 async function rollbackToTarget(targetId: number) {
   try {
     await deploymentsStore.rollback(targetId)
@@ -377,6 +384,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
               </td>
               <td class="dp-actions-cell">
                 <div class="dp-actions">
+                  <button v-if="hasIncident(deployment)" type="button" class="dp-action dp-action-analysis" @click="analysisDeployment = deployment">Analyse</button>
                   <button v-if="deployment.status === 'SUCCESS'" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
                   <button v-if="canManageDeployments && ACTIVE_STATUSES.includes(deployment.status)" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
@@ -419,6 +427,14 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
       :busy="deploymentsStore.actionLoading"
       @close="guardDeployment = null"
       @rollback="rollbackToTarget"
+    />
+
+    <!-- Analyse d'un incident -->
+    <IncidentAnalysisPanel
+      v-if="analysisDeployment"
+      :deployment="analysisDeployment"
+      :can-rerun="canManageDeployments"
+      @close="analysisDeployment = null"
     />
 
     <!-- Monitoring d'un déploiement -->
@@ -541,6 +557,7 @@ small.dp-muted { font-size: 12px; }
 
 .dp-actions-cell { width: 1%; }
 .dp-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.dp-action-analysis { color: #b45309; font-weight: 600; }
 .dp-action { height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .dp-action:hover:not(:disabled) { background: var(--soft); }
 .dp-action-danger { color: #b91c1c; }

@@ -98,6 +98,14 @@ public class JenkinsClient {
      * Arrête un build en cours. Renvoie false si Jenkins ne connaît pas
      * ce build (déjà terminé et purgé, numéro erroné).
      */
+    /** Log complet de la console d'un build (analyse des incidents). */
+    public String getConsoleText(int buildNumber) {
+        return restClient.get()
+                .uri("/job/{jobName}/{buildNumber}/consoleText", properties.jobName(), buildNumber)
+                .retrieve()
+                .body(String.class);
+    }
+
     public boolean stopBuild(int buildNumber) {
         return restClient.post()
                 .uri(

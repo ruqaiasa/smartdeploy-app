@@ -40,7 +40,9 @@ type VersionWithImages = VersionResponse & {
 const DEFAULT_SECRET_KEY = 'password'
 const DEFAULTS = {
   backendPort: 8080,
-  frontendPort: 80,
+  // Nginx non privilégié (utilisateur non root) écoute sur 8080 : un conteneur
+  // non root ne peut pas ouvrir un port inférieur à 1024.
+  frontendPort: 8080,
   replicas: 2,
   databasePort: 5432,
   storageGi: 5,
@@ -623,7 +625,7 @@ async function submitForm() {
                   <p class="dfm-help">Le port sur lequel votre application écoute à l’intérieur de son conteneur. Kubernetes y envoie le trafic.</p>
                   <div class="dfm-grid">
                     <div class="dfm-field"><label for="sd-back-port">Backend</label><input id="sd-back-port" v-model.number="ports.backend" type="number" min="1" max="65535" /><small class="dfm-help">Spring Boot : 8080</small></div>
-                    <div v-if="isFullStack" class="dfm-field"><label for="sd-front-port">Frontend</label><input id="sd-front-port" v-model.number="ports.frontend" type="number" min="1" max="65535" /><small class="dfm-help">Nginx : 80. Vérifiez le port déclaré dans votre Dockerfile.</small></div>
+                    <div v-if="isFullStack" class="dfm-field"><label for="sd-front-port">Frontend</label><input id="sd-front-port" v-model.number="ports.frontend" type="number" min="1" max="65535" /><small class="dfm-help">Port d’écoute du conteneur (EXPOSE du Dockerfile) : 8080 pour Nginx non privilégié, 80 pour l’image Nginx officielle.</small></div>
                   </div>
                 </div>
 
