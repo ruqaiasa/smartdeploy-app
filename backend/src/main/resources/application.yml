@@ -33,7 +33,7 @@ smartdeploy:
       # Webhook entrant Slack : secret, à placer dans .env. Vide = notifications désactivées.
       webhook-url: ${SMARTDEPLOY_SLACK_WEBHOOK_URL:}
       # Actions notifiées (liste séparée par des virgules), voir SlackNotifier.DEFAULT_ACTIONS.
-      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED,GUARD_AUTO_ROLLBACK,INCIDENT_ANALYZED}
+      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED,GUARD_AUTO_ROLLBACK,INCIDENT_ANALYZED,BACKUP_FAILED,RESTORE_STARTED,RESTORE_COMPLETED,RESTORE_FAILED}
   # Gardien de déploiement : surveillance après chaque mise en service.
   guard:
     enabled: ${SMARTDEPLOY_GUARD_ENABLED:true}
@@ -43,6 +43,14 @@ smartdeploy:
     # Retour arrière automatique en cas de dégradation (ailleurs, il est seulement proposé).
     auto-rollback-environments: ${SMARTDEPLOY_AUTO_ROLLBACK_ENVIRONMENTS:DEVELOPMENT,TEST}
     interval-ms: 30000
+  # Sauvegardes Velero : point de restauration avant chaque déploiement.
+  velero:
+    enabled: ${SMARTDEPLOY_VELERO_ENABLED:true}
+    namespace: velero
+    restore-point-before-deployment: ${SMARTDEPLOY_RESTORE_POINT:true}
+    restore-point-timeout-seconds: 600
+    restore-point-ttl: 72h0m0s
+    manual-backup-ttl: 168h0m0s
   # Adresse de l'interface, utilisée pour les liens dans les notifications.
   app-url: ${SMARTDEPLOY_APP_URL:http://localhost:5173}
 

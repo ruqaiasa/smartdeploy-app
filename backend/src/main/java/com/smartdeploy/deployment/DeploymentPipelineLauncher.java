@@ -1,5 +1,10 @@
 package com.smartdeploy.deployment;
 
+import com.smartdeploy.backup.RestorePointPolicy;
+import com.smartdeploy.backup.RestorePointRequestedEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.smartdeploy.integration.jenkins.JenkinsCancellationResult;
 import com.smartdeploy.integration.jenkins.JenkinsService;
 import com.smartdeploy.user.User;
@@ -32,15 +37,31 @@ public class DeploymentPipelineLauncher {
     private final DeploymentRepository deploymentRepository;
     private final JenkinsService jenkinsService;
     private final DeploymentService deploymentService;
+    private final RestorePointPolicy restorePointPolicy;
+    private final ApplicationEventPublisher eventPublisher;
 
+    /** Sans point de restauration (tests, Velero désactivé). */
     public DeploymentPipelineLauncher(
             DeploymentRepository deploymentRepository,
             JenkinsService jenkinsService,
             DeploymentService deploymentService
     ) {
+        this(deploymentRepository, jenkinsService, deploymentService, null, null);
+    }
+
+    @Autowired
+    public DeploymentPipelineLauncher(
+            DeploymentRepository deploymentRepository,
+            JenkinsService jenkinsService,
+            DeploymentService deploymentService,
+            RestorePointPolicy restorePointPolicy,
+            ApplicationEventPublisher eventPublisher
+    ) {
         this.deploymentRepository = deploymentRepository;
         this.jenkinsService = jenkinsService;
         this.deploymentService = deploymentService;
+        this.restorePointPolicy = restorePointPolicy;
+        this.eventPublisher = eventPublisher;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -56,6 +77,31 @@ public class DeploymentPipelineLauncher {
             return;
         }
 
+        if (restorePointPolicy != null && eventPublisher != null && restorePointPolicy.required(deployment)) {
+            // Point de restauration d'abord, en arrière-plan : la requête de
+            // l'utilisateur n'attend pas. Jenkins sera lancé une fois la sauvegarde terminée.
+            eventPublisher.publishEvent(new RestorePointRequestedEvent(deployment.getId()));
+            return;
+        }
+        trigger(deployment);
+    }
+
+    /**
+     * Lance Jenkins après le point de restauration (réussi ou non). Si le
+     * déploiement a été annulé entre-temps, il n'est plus en attente : rien n'est lancé.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void launchAfterRestorePoint(Long deploymentId) {
+        Deployment deployment = deploymentRepository
+                .findActiveByIdForUpdate(deploymentId)
+                .orElse(null);
+        if (deployment == null || deployment.getStatus() != DeploymentStatus.PENDING) {
+            return;
+        }
+        trigger(deployment);
+    }
+
+    private void trigger(Deployment deployment) {
         try {
             String queueUrl =
                     jenkinsService.triggerDeployment(deployment).queueUrl();

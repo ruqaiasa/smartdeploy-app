@@ -36,6 +36,12 @@ public final class SlackMessageBuilder {
             case GUARD_INCONCLUSIVE -> "🛡️ Surveillance non concluante";
             case GUARD_AUTO_ROLLBACK -> "↩️ Retour arrière automatique";
             case INCIDENT_ANALYZED -> "🔎 Analyse de l'incident";
+            case BACKUP_REQUESTED -> "💾 Sauvegarde demandée";
+            case BACKUP_COMPLETED -> "💾 Sauvegarde terminée";
+            case BACKUP_FAILED -> "⚠️ Sauvegarde en échec";
+            case RESTORE_STARTED -> "♻️ Restauration lancée";
+            case RESTORE_COMPLETED -> "♻️ Restauration terminée";
+            case RESTORE_FAILED -> "⚠️ Restauration en échec";
             default -> "ℹ️ SmartDeploy";
         };
     }

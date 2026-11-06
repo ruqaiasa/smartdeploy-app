@@ -199,6 +199,20 @@ const router = createRouter({
         },
 
         {
+          path: 'backups',
+          name: 'backups',
+
+          component: () =>
+            import(
+              '@/views/BackupsView.vue'
+            ),
+
+          meta: {
+            title: 'Sauvegardes',
+          },
+        },
+
+        {
           path: 'users',
           name: 'users',
 

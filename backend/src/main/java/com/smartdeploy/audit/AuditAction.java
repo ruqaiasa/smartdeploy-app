@@ -34,6 +34,14 @@ public enum AuditAction {
     // Analyste d'incidents
     INCIDENT_ANALYZED,
 
+    // Sauvegardes et restaurations (Velero)
+    BACKUP_REQUESTED,
+    BACKUP_COMPLETED,
+    BACKUP_FAILED,
+    RESTORE_STARTED,
+    RESTORE_COMPLETED,
+    RESTORE_FAILED,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

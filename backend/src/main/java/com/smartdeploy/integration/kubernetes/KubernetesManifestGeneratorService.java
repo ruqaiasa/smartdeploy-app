@@ -28,6 +28,15 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 @org.springframework.stereotype.Service
 public class KubernetesManifestGeneratorService {
 
+    static final String VELERO_HOOK_CONTAINER = "pre.hook.backup.velero.io/container";
+    static final String VELERO_HOOK_COMMAND = "pre.hook.backup.velero.io/command";
+    static final String VELERO_HOOK_ON_ERROR = "pre.hook.backup.velero.io/on-error";
+    static final String VELERO_HOOK_TIMEOUT = "pre.hook.backup.velero.io/timeout";
+    /** Export logique cohérent, sur le volume persistant (hors du répertoire PGDATA). */
+    static final String VELERO_PG_DUMP_COMMAND =
+            "[\"/bin/bash\", \"-c\", \"pg_dump -U \\\"$POSTGRES_USER\\\" -d \\\"$POSTGRES_DB\\\" --clean --if-exists -f /var/lib/postgresql/data/velero-dump.sql\"]";
+
+
     private final KubernetesClient kubernetesClient;
 
     public KubernetesManifestGeneratorService(KubernetesClient kubernetesClient) {
@@ -222,6 +231,12 @@ public class KubernetesManifestGeneratorService {
                 .withNewTemplate()
                 .withNewMetadata()
                 .addToLabels(labels)
+                // Cohérence des sauvegardes Velero : juste avant de copier le volume,
+                // PostgreSQL produit un export logique propre (pg_dump), déposé sur le volume.
+                .addToAnnotations(VELERO_HOOK_CONTAINER, name)
+                .addToAnnotations(VELERO_HOOK_COMMAND, VELERO_PG_DUMP_COMMAND)
+                .addToAnnotations(VELERO_HOOK_ON_ERROR, "Fail")
+                .addToAnnotations(VELERO_HOOK_TIMEOUT, "120s")
                 .endMetadata()
 
                 .withNewSpec()
