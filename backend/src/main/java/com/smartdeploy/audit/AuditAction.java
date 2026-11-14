@@ -42,6 +42,11 @@ public enum AuditAction {
     RESTORE_COMPLETED,
     RESTORE_FAILED,
 
+    // Santé de l'infrastructure (RAID de la machine du cluster)
+    RAID_DEGRADED,
+    RAID_RECOVERING,
+    RAID_RESTORED,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DoraPanel from '@/components/dashboard/DoraPanel.vue'
+import StorageHealthCard from '@/components/dashboard/StorageHealthCard.vue'
 import {
   computed,
   onMounted,
@@ -129,6 +130,7 @@ onMounted(async () => {
 
     <!-- Indicateurs DORA -->
     <DoraPanel />
+    <StorageHealthCard />
 
     <div
       v-if="dashboardStore.loading"

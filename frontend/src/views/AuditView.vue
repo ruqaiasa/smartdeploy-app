@@ -32,6 +32,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   RESTORE_STARTED: 'Restauration lancée',
   RESTORE_COMPLETED: 'Restauration terminée',
   RESTORE_FAILED: 'Restauration en échec',
+  RAID_DEGRADED: 'RAID dégradé',
+  RAID_RECOVERING: 'RAID en reconstruction',
+  RAID_RESTORED: 'RAID de nouveau sain',
   DEPLOYMENT_CREATED: 'Déploiement lancé',
   DEPLOYMENT_STARTED: 'Pipeline démarré',
   DEPLOYMENT_SUCCEEDED: 'Déploiement réussi',
@@ -68,6 +71,9 @@ const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral
   RESTORE_STARTED: 'warning',
   RESTORE_COMPLETED: 'success',
   RESTORE_FAILED: 'danger',
+  RAID_DEGRADED: 'danger',
+  RAID_RECOVERING: 'warning',
+  RAID_RESTORED: 'success',
   DEPLOYMENT_CREATED: 'info',
   DEPLOYMENT_STARTED: 'info',
   DEPLOYMENT_SUCCEEDED: 'success',
@@ -98,7 +104,7 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   },
   {
     key: 'failures', label: 'Échecs et alertes',
-    actions: ['SUSPICIOUS_ACTIVITY', 'GUARD_DEGRADED', 'BACKUP_FAILED', 'RESTORE_FAILED', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
+    actions: ['SUSPICIOUS_ACTIVITY', 'GUARD_DEGRADED', 'BACKUP_FAILED', 'RESTORE_FAILED', 'RAID_DEGRADED', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
   },
 ]
 

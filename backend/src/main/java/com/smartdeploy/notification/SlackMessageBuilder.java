@@ -42,6 +42,9 @@ public final class SlackMessageBuilder {
             case RESTORE_STARTED -> "♻️ Restauration lancée";
             case RESTORE_COMPLETED -> "♻️ Restauration terminée";
             case RESTORE_FAILED -> "⚠️ Restauration en échec";
+            case RAID_DEGRADED -> "🚨 RAID dégradé : un disque est en panne";
+            case RAID_RECOVERING -> "🔧 RAID en reconstruction";
+            case RAID_RESTORED -> "✅ RAID de nouveau sain";
             default -> "ℹ️ SmartDeploy";
         };
     }
