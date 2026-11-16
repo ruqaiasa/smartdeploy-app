@@ -24,10 +24,13 @@ import java.util.Map;
 public class KubernetesSecretController {
     private final KubernetesClient kubernetes;
     private final EnvironmentRepository environments;
+    private final KubernetesNamespaceService namespaces;
 
-    public KubernetesSecretController(KubernetesClient kubernetes, EnvironmentRepository environments) {
+    public KubernetesSecretController(KubernetesClient kubernetes, EnvironmentRepository environments,
+                                      KubernetesNamespaceService namespaces) {
         this.kubernetes = kubernetes;
         this.environments = environments;
+        this.namespaces = namespaces;
     }
 
     public record SecretSummary(String name, List<String> keys) {}
@@ -62,6 +65,9 @@ public class KubernetesSecretController {
         String ns = environment(request.environmentId()).getNamespace();
         if (!request.key().matches("[-._a-zA-Z0-9]+") || request.key().length() > 253)
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Clé invalide");
+        // Premier déploiement d'un environnement : l'espace de noms n'existe pas encore
+        // dans le cluster. Le créer d'abord (idempotent), sinon Kubernetes refuse le Secret (404).
+        namespaces.ensureExists(ns);
         if (kubernetes.secrets().inNamespace(ns).withName(request.name()).get() != null)
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Secret déjà existant");
         // stringData est transmis à l'API Kubernetes via TLS; Kubernetes stocke ensuite data.
