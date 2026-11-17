@@ -29,9 +29,12 @@ public record DeploymentPrecheck(
     public record Degraded(Long deploymentId, String environmentName, LocalDateTime at, String cause) {
     }
 
-    /** @param unchangedSinceFailure vrai : le code n'a pas changé depuis l'échec ; null : inconnu */
+    /**
+     * @param unchangedSinceFailure vrai : le code n'a pas changé depuis l'échec ; null : inconnu
+     * @param unverifiableReason    pourquoi la comparaison est impossible, quand elle l'est
+     */
     public record LastFailure(Long deploymentId, LocalDateTime at, String title, String detail,
-                              boolean codeCause, Boolean unchangedSinceFailure) {
+                              boolean codeCause, Boolean unchangedSinceFailure, String unverifiableReason) {
     }
 
     public record Reuse(Long deploymentId, String environmentName, String commit) {

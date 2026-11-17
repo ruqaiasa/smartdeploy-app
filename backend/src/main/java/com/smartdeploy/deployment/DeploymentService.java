@@ -922,6 +922,19 @@ public class DeploymentService {
             );
         }
 
+        // Revenir à l'image exacte déjà en service ne changerait rien (cas d'un redéploiement).
+        Deployment running = deploymentRepository
+                .findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(original.getEnvironment(), DeploymentStatus.SUCCESS)
+                .orElse(null);
+        if (running != null
+                && java.util.Objects.equals(running.getDeployedBackendImage(), original.getDeployedBackendImage())
+                && java.util.Objects.equals(running.getDeployedFrontendImage(), original.getDeployedFrontendImage())) {
+            throw new DeploymentStateException(
+                    "Ce déploiement utilise exactement l'image déjà en service (déploiement #" + running.getId()
+                            + ") : y revenir ne changerait rien"
+            );
+        }
+
         // Un retour arrière ramène à un état connu comme sain : jamais vers un déploiement
         // que le gardien a jugé dégradé (même règle que la cible proposée par le gardien).
         if (guardRepository != null && guardRepository.findFirstByDeploymentIdOrderByIdDesc(original.getId())

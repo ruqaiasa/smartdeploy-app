@@ -402,7 +402,10 @@ function formatDate(
                     v-if="canManageVersions"
                     type="button"
                     class="action-button danger"
-                    :disabled="versionsStore.actionLoading"
+                    :disabled="versionsStore.actionLoading || !!version.inServiceEnvironments?.length"
+                    :title="version.inServiceEnvironments?.length
+                      ? `En service sur ${version.inServiceEnvironments.join(', ')} : déployez d’abord une autre version`
+                      : 'Supprimer cette version'"
                     @click="removeVersion(version.id)"
                   >
                     Supprimer

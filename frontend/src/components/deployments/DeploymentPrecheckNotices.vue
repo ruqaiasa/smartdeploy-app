@@ -105,7 +105,9 @@ const failureTone = computed(() => {
       <span v-else-if="precheck.lastFailure.unchangedSinceFailure === false">
         Le code a changé depuis : une nouvelle tentative est justifiée.
       </span>
-      <span v-else>Impossible de vérifier si le code a changé depuis (dépôt injoignable).</span>
+      <span v-else>
+        Impossible de vérifier si le code a changé depuis : {{ precheck.lastFailure.unverifiableReason ?? 'information indisponible' }}.
+      </span>
     </div>
 
     <!-- RG-V4 : image réutilisée -->

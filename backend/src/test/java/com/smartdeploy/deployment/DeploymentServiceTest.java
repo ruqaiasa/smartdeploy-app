@@ -1729,4 +1729,25 @@ class DeploymentServiceTest {
         assertEquals(21L, deploymentService.reusableImages(version, false).getId(), "le plus récent réussi, jamais un échec");
         assertNull(deploymentService.reusableImages(version, true), "frontend demandé, mais aucune image de frontend connue");
     }
+
+    @Test
+    void createRollback_shouldRefuseTheImageAlreadyInService() {
+        // Remarque de la démonstration : « Revenir ici » vers #130, qui avait la même image que le redéploiement en service.
+        String image = "localhost:5000/app-backend@sha256:" + "e".repeat(64);
+        Deployment original = createDeployment(DeploymentStatus.SUCCESS);
+        original.setId(10L);
+        original.setDeployedBackendImage(image);
+        Deployment running = createDeployment(DeploymentStatus.SUCCESS);
+        running.setId(15L);
+        running.setDeployedBackendImage(image);
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(original));
+        when(deploymentRepository.findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(any(), eq(DeploymentStatus.SUCCESS)))
+                .thenReturn(Optional.of(running));
+
+        DeploymentStateException exception = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.createRollback(10L, createUser()));
+
+        assertTrue(exception.getMessage().contains("image déjà en service"));
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
 }

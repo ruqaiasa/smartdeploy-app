@@ -129,6 +129,7 @@ public class DeploymentPrecheckService {
         String detail = detail(analysis, failed);
 
         Boolean unchanged = null;
+        String unverifiableReason = null;
         if (codeCause) {
             String failedCommit = failed.getBuiltCommit();
             String commitNow = version.getGitCommit() != null ? version.getGitCommit()
@@ -137,9 +138,14 @@ public class DeploymentPrecheckService {
                 unchanged = commitNow.startsWith(failedCommit) || failedCommit.startsWith(commitNow);
             } else if (version.getGitCommit() != null) {
                 unchanged = Boolean.TRUE;   // commit fixé : le même code sera construit
+            } else if (failedCommit == null) {
+                unverifiableReason = "le commit construit lors de l'échec est inconnu (déploiement antérieur au suivi des commits)";
+            } else {
+                unverifiableReason = "le dernier commit de la branche n'a pas pu être lu sur GitHub";
             }
         }
-        return new DeploymentPrecheck.LastFailure(failed.getId(), failed.getCreatedAt(), title, detail, codeCause, unchanged);
+        return new DeploymentPrecheck.LastFailure(failed.getId(), failed.getCreatedAt(), title, detail, codeCause, unchanged,
+                unverifiableReason);
     }
 
     private static String detail(IncidentAnalysis analysis, Deployment failed) {

@@ -35,10 +35,16 @@ function canRollback(deployment: DeploymentResponse) {
   // réussi plus ancien ou vers un déploiement remplacé (retour « en avant »).
   // Jamais vers un déploiement jugé dégradé par le gardien : un retour arrière ramène
   // à un état connu comme sain (le serveur le refuse aussi).
+  // Ni vers l'image exacte déjà en service : y revenir ne changerait rien (le serveur le refuse aussi).
+  const running = deploymentsStore.deployments.find(d => d.current && d.environmentId === deployment.environmentId)
+  const sameImage = !!running
+    && running.deployedBackendImage === deployment.deployedBackendImage
+    && (running.deployedFrontendImage ?? null) === (deployment.deployedFrontendImage ?? null)
   return !deployment.current
     && (deployment.status === 'SUCCESS' || deployment.status === 'ROLLED_BACK')
     && !!deployment.deployedBackendImage?.includes('@sha256:')
     && guards.value[deployment.id]?.status !== 'DEGRADED'
+    && !sameImage
 }
 
 const modalOpen = ref(false)

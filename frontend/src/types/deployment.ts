@@ -124,6 +124,7 @@ export interface DeploymentPrecheck {
     detail: string | null
     codeCause: boolean
     unchangedSinceFailure: boolean | null
+    unverifiableReason: string | null
   } | null
   reuse: { deploymentId: number; environmentName: string; commit: string | null } | null
   pinnedCommit: string | null
