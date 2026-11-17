@@ -8,6 +8,7 @@ import com.smartdeploy.environment.EnvironmentRepository;
 import com.smartdeploy.environment.EnvironmentType;
 import com.smartdeploy.guard.DeploymentGuardRepository;
 import com.smartdeploy.guard.GuardStatus;
+import com.smartdeploy.incident.IncidentAnalysis;
 import com.smartdeploy.incident.IncidentAnalysisRepository;
 import com.smartdeploy.version.Version;
 import com.smartdeploy.version.VersionRepository;
@@ -57,21 +58,41 @@ public class ConfidenceScoreService {
         List<Deployment> recent = deploymentRepository.findTop10ByEnvironment_IdAndDeletedFalseOrderByCreatedAtDesc(environmentId)
                 .stream().filter(d -> FINISHED.contains(d.getStatus())).toList();
         List<Deployment> versionHistory = deploymentRepository.findByVersion_IdAndDeletedFalse(versionId);
-        List<Long> versionIds = versionHistory.stream().map(Deployment::getId).toList();
+        // Un retour arrière jugé dégradé hérite souvent des pods défaillants de la version qu'il
+        // remplace (cas réel du 4 novembre) : il ne pénalise pas la version remise en service.
+        List<Long> versionIds = versionHistory.stream()
+                .filter(d -> d.getRollbackOf() == null).map(Deployment::getId).toList();
 
         boolean degraded = !versionIds.isEmpty() && guardRepository.findByDeploymentIdIn(versionIds).stream()
                 .anyMatch(guard -> guard.getStatus() == GuardStatus.DEGRADED);
-        int versionFailures = (int) versionHistory.stream().filter(d -> d.getStatus() == DeploymentStatus.FAILED).count();
+        // Seuls les échecs dus au code de la version la pénalisent (diagnostic de l'analyste).
+        Set<Long> codeFailureIds = versionHistory.stream()
+                .filter(d -> d.getStatus() == DeploymentStatus.FAILED)
+                .filter(d -> incidentRepository.findFirstByDeploymentIdOrderByIdDesc(d.getId())
+                        .map(IncidentAnalysis::getCode)
+                        .filter(ConfidenceCalculator::isVersionCause)
+                        .isPresent())
+                .map(Deployment::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        int versionFailures = codeFailureIds.size();
         boolean validated = versionHistory.stream()
                 .anyMatch(d -> (d.getStatus() == DeploymentStatus.SUCCESS || d.getStatus() == DeploymentStatus.ROLLED_BACK)
                         && VALIDATION_ENVIRONMENTS.contains(d.getEnvironment().getType()));
-        List<Long> recentIds = recent.stream().map(Deployment::getId).toList();
+        // Incidents : les mises en service dégradées. Les échecs du pipeline sont déjà comptés
+        // ci-dessus : un même échec ne doit pas être pénalisé deux fois.
+        // Les dégradations de cette version sont déjà comptées par « version déjà jugée dégradée ».
+        List<Long> recentIds = recent.stream()
+                .filter(d -> d.getStatus() != DeploymentStatus.FAILED)
+                .filter(d -> !d.getVersion().getId().equals(versionId))
+                .map(Deployment::getId).toList();
         int incidents = recentIds.isEmpty() ? 0
                 : (int) incidentRepository.countIncidentDeployments(recentIds, LocalDateTime.now().minusHours(24));
 
         return Optional.of(ConfidenceCalculator.compute(new ConfidenceInputs(
                 recent.size(),
-                (int) recent.stream().filter(d -> d.getStatus() == DeploymentStatus.FAILED).count(),
+                (int) recent.stream()
+                        .filter(d -> d.getStatus() == DeploymentStatus.FAILED && !codeFailureIds.contains(d.getId()))
+                        .count(),
                 versionFailures,
                 degraded,
                 incidents,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DoraPanel from '@/components/dashboard/DoraPanel.vue'
 import StorageHealthCard from '@/components/dashboard/StorageHealthCard.vue'
+import DataProtectionCard from '@/components/dashboard/DataProtectionCard.vue'
 import {
   computed,
   onMounted,
@@ -130,7 +131,10 @@ onMounted(async () => {
 
     <!-- Indicateurs DORA -->
     <DoraPanel />
-    <StorageHealthCard />
+    <div class="db-protection-grid">
+      <DataProtectionCard />
+      <StorageHealthCard />
+    </div>
 
     <div
       v-if="dashboardStore.loading"
@@ -264,6 +268,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.db-protection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
 .dashboard {
   display: flex;
   flex-direction: column;

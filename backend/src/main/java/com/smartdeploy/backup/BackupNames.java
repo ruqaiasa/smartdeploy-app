@@ -14,6 +14,8 @@ public final class BackupNames {
     static final String LABEL_ENVIRONMENT = "smartdeploy.io/environment-id";
     static final String LABEL_DEPLOYMENT = "smartdeploy.io/deployment-id";
     static final String LABEL_SCHEDULE = "velero.io/schedule-name";
+    /** La version en service au moment du point de restauration : ce que la sauvegarde permet de retrouver. */
+    static final String LABEL_PROTECTED_VERSION = "smartdeploy.io/protected-version";
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private BackupNames() {
@@ -60,6 +62,7 @@ public final class BackupNames {
                 backup.getMetadata().getName(),
                 origin(backup),
                 labels.containsKey(LABEL_DEPLOYMENT) ? Long.valueOf(labels.get(LABEL_DEPLOYMENT)) : null,
+                labels.get(LABEL_PROTECTED_VERSION),
                 VeleroClient.phase(backup),
                 text(status.get("startTimestamp")),
                 text(status.get("completionTimestamp")),
@@ -67,6 +70,17 @@ public final class BackupNames {
                 number(progress.get("itemsBackedUp")),
                 number(status.get("errors")),
                 number(status.get("warnings")));
+    }
+
+    /** Valeur d'étiquette Kubernetes : lettres, chiffres, « . _ - », 63 caractères, bornée par un alphanumérique. */
+    static String labelValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        String clean = value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-{2,}", "-");
+        clean = clean.length() > 63 ? clean.substring(0, 63) : clean;
+        clean = clean.replaceAll("^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "");
+        return clean.isEmpty() ? null : clean;
     }
 
     private static String text(Object value) {

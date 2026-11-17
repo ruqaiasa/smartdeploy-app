@@ -40,4 +40,23 @@ class ConfidenceCalculatorTest {
         assertEquals(0, score.score());
         assertTrue(score.factors().stream().allMatch(f -> f.points() < 0 && !f.explanation().isBlank()));
     }
+
+    @Test
+    void shouldNotPunishOneExternalFailureThreeTimes() {
+        // Cas réel du test de bout en bout : un seul échec passager (réseau) sur un environnement neuf.
+        // Avant : −25 (version) −30 (environnement, 1 sur 1) −10 (incident), pour le même échec.
+        ConfidenceScore score = ConfidenceCalculator.compute(
+                new ConfidenceInputs(1, 1, 0, false, 0, true, EnvironmentType.TEST, "master"));
+        assertEquals(100, score.score(), "un seul déploiement terminé : taux d'échec non significatif");
+        assertTrue(score.factors().isEmpty());
+    }
+
+    @Test
+    void shouldOnlyBlameTheVersionForCodeCauses() {
+        assertTrue(ConfidenceCalculator.isVersionCause("COMPILATION_ERROR"));
+        assertTrue(ConfidenceCalculator.isVersionCause("CRASH_LOOP"));
+        assertFalse(ConfidenceCalculator.isVersionCause("REGISTRY_UNAVAILABLE"), "panne extérieure");
+        assertFalse(ConfidenceCalculator.isVersionCause("DEPENDENCY_DOWNLOAD"), "téléchargement impossible");
+        assertFalse(ConfidenceCalculator.isVersionCause(null), "cause non identifiée");
+    }
 }

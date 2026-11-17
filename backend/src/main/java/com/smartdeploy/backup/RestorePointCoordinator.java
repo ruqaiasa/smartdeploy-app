@@ -28,7 +28,8 @@ public class RestorePointCoordinator {
 
     private static final Logger log = LoggerFactory.getLogger(RestorePointCoordinator.class);
 
-    private record Target(Long deploymentId, Long environmentId, String environmentName, String namespace, String applicationName) {
+    private record Target(Long deploymentId, Long environmentId, String environmentName, String namespace, String applicationName,
+                          String protectedVersion) {
     }
 
     private final DeploymentRepository deploymentRepository;
@@ -57,7 +58,11 @@ public class RestorePointCoordinator {
     public void onRestorePointRequested(RestorePointRequestedEvent event) {
         Target target = readTransaction.execute(status -> deploymentRepository.findByIdAndDeletedFalse(event.deploymentId())
                 .map(d -> new Target(d.getId(), d.getEnvironment().getId(), d.getEnvironment().getName(),
-                        d.getEnvironment().getNamespace(), d.getVersion().getApplication().getName()))
+                        d.getEnvironment().getNamespace(), d.getVersion().getApplication().getName(),
+                        deploymentRepository.findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
+                                        d.getEnvironment(), com.smartdeploy.deployment.DeploymentStatus.SUCCESS)
+                                .map(current -> current.getVersion().getVersion())
+                                .orElse(null)))
                 .orElse(null));
         if (target != null) {
             createRestorePoint(target);
@@ -69,10 +74,15 @@ public class RestorePointCoordinator {
         String name = BackupNames.name("avant-deploiement-" + target.deploymentId(), target.environmentName(), LocalDateTime.now());
         String phase;
         try {
-            velero.createBackup(name, target.namespace(), properties.restorePointTtl(), Map.of(
+            Map<String, String> labels = new java.util.HashMap<>(Map.of(
                     BackupNames.LABEL_REASON, "pre-deployment",
                     BackupNames.LABEL_ENVIRONMENT, String.valueOf(target.environmentId()),
                     BackupNames.LABEL_DEPLOYMENT, String.valueOf(target.deploymentId())));
+            String protectedVersion = BackupNames.labelValue(target.protectedVersion());
+            if (protectedVersion != null) {
+                labels.put(BackupNames.LABEL_PROTECTED_VERSION, protectedVersion);
+            }
+            velero.createBackup(name, target.namespace(), properties.restorePointTtl(), labels);
             phase = tasks.waitFor(() -> velero.backup(name), properties.restorePointTimeoutSeconds());
         } catch (RuntimeException exception) {
             log.warn("Point de restauration impossible pour le déploiement #{} : {}", target.deploymentId(), exception.getMessage());
@@ -81,7 +91,8 @@ public class RestorePointCoordinator {
         boolean ok = "Completed".equals(phase);
         eventPublisher.publishEvent(new AuditEvent(ok ? AuditAction.BACKUP_COMPLETED : AuditAction.BACKUP_FAILED,
                 BackupService.ACTOR, "DEPLOYMENT", target.deploymentId(), target.applicationName(), target.environmentName(),
-                "Point de restauration « " + name + " » avant le déploiement #" + target.deploymentId() + " : " + phase,
+                "Point de restauration « " + name + " » avant le déploiement #" + target.deploymentId()
+                        + (target.protectedVersion() == null ? "" : " (état sauvegardé : version " + target.protectedVersion() + ")") + " : " + phase,
                 ok ? null : "Le déploiement est tout de même lancé ; l'état antérieur reste couvert par la sauvegarde planifiée.",
                 false));
     }

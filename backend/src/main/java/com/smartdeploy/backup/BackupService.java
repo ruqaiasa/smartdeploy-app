@@ -114,9 +114,32 @@ public class BackupService {
                 (mode == RestoreMode.SIDE ? "Restauration de vérification" : "Restauration en remplacement")
                         + " de « " + backupName + " » vers " + target,
                 mode == RestoreMode.REPLACE ? "L'espace de noms " + target + " est supprimé puis restauré." : null);
+        BackupInfo info = BackupNames.toInfo(backup);
         tasks.runRestore(restoreName, backupName, environment.getNamespace(), target, mode == RestoreMode.REPLACE,
-                environment.getId(), environment.getName(), applicationName(environment));
+                environment.getId(), environment.getName(), applicationName(environment),
+                BackupProtection.localTime(info.startedAt()), info.deploymentId());
         return new RestoreResult(restoreName, target);
+    }
+
+    /** Points de restauration pris avant un déploiement, avec le déploiement qu'ils protègent. */
+    public List<BackupInfo> restorePoints() {
+        return velero.backups().stream()
+                .map(BackupNames::toInfo)
+                .filter(info -> "PRE_DEPLOYMENT".equals(info.origin()) && info.deploymentId() != null)
+                .toList();
+    }
+
+    /** État de protection de chaque environnement déployé : âge de sa dernière sauvegarde réussie. */
+    public List<BackupProtection.EnvironmentProtection> protection() {
+        var backups = velero.backups();                       // un seul appel à Kubernetes
+        java.time.Instant now = java.time.Instant.now();
+        return environments().stream()
+                .filter(BackupEnvironment::deployed)
+                .map(env -> BackupProtection.evaluate(env, backups.stream()
+                        .filter(backup -> BackupNames.covers(backup, env.namespace()))
+                        .map(BackupNames::toInfo)
+                        .toList(), now))
+                .toList();
     }
 
     public String restorePhase(String restoreName) {

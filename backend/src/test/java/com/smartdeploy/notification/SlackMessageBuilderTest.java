@@ -27,7 +27,7 @@ class SlackMessageBuilderTest {
                 entry(AuditAction.DEPLOYMENT_FAILED, "Échec à l'étape « Trivy Security Scan »"),
                 "http://localhost:5173/");
 
-        assertTrue(((String) payload.get("text")).startsWith("❌ Déploiement échoué"));
+        assertTrue(((String) payload.get("text")).startsWith("Déploiement échoué"));
         List<Map<String, Object>> blocks = (List<Map<String, Object>>) payload.get("blocks");
         String all = blocks.toString();
         assertTrue(all.contains("*fullstack-demo*"));
@@ -45,6 +45,6 @@ class SlackMessageBuilderTest {
         String blocks = SlackMessageBuilder.build(
                 entry(AuditAction.SUSPICIOUS_ACTIVITY, "Tentatives répétées"), "http://app").get("blocks").toString();
         assertTrue(blocks.contains("http://app/audit"));
-        assertEquals("🚨 Activité suspecte", SlackMessageBuilder.title(AuditAction.SUSPICIOUS_ACTIVITY));
+        assertEquals("Activité suspecte", SlackMessageBuilder.title(AuditAction.SUSPICIOUS_ACTIVITY));
     }
 }

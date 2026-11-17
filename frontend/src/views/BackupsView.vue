@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { createBackup, getBackupEnvironments, getBackups, getRestorePhase, restoreBackup } from '@/api/backups.api'
+import { createBackup, getBackupEnvironments, getBackups, getProtection, getRestorePhase, restoreBackup } from '@/api/backups.api'
 import { useAuthStore } from '@/stores/auth'
-import type { BackupEnvironment, BackupInfo } from '@/types/backup'
+import type { BackupEnvironment, BackupInfo, EnvironmentProtection } from '@/types/backup'
 
 /*
  * Sauvegardes Velero d'un environnement : planifiées, points de restauration
@@ -23,7 +23,30 @@ const busy = ref(false)
 const restoreTracking = ref<{ name: string; target: string; phase: string } | null>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-const ORIGINS = { SCHEDULED: 'Planifiée', PRE_DEPLOYMENT: 'Avant déploiement', MANUAL: 'Manuelle' } as const
+function originLabel(backup: BackupInfo) {
+  if (backup.origin === 'SCHEDULED') return 'Sauvegarde de la nuit'
+  if (backup.origin === 'MANUAL') return 'Sauvegarde manuelle'
+  return `Avant le déploiement #${backup.deploymentId ?? '?'}`
+}
+function originDetail(backup: BackupInfo) {
+  if (backup.origin === 'PRE_DEPLOYMENT' && backup.protectedVersion) return `contient la version ${backup.protectedVersion}`
+  if (backup.origin === 'SCHEDULED') return 'automatique, chaque nuit à 2 h'
+  return ''
+}
+
+/* État de protection de l'environnement choisi (âge de la dernière sauvegarde réussie). */
+const protections = ref<EnvironmentProtection[]>([])
+const protection = computed(() => protections.value.find(p => p.environmentId === environmentId.value) ?? null)
+async function loadProtection() {
+  try { protections.value = await getProtection() } catch { /* complément : sans blocage */ }
+}
+const nextNightly = computed(() => {
+  const next = new Date()
+  next.setHours(2, 0, 0, 0)
+  if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1)
+  const today = new Date().toDateString() === next.toDateString()
+  return `${today ? 'aujourd’hui' : 'cette nuit'} à 2 h`
+})
 const environment = computed(() => environments.value.find(e => e.environmentId === environmentId.value) ?? null)
 const deployedCount = computed(() => environments.value.filter(e => e.deployed).length)
 
@@ -50,6 +73,7 @@ async function loadBackups() {
   error.value = ''
   try {
     backups.value = await getBackups(environmentId.value)
+    void loadProtection()
   } catch {
     error.value = 'Impossible de lire les sauvegardes : vérifiez que Velero et le cluster répondent.'
   } finally {
@@ -75,9 +99,9 @@ async function backupNow() {
 async function restore(backup: BackupInfo, mode: 'side' | 'replace') {
   if (!environmentId.value || !environment.value) return
   if (mode === 'replace') {
-    const typed = window.prompt(`Restauration en remplacement : l’espace de noms ${environment.value.namespace} sera SUPPRIMÉ puis restauré depuis « ${backup.name} ».\n\nPour confirmer, saisissez le nom de l’espace de noms :`)
+    const typed = window.prompt(`Restaurer l’environnement : ${environment.value.namespace} va revenir à l’état de « ${backup.name} », application ET données.\nLes données écrites depuis seront perdues, et l’application sera indisponible pendant 1 à 2 minutes.\n\nPour confirmer, saisissez le nom de l’espace de noms :`)
     if (typed !== environment.value.namespace) return
-  } else if (!window.confirm(`Restaurer « ${backup.name} » dans un espace de noms de vérification, à côté de l’application en service ?`)) {
+  } else if (!window.confirm(`Vérifier « ${backup.name} » dans une copie : l’application et ses données seront restaurées dans un espace de noms séparé, sans toucher à l’application en service. Pensez à supprimer la copie après le contrôle.`)) {
     return
   }
   busy.value = true
@@ -137,7 +161,11 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
     <p v-if="environment && !environment.deployed" class="bk-info" role="status">
       Cet environnement n’est pas encore déployé dans le cluster (l’espace de noms <code>{{ environment.namespace }}</code> n’existe pas) : il n’y a rien à sauvegarder. Il sera protégé automatiquement dès son premier déploiement.
     </p>
-    <p v-if="environment" class="bk-ns">Espace de noms : <code>{{ environment.namespace }}</code> · sauvegarde planifiée chaque nuit, conservée 7 jours ; point de restauration avant chaque déploiement, conservé 3 jours.</p>
+    <div v-if="environment && environment.deployed" class="bk-protection" :class="`is-${(protection?.level ?? 'WARNING').toLowerCase()}`">
+      <strong>{{ protection ? protection.message : 'Calcul de l’état de protection…' }}</strong>
+      <span>Prochaine sauvegarde automatique : {{ nextNightly }} · conservée 7 jours. Avant chaque déploiement, un point de restauration est pris s’il y a une version en service (conservé 3 jours).</span>
+    </div>
+    <p v-if="environment" class="bk-ns">Espace de noms : <code>{{ environment.namespace }}</code></p>
     <p v-if="info" class="bk-info" role="status">{{ info }}</p>
     <p v-if="error" class="bk-error" role="alert">{{ error }}</p>
 
@@ -159,15 +187,15 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
         <tbody>
           <tr v-for="backup in backups" :key="backup.name">
             <td><code>{{ backup.name }}</code><small v-if="backup.itemsBackedUp">{{ backup.itemsBackedUp }} ressources</small></td>
-            <td>{{ ORIGINS[backup.origin] }}<template v-if="backup.deploymentId"> #{{ backup.deploymentId }}</template></td>
+            <td>{{ originLabel(backup) }}<small v-if="originDetail(backup)">{{ originDetail(backup) }}</small></td>
             <td><span class="bk-phase" :class="`is-${tone(backup.phase)}`">{{ phaseLabel(backup.phase) }}</span></td>
             <td>{{ date(backup.startedAt) }}</td>
             <td>{{ duration(backup) }}</td>
             <td>{{ date(backup.expiresAt) }}</td>
             <td>
               <div v-if="backup.phase === 'Completed'" class="bk-row-actions">
-                <button v-if="canManage" type="button" class="bk-btn" :disabled="busy" @click="restore(backup, 'side')">Restaurer à côté</button>
-                <button v-if="canReplace" type="button" class="bk-btn bk-btn-danger" :disabled="busy" @click="restore(backup, 'replace')">Remplacer</button>
+                <button v-if="canManage" type="button" class="bk-btn" :disabled="busy" @click="restore(backup, 'side')" title="Restaurer dans un espace de noms séparé, pour vérifier le contenu sans risque">Vérifier dans une copie</button>
+                <button v-if="canReplace" type="button" class="bk-btn bk-btn-danger" :disabled="busy" @click="restore(backup, 'replace')" title="Remettre l’environnement (application et données) dans l’état de cette sauvegarde">Restaurer l’environnement</button>
               </div>
             </td>
           </tr>
@@ -181,6 +209,11 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
 .bk { display: flex; flex-direction: column; gap: 14px; }
 .bk-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .bk-head h1 { margin: 0; font-size: 22px; }
+.bk-protection { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; }
+.bk-protection strong { font-size: 14.5px; }
+.bk-protection.is-ok { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; }
+.bk-protection.is-warning { border-color: #fde68a; background: #fffbeb; color: #78350f; }
+.bk-protection.is-critical { border-color: #fecaca; background: #fef2f2; color: #7f1d1d; }
 .bk-sub { margin: 4px 0 0; color: var(--color-gray-500, #6b7280); font-size: 14px; }
 .bk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .bk-actions select { min-width: 240px; padding: 8px 10px; border: 1px solid var(--color-gray-200, #e5e7eb); border-radius: 8px; background: #fff; font: inherit; }

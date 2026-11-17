@@ -35,7 +35,11 @@ public class GuardMetricsCollector {
         GuardSnapshot snapshot = new GuardSnapshot(
                 intOrNull(reader.scalar("pods attendus", GuardQueries.desiredPods(namespace, prefix))),
                 intOrNull(reader.scalar("pods indisponibles", GuardQueries.unavailablePods(namespace, prefix))),
-                intOrNull(reader.scalar("redémarrages", GuardQueries.restartsSince(namespace, prefix, secondsSinceStart))),
+                // Seulement les redémarrages après la période de démarrage (voir GuardEvaluator).
+                secondsSinceStart - GuardEvaluator.RESTART_GRACE_SECONDS >= 30
+                        ? intOrNull(reader.scalar("redémarrages", GuardQueries.restartsSince(namespace, prefix,
+                                secondsSinceStart - GuardEvaluator.RESTART_GRACE_SECONDS)))
+                        : null,
                 reader.labels("conteneurs bloqués", GuardQueries.blockedContainers(namespace, prefix),
                         metric -> metric.path("pod").asText() + " : " + metric.path("reason").asText()),
                 reader.labels("arrêts OOMKilled", GuardQueries.oomKilled(namespace, prefix), metric -> metric.path("pod").asText()),

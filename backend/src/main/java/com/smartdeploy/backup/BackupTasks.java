@@ -2,6 +2,7 @@ package com.smartdeploy.backup;
 
 import com.smartdeploy.audit.AuditAction;
 import com.smartdeploy.audit.AuditEvent;
+import com.smartdeploy.deployment.DeploymentService;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +27,14 @@ public class BackupTasks {
     private final VeleroClient velero;
     private final VeleroProperties properties;
     private final ApplicationEventPublisher eventPublisher;
+    private final DeploymentService deploymentService;
 
-    public BackupTasks(VeleroClient velero, VeleroProperties properties, ApplicationEventPublisher eventPublisher) {
+    public BackupTasks(VeleroClient velero, VeleroProperties properties, ApplicationEventPublisher eventPublisher,
+                       DeploymentService deploymentService) {
         this.velero = velero;
         this.properties = properties;
         this.eventPublisher = eventPublisher;
+        this.deploymentService = deploymentService;
     }
 
     @Async
@@ -43,7 +47,8 @@ public class BackupTasks {
 
     @Async
     public void runRestore(String restoreName, String backupName, String sourceNamespace, String targetNamespace, boolean replace,
-                           Long environmentId, String environmentName, String applicationName) {
+                           Long environmentId, String environmentName, String applicationName,
+                           java.time.LocalDateTime backupTakenAt, Long restorePointDeploymentId) {
         try {
             if (replace && velero.namespaceExists(targetNamespace)) {
                 velero.deleteNamespace(targetNamespace);
@@ -59,6 +64,10 @@ public class BackupTasks {
             audit(ok ? AuditAction.RESTORE_COMPLETED : AuditAction.RESTORE_FAILED, environmentId, environmentName, applicationName,
                     "Restauration « " + restoreName + " » vers " + targetNamespace + " : " + phase,
                     ok ? null : "Consulter : velero restore describe " + restoreName + " --details");
+            if (ok && replace) {
+                // L'environnement tourne de nouveau dans l'état de la sauvegarde.
+                deploymentService.markReplacedAfterRestore(environmentId, backupTakenAt, restorePointDeploymentId, restoreName);
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         } catch (RuntimeException exception) {

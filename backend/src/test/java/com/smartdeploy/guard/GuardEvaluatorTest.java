@@ -86,4 +86,18 @@ class GuardEvaluatorTest {
         GuardSnapshot crash = new GuardSnapshot(4, 1, 2, List.of("backend-7f9 : CrashLoopBackOff"), List.of(), null, 5.0, 300.0, 11.0, 811.0);
         assertEquals(GuardLevel.CRITICAL, GuardEvaluator.evaluate(crash, 30).level());
     }
+
+    @Test
+    void shouldIgnoreRestartsOfTheStartupPeriod() {
+        // Cas réel #127 : premier déploiement, chaque backend redémarre une fois en attendant PostgreSQL,
+        // juste avant la mise en service. À 38 s, le compteur en montrait 3 : ce n'est pas une instabilité.
+        GuardSnapshot firstDeployment = new GuardSnapshot(4, 0, 3, List.of(), List.of(), 0.16, 11.0, 409.0, null, null);
+        GuardEvaluation early = GuardEvaluator.evaluate(firstDeployment, 38);
+        assertNotEquals(GuardLevel.CRITICAL, early.level(), "les redémarrages du démarrage ne sont pas une dégradation");
+        assertEquals(GuardLevel.UNKNOWN, early.checks().stream().filter(c -> c.key().equals("restarts")).findFirst().orElseThrow().level());
+
+        // Une vraie instabilité, qui continue après le démarrage, reste détectée.
+        GuardSnapshot stillRestarting = new GuardSnapshot(4, 0, 2, List.of(), List.of(), 0.16, 11.0, 409.0, null, null);
+        assertEquals(GuardLevel.CRITICAL, GuardEvaluator.evaluate(stillRestarting, 200).level());
+    }
 }

@@ -10,6 +10,9 @@ import java.util.Set;
  * Calcul du score de confiance, sans dépendance : 100 points, moins des
  * pénalités justifiées. Les poids sont volontairement simples et lisibles,
  * pour qu'un utilisateur comprenne chaque point retiré.
+ * Règles de justesse : un même échec n'est compté qu'une fois ; seule une cause
+ * attribuable au code pénalise la version ; le taux d'échec d'un environnement
+ * n'est retenu qu'à partir de trois déploiements terminés.
  */
 public final class ConfidenceCalculator {
 
@@ -19,6 +22,19 @@ public final class ConfidenceCalculator {
     static final int RECENT_INCIDENTS = 10;
     static final int NOT_VALIDATED = 25;
     static final int WORK_BRANCH = 5;
+    /** En dessous, le taux d'échec d'un environnement n'est pas significatif. */
+    static final int MIN_ENVIRONMENT_SAMPLE = 3;
+    /**
+     * Causes d'échec attribuables au code de la version (diagnostic de l'analyste).
+     * Les autres (réseau, registre, délai, base injoignable, cause non identifiée)
+     * viennent de l'environnement ou de l'extérieur : elles ne pénalisent pas la version.
+     */
+    static final Set<String> VERSION_CAUSES = Set.of("COMPILATION_ERROR", "TEST_FAILURE", "QUALITY_GATE",
+            "DOCKERFILE_INVALID", "FRONTEND_BUILD", "VULNERABILITY", "CONFIG_MISSING", "CRASH_LOOP", "OUT_OF_MEMORY");
+
+    public static boolean isVersionCause(String incidentCode) {
+        return incidentCode != null && VERSION_CAUSES.contains(incidentCode);
+    }
 
     private static final Set<EnvironmentType> EXPOSED = Set.of(EnvironmentType.STAGING, EnvironmentType.PREPRODUCTION, EnvironmentType.PRODUCTION);
     private static final Set<String> MAIN_BRANCHES = Set.of("main", "master");
@@ -35,18 +51,19 @@ public final class ConfidenceCalculator {
         }
         if (in.versionFailures() > 0) {
             factors.add(new ConfidenceFactor("Version déjà en échec", -VERSION_FAILED,
-                    "Cette version a déjà échoué " + in.versionFailures() + " fois au déploiement."));
+                    "Cette version a déjà échoué " + in.versionFailures() + " fois à cause de son code (diagnostic de l'analyste)."));
         }
-        if (in.recentFinished() > 0 && in.recentFailed() > 0) {
+        if (in.recentFinished() >= MIN_ENVIRONMENT_SAMPLE && in.recentFailed() > 0) {
             int penalty = Math.round((float) RECENT_FAILURE_MAX * in.recentFailed() / in.recentFinished());
             if (penalty > 0) {
                 factors.add(new ConfidenceFactor("Échecs récents sur l'environnement", -penalty,
-                        in.recentFailed() + " échec(s) sur les " + in.recentFinished() + " derniers déploiements de cet environnement."));
+                        in.recentFailed() + " échec(s) sur les " + in.recentFinished()
+                                + " derniers déploiements de cet environnement, hors échecs déjà comptés pour cette version."));
             }
         }
         if (in.recentIncidents() > 0) {
             factors.add(new ConfidenceFactor("Incidents récents", -RECENT_INCIDENTS,
-                    in.recentIncidents() + " déploiement(s) touché(s) par un incident sur cet environnement depuis 24 heures."));
+                    in.recentIncidents() + " mise(s) en service d'autres versions jugée(s) dégradée(s) sur cet environnement depuis 24 heures."));
         }
         if (EXPOSED.contains(in.environmentType()) && !in.validatedInDevelopment()) {
             factors.add(new ConfidenceFactor("Version non validée en développement", -NOT_VALIDATED,

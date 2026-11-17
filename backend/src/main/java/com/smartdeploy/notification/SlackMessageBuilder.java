@@ -21,30 +21,30 @@ public final class SlackMessageBuilder {
 
     public static String title(AuditAction action) {
         return switch (action) {
-            case DEPLOYMENT_SUCCEEDED -> "✅ Déploiement réussi";
-            case DEPLOYMENT_FAILED -> "❌ Déploiement échoué";
-            case DEPLOYMENT_CANCELLED -> "⏹️ Déploiement annulé";
-            case DEPLOYMENT_ROLLBACK_REQUESTED -> "↩️ Rollback demandé";
-            case DEPLOYMENT_EXPIRED -> "⏱️ Déploiement bloqué";
-            case SUSPICIOUS_ACTIVITY -> "🚨 Activité suspecte";
-            case USER_ROLE_CHANGED -> "🔐 Rôle d'un utilisateur modifié";
-            case USER_STATUS_CHANGED -> "🔐 Statut d'un compte modifié";
-            case ALERT_OPENED -> "⚠️ Alerte de supervision";
-            case ALERT_RESOLVED -> "✅ Alerte résolue";
-            case GUARD_DEGRADED -> "🛡️ Dégradation détectée par le gardien";
-            case GUARD_PASSED -> "🛡️ Déploiement validé par le gardien";
-            case GUARD_INCONCLUSIVE -> "🛡️ Surveillance non concluante";
-            case GUARD_AUTO_ROLLBACK -> "↩️ Retour arrière automatique";
-            case INCIDENT_ANALYZED -> "🔎 Analyse de l'incident";
-            case BACKUP_REQUESTED -> "💾 Sauvegarde demandée";
-            case BACKUP_COMPLETED -> "💾 Sauvegarde terminée";
-            case BACKUP_FAILED -> "⚠️ Sauvegarde en échec";
-            case RESTORE_STARTED -> "♻️ Restauration lancée";
-            case RESTORE_COMPLETED -> "♻️ Restauration terminée";
-            case RESTORE_FAILED -> "⚠️ Restauration en échec";
-            case RAID_DEGRADED -> "🚨 RAID dégradé : un disque est en panne";
-            case RAID_RECOVERING -> "🔧 RAID en reconstruction";
-            case RAID_RESTORED -> "✅ RAID de nouveau sain";
+            case DEPLOYMENT_SUCCEEDED -> "Déploiement réussi";
+            case DEPLOYMENT_FAILED -> "Déploiement échoué";
+            case DEPLOYMENT_CANCELLED -> "Déploiement annulé";
+            case DEPLOYMENT_ROLLBACK_REQUESTED -> "Rollback demandé";
+            case DEPLOYMENT_EXPIRED -> "Déploiement bloqué";
+            case SUSPICIOUS_ACTIVITY -> "Activité suspecte";
+            case USER_ROLE_CHANGED -> "Rôle d'un utilisateur modifié";
+            case USER_STATUS_CHANGED -> "Statut d'un compte modifié";
+            case ALERT_OPENED -> "Alerte de supervision";
+            case ALERT_RESOLVED -> "Alerte résolue";
+            case GUARD_DEGRADED -> "Dégradation détectée par le gardien";
+            case GUARD_PASSED -> "Déploiement validé par le gardien";
+            case GUARD_INCONCLUSIVE -> "Surveillance non concluante";
+            case GUARD_AUTO_ROLLBACK -> "Retour arrière automatique";
+            case INCIDENT_ANALYZED -> "Analyse de l'incident";
+            case BACKUP_REQUESTED -> "Sauvegarde demandée";
+            case BACKUP_COMPLETED -> "Sauvegarde terminée";
+            case BACKUP_FAILED -> "Sauvegarde en échec";
+            case RESTORE_STARTED -> "Restauration lancée";
+            case RESTORE_COMPLETED -> "Restauration terminée";
+            case RESTORE_FAILED -> "Restauration en échec";
+            case RAID_DEGRADED -> "RAID dégradé : un disque est en panne";
+            case RAID_RECOVERING -> "RAID en reconstruction";
+            case RAID_RESTORED -> "RAID de nouveau sain";
             default -> "ℹ️ SmartDeploy";
         };
     }

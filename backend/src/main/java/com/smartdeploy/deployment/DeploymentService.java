@@ -52,6 +52,14 @@ public class DeploymentService {
      * ==========================================================
      */
 
+    private com.smartdeploy.guard.DeploymentGuardRepository guardRepository;
+
+    /** Facultatif : permet de refuser un retour vers un déploiement jugé dégradé. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setGuardRepository(com.smartdeploy.guard.DeploymentGuardRepository guardRepository) {
+        this.guardRepository = guardRepository;
+    }
+
     public DeploymentService(
             DeploymentRepository deploymentRepository,
             VersionRepository versionRepository,
@@ -620,6 +628,34 @@ public class DeploymentService {
     }
 
     /** Publie un événement d'audit sur un déploiement (enregistré après commit). */
+    /**
+     * Après la restauration complète d'un environnement par Velero : les mises en service
+     * postérieures à la sauvegarde ne tournent plus. Elles passent à « Remplacé », pour que
+     * le déploiement affiché « En service » soit celui qui tourne réellement.
+     * Le déploiement protégé par un point de restauration est aussi concerné (sa sauvegarde
+     * a été prise juste après sa création).
+     */
+    public int markReplacedAfterRestore(Long environmentId, LocalDateTime backupTakenAt,
+                                        Long restorePointDeploymentId, String restoreName) {
+        Environment environment = environmentRepository.findById(environmentId).orElse(null);
+        if (environment == null) {
+            return 0;
+        }
+        int replaced = 0;
+        for (Deployment candidate : deploymentRepository
+                .findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.SUCCESS)) {
+            boolean afterBackup = backupTakenAt != null && candidate.getCreatedAt() != null
+                    && candidate.getCreatedAt().isAfter(backupTakenAt);
+            if (afterBackup || candidate.getId().equals(restorePointDeploymentId)) {
+                candidate.setStatus(DeploymentStatus.ROLLED_BACK);
+                audit(AuditAction.DEPLOYMENT_REPLACED, candidate, "Sauvegardes (Velero)",
+                        "Déploiement #" + candidate.getId() + " remplacé : l'environnement a été restauré (« " + restoreName + " »)");
+                replaced++;
+            }
+        }
+        return replaced;
+    }
+
     private void audit(AuditAction action, Deployment deployment, String actor, String summary) {
         String applicationName = deployment.getVersion() != null
                 && deployment.getVersion().getApplication() != null
@@ -817,6 +853,17 @@ public class DeploymentService {
         if (isCurrentDeployment(original)) {
             throw new DeploymentStateException(
                     "Ce déploiement est déjà en service sur cet environnement"
+            );
+        }
+
+        // Un retour arrière ramène à un état connu comme sain : jamais vers un déploiement
+        // que le gardien a jugé dégradé (même règle que la cible proposée par le gardien).
+        if (guardRepository != null && guardRepository.findFirstByDeploymentIdOrderByIdDesc(original.getId())
+                .map(guard -> guard.getStatus() == com.smartdeploy.guard.GuardStatus.DEGRADED)
+                .orElse(false)) {
+            throw new DeploymentStateException(
+                    "Ce déploiement a été jugé dégradé par le gardien : il ne peut pas servir de point de retour. "
+                            + "Pour redéployer cette version, lancez un nouveau déploiement."
             );
         }
 

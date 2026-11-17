@@ -1099,6 +1099,26 @@ class DeploymentServiceTest {
     }
 
     @Test
+    void createRollback_shouldRejectDeploymentJudgedDegraded() {
+        // Remarque issue du test de bout en bout : « Revenir ici » était proposé vers une version dégradée.
+        Deployment original = createDeployment(DeploymentStatus.ROLLED_BACK);
+        original.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "d".repeat(64));
+        when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(original));
+        com.smartdeploy.guard.DeploymentGuardRepository guards = mock(com.smartdeploy.guard.DeploymentGuardRepository.class);
+        com.smartdeploy.guard.DeploymentGuard degraded = mock(com.smartdeploy.guard.DeploymentGuard.class);
+        when(degraded.getStatus()).thenReturn(com.smartdeploy.guard.GuardStatus.DEGRADED);
+        when(guards.findFirstByDeploymentIdOrderByIdDesc(original.getId())).thenReturn(Optional.of(degraded));
+        deploymentService.setGuardRepository(guards);
+
+        DeploymentStateException exception = assertThrows(
+                DeploymentStateException.class,
+                () -> deploymentService.createRollback(10L, createUser())
+        );
+        assertTrue(exception.getMessage().contains("jugé dégradé"));
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
+
+    @Test
     void createRollback_shouldAcceptReplacedDeploymentAsTarget() {
         Deployment original = createDeployment(DeploymentStatus.ROLLED_BACK);
         original.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "c".repeat(64));

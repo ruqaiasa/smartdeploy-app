@@ -4,6 +4,9 @@ import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vu
 import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.vue'
 import DeploymentGuardPanel from '@/components/deployments/DeploymentGuardPanel.vue'
 import IncidentAnalysisPanel from '@/components/deployments/IncidentAnalysisPanel.vue'
+import RestoreBeforeDialog from '@/components/deployments/RestoreBeforeDialog.vue'
+import { getRestorePoints, restoreBackup } from '@/api/backups.api'
+import type { BackupInfo } from '@/types/backup'
 import { getDeploymentGuards } from '@/api/guard.api'
 import type { DeploymentGuard } from '@/types/guard'
 import { useApplicationsStore } from '@/stores/applications'
@@ -30,9 +33,12 @@ const ROLLBACK_AVAILABLE = true
 function canRollback(deployment: DeploymentResponse) {
   // Jamais vers le déploiement déjà en service ; possible vers un déploiement
   // réussi plus ancien ou vers un déploiement remplacé (retour « en avant »).
+  // Jamais vers un déploiement jugé dégradé par le gardien : un retour arrière ramène
+  // à un état connu comme sain (le serveur le refuse aussi).
   return !deployment.current
     && (deployment.status === 'SUCCESS' || deployment.status === 'ROLLED_BACK')
     && !!deployment.deployedBackendImage?.includes('@sha256:')
+    && guards.value[deployment.id]?.status !== 'DEGRADED'
 }
 
 const modalOpen = ref(false)
@@ -157,6 +163,70 @@ watch(hasWatchingGuards, watching => {
   }
 })
 function openGuard(deployment: DeploymentResponse) { guardDeployment.value = deployment }
+
+/* ---------------------------------------------------------------
+ * Points de restauration (Velero) : l'état d'avant chaque déploiement
+ * --------------------------------------------------------------- */
+const restorePoints = ref<Record<number, BackupInfo>>({})
+let restorePointsLoadedAt = 0
+async function loadRestorePoints(force = false) {
+  if (!force && Date.now() - restorePointsLoadedAt < 15_000) return
+  restorePointsLoadedAt = Date.now()
+  try {
+    const list = await getRestorePoints()
+    const byDeployment: Record<number, BackupInfo> = {}
+    for (const point of list) {
+      const id = point.deploymentId
+      if (id === null) continue
+      const known = byDeployment[id]
+      if (!known || (point.startedAt ?? '') > (known.startedAt ?? '')) byDeployment[id] = point
+    }
+    restorePoints.value = byDeployment
+  } catch {
+    // Les sauvegardes sont un complément : leur indisponibilité ne bloque pas la page.
+  }
+}
+watch(() => deploymentsStore.deployments, () => { void loadRestorePoints() })
+
+function restorePointLabel(point: BackupInfo) {
+  if (point.phase === 'Completed') return `État d’avant sauvegardé${point.protectedVersion ? ` (${point.protectedVersion})` : ''}`
+  if (['New', 'InProgress', 'WaitingForPluginOperations'].includes(point.phase)) return 'Sauvegarde de l’état d’avant…'
+  return 'Point de restauration en échec'
+}
+function restorePointTone(point: BackupInfo) {
+  if (point.phase === 'Completed') return 'is-ok'
+  if (['New', 'InProgress', 'WaitingForPluginOperations'].includes(point.phase)) return 'is-pending'
+  return 'is-ko'
+}
+function restorePointTitle(point: BackupInfo) {
+  return point.phase === 'Completed'
+    ? `Sauvegarde Velero « ${point.name} » : l’application et ses données, telles qu’elles étaient juste avant ce déploiement.`
+    : `Sauvegarde Velero « ${point.name} » : ${point.phase}`
+}
+function canRestoreBefore(deployment: DeploymentResponse) {
+  return canDeleteDeployments.value && deployment.current === true && deployment.status === 'SUCCESS'
+    && restorePoints.value[deployment.id]?.phase === 'Completed'
+}
+
+const restoreTarget = ref<DeploymentResponse | null>(null)
+const restoreLoading = ref(false)
+const restoreInfo = ref('')
+async function confirmRestoreBefore() {
+  const deployment = restoreTarget.value
+  const point = deployment ? restorePoints.value[deployment.id] : undefined
+  if (!deployment || !point) return
+  restoreLoading.value = true
+  try {
+    await restoreBackup(deployment.environmentId, point.name, 'replace')
+    restoreInfo.value = `Restauration lancée : ${deployment.environmentName} revient à son état d’avant le déploiement #${deployment.id}`
+      + `${point.protectedVersion ? ` (version ${point.protectedVersion}, avec ses données)` : ''}. Suivi dans la page Sauvegardes ; la liste se mettra à jour à la fin.`
+    restoreTarget.value = null
+  } catch {
+    restoreInfo.value = 'La restauration n’a pas pu être lancée. Vérifiez la page Sauvegardes et les droits du compte de service.'
+  } finally {
+    restoreLoading.value = false
+  }
+}
 
 /* Analyse d'incident : échecs de pipeline et dégradations détectées par le gardien */
 const analysisDeployment = ref<DeploymentResponse | null>(null)
@@ -317,6 +387,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
     </div>
 
     <p v-if="deploymentsStore.errorMessage" class="dp-alert" role="alert">{{ deploymentsStore.errorMessage }}</p>
+    <p v-if="restoreInfo" class="dp-info" role="status">{{ restoreInfo }} <button type="button" class="dp-info-close" aria-label="Fermer" @click="restoreInfo = ''">×</button></p>
 
     <section class="dp-card">
       <div v-if="deploymentsStore.loading && !deploymentsStore.deployments.length" class="dp-empty">
@@ -367,6 +438,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                 </span>
                 <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
                 <DeploymentGuardBadge v-if="guards[deployment.id]" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
+                <small v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)"
+                  :title="restorePointTitle(restorePoints[deployment.id]!)"><svg class="dp-rp-icon" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M4 3.5h9.5L16.5 6.5V16a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>{{ restorePointLabel(restorePoints[deployment.id]!) }}</small>
               </td>
               <td data-label="Lancé">
                 <span :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
@@ -390,6 +463,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                     :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
                   <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
                     :disabled="deploymentsStore.actionLoading" title="Redéployer exactement ces images" @click="rollback(deployment)">Revenir ici</button>
+                  <button v-if="canRestoreBefore(deployment)" type="button" class="dp-action dp-action-danger"
+                    title="Remettre l’application et ses données dans leur état d’avant ce déploiement" @click="restoreTarget = deployment">Restaurer l’état d’avant</button>
                   <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading || ACTIVE_STATUSES.includes(deployment.status)"
                     :title="ACTIVE_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours' : 'Supprimer de l’historique'"
@@ -476,6 +551,9 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </section>
       </div>
     </Teleport>
+    <RestoreBeforeDialog :open="restoreTarget !== null" :deployment="restoreTarget"
+      :restore-point="restoreTarget ? restorePoints[restoreTarget.id] ?? null : null" :loading="restoreLoading"
+      @close="restoreTarget = null" @confirm="confirmRestoreBefore" />
   </section>
 </template>
 
@@ -522,6 +600,13 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
 .dp-live { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 12px; }
 .dp-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: dp-pulse 1.6s ease-in-out infinite; }
 
+.dp-restore-point { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; font-weight: 500; }
+.dp-rp-icon { flex: none; }
+.dp-restore-point.is-ok { color: #0f766e; }
+.dp-restore-point.is-pending { color: #b45309; }
+.dp-restore-point.is-ko { color: #b91c1c; }
+.dp-info { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid #99f6e4; border-radius: 8px; background: #f0fdfa; color: #134e4a; font-size: 13px; }
+.dp-info-close { border: 0; background: none; font-size: 18px; line-height: 1; color: inherit; cursor: pointer; }
 .dp-alert { margin: 0; padding: 12px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; }
 
 /* Liste */

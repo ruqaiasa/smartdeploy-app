@@ -109,7 +109,7 @@ async function handleLogin() {
 
             <div class="feature">
               <div class="feature-icon">
-                ✓
+                <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 10.5l3.2 3.2L15 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </div>
 
               <div>
@@ -125,7 +125,7 @@ async function handleLogin() {
 
             <div class="feature">
               <div class="feature-icon">
-                ✓
+                <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 10.5l3.2 3.2L15 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </div>
 
               <div>
@@ -141,7 +141,7 @@ async function handleLogin() {
 
             <div class="feature">
               <div class="feature-icon">
-                ✓
+                <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M5 10.5l3.2 3.2L15 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </div>
 
               <div>
@@ -194,7 +194,7 @@ async function handleLogin() {
         <div class="language-selector">
 
           <span class="language-globe">
-            🌐
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M2.5 10h15M10 2.5c2.2 2.1 3.2 4.6 3.2 7.5S12.2 15.4 10 17.5M10 2.5C7.8 4.6 6.8 7.1 6.8 10s1 5.4 3.2 7.5" fill="none" stroke="currentColor" stroke-width="1.6" /></svg>
           </span>
 
           <select

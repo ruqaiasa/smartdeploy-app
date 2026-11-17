@@ -31,6 +31,13 @@ public final class GuardEvaluator {
      * Les contrôles critiques, eux, restent actifs dès la première seconde.
      */
     static final long WARMUP_SECONDS = 300;
+    /**
+     * Les redémarrages des 2 premières minutes appartiennent au démarrage : une dépendance
+     * (la base) peut démarrer après l'application, qui redémarre jusqu'à ce qu'elle réponde.
+     * Cas réel (déploiement #127) : ces redémarrages, survenus juste avant la mise en service,
+     * étaient comptés après elle (retard de collecte, extrapolation sur une fenêtre courte).
+     */
+    static final long RESTART_GRACE_SECONDS = 120;
 
     private GuardEvaluator() {
     }
@@ -49,7 +56,9 @@ public final class GuardEvaluator {
         List<GuardCheck> checks = new ArrayList<>();
         checks.add(availability(snapshot));
         checks.add(blockedContainers(snapshot));
-        checks.add(restarts(snapshot));
+        checks.add(secondsSinceStart < RESTART_GRACE_SECONDS
+                ? restartsDuringStartup(secondsSinceStart)
+                : restarts(snapshot));
         checks.add(outOfMemory(snapshot));
         checks.add(memoryLimit(snapshot));
         if (secondsSinceStart < WARMUP_SECONDS) {
@@ -100,6 +109,14 @@ public final class GuardEvaluator {
                 "Aucun conteneur en attente anormale.");
     }
 
+    private static GuardCheck restartsDuringStartup(long secondsSinceStart) {
+        long remaining = Math.max(0, RESTART_GRACE_SECONDS - secondsSinceStart);
+        return new GuardCheck("restarts", "Redémarrages depuis le déploiement", GuardLevel.UNKNOWN,
+                "démarrage en cours", "comptés après 2 min",
+                "Période de démarrage : les redémarrages des 2 premières minutes ne sont pas comptés, une dépendance "
+                        + "comme la base pouvant démarrer après l'application (encore " + remaining + " s).");
+    }
+
     private static GuardCheck restarts(GuardSnapshot s) {
         if (s.restarts() == null) {
             return new GuardCheck("restarts", "Redémarrages depuis le déploiement", GuardLevel.UNKNOWN,
@@ -111,10 +128,10 @@ public final class GuardEvaluator {
         String explanation = switch (level) {
             case CRITICAL -> "Des redémarrages répétés indiquent une application instable.";
             case WARNING -> "Un redémarrage isolé : à surveiller.";
-            default -> "Aucun redémarrage depuis la mise en service.";
+            default -> "Aucun redémarrage depuis la fin du démarrage.";
         };
         return new GuardCheck("restarts", "Redémarrages depuis le déploiement", level,
-                String.valueOf(restarts), "moins de " + CRITICAL_RESTARTS, explanation);
+                String.valueOf(restarts), "moins de " + CRITICAL_RESTARTS + " (après 2 min)", explanation);
     }
 
     private static GuardCheck outOfMemory(GuardSnapshot s) {

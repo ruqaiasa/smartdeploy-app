@@ -57,6 +57,20 @@ public class BackupController {
         return handle(() -> backupService.restore(environmentId, backupName, BackupService.RestoreMode.REPLACE, currentUser.getEmail()));
     }
 
+    /** Points de restauration pris avant les déploiements (un par déploiement protégé). */
+    @GetMapping("/api/backups/restore-points")
+    @PreAuthorize("isAuthenticated()")
+    public List<BackupInfo> restorePoints() {
+        return handle(backupService::restorePoints);
+    }
+
+    /** État de protection de chaque environnement déployé. */
+    @GetMapping("/api/backups/protection")
+    @PreAuthorize("isAuthenticated()")
+    public List<BackupProtection.EnvironmentProtection> protection() {
+        return handle(backupService::protection);
+    }
+
     @GetMapping("/api/restores/{restoreName}")
     @PreAuthorize("isAuthenticated()")
     public Map<String, String> restore(@PathVariable String restoreName) {
