@@ -402,7 +402,8 @@ public class VersionService {
                 version.getPinnedAt() != null,
                 usage == null || version.getId() == null ? List.of() : usage.inServiceEnvironments(version.getId()),
                 verdict == null ? null : verdict.label(),
-                verdict == null ? null : verdict.tone()
+                verdict == null ? null : verdict.tone(),
+                usage == null || version.getId() == null ? List.of() : usage.validatedEnvironments(version.getId())
         );
     }
 

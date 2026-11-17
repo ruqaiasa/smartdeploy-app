@@ -2,6 +2,7 @@ import httpClient from './httpClient'
 
 import type {
   DeploymentPrecheck,
+  PromotionProposal,
   CreateDeploymentRequest,
   DeploymentPageResponse,
   DeploymentResponse,
@@ -113,5 +114,27 @@ export async function cancelDeployment(
 /** Ce qu’il faut savoir avant de déployer cette version sur cet environnement. */
 export async function getDeploymentPrecheck(versionId: number, environmentId: number): Promise<DeploymentPrecheck> {
   const response = await httpClient.get<DeploymentPrecheck>('/api/deployments/precheck', { params: { versionId, environmentId } })
+  return response.data
+}
+
+/* Approbation avant la production (principe des quatre yeux) */
+export async function approveDeployment(id: number, comment: string): Promise<DeploymentResponse> {
+  const response = await httpClient.post<DeploymentResponse>(`/api/deployments/${id}/approve`, { comment })
+  return response.data
+}
+
+export async function rejectDeployment(id: number, comment: string): Promise<DeploymentResponse> {
+  const response = await httpClient.post<DeploymentResponse>(`/api/deployments/${id}/reject`, { comment })
+  return response.data
+}
+
+export async function getPendingApprovalsCount(): Promise<number> {
+  const response = await httpClient.get<{ count: number }>('/api/deployments/approvals/pending-count')
+  return response.data.count ?? 0
+}
+
+/** Promotion guidée : vers quel environnement ce déploiement validé peut monter, avec sa configuration. */
+export async function getPromotion(deploymentId: number): Promise<PromotionProposal> {
+  const response = await httpClient.get<PromotionProposal>(`/api/deployments/${deploymentId}/promotion`)
   return response.data
 }

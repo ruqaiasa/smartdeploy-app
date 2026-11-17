@@ -44,10 +44,29 @@ public class VersionUsage {
                 .toList();
     }
 
+    /** Chemin de livraison : environnements où la version a été validée par le gardien, dans l'ordre. */
+    public List<String> validatedEnvironments(Long versionId) {
+        List<Deployment> history = deployments.findByVersion_IdAndDeletedFalse(versionId);
+        if (history.isEmpty()) {
+            return List.of();
+        }
+        java.util.Set<Long> validated = guards.findByDeploymentIdIn(history.stream().map(Deployment::getId).toList()).stream()
+                .filter(g -> g.getStatus() == com.smartdeploy.guard.GuardStatus.HEALTHY
+                        || g.getStatus() == com.smartdeploy.guard.GuardStatus.HEALTHY_WITH_WARNINGS)
+                .map(DeploymentGuard::getDeploymentId)
+                .collect(java.util.stream.Collectors.toSet());
+        return history.stream()
+                .filter(d -> validated.contains(d.getId()))
+                .sorted(Comparator.comparing(d -> d.getEnvironment().getType().ordinal()))
+                .map(d -> d.getEnvironment().getName())
+                .distinct()
+                .toList();
+    }
+
     /** Un déploiement de cette version est-il en attente ou en cours ? */
     public boolean hasActiveDeployment(Long versionId) {
         return deployments.existsByVersion_IdAndStatusInAndDeletedFalse(versionId,
-                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING));
+                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING, DeploymentStatus.AWAITING_APPROVAL));
     }
 
     /** Le verdict du dernier déploiement de la version (hors annulations). */
@@ -62,6 +81,8 @@ public class VersionUsage {
         return switch (d.getStatus()) {
             case PENDING, RUNNING -> new Verdict("Déploiement en cours", "pending");
             case FAILED -> new Verdict("Échec au déploiement", "ko");
+            case AWAITING_APPROVAL -> new Verdict("En attente d'approbation", "pending");
+            case REJECTED -> new Verdict("Refusée à l'approbation", "muted");
             default -> guardVerdict(d);
         };
     }

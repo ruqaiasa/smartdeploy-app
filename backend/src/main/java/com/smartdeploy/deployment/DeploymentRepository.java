@@ -23,6 +23,9 @@ public interface DeploymentRepository extends
     /** Déploiements encore actifs, examinés par le garde-fou. */
     List<Deployment> findByStatusInAndDeletedFalse(Collection<DeploymentStatus> statuses);
 
+    /** Approbations en attente (pastille du menu). */
+    long countByStatusInAndDeletedFalse(Collection<DeploymentStatus> statuses);
+
     /** Déploiement en service : le plus récent déploiement réussi de l'environnement. */
     Optional<Deployment> findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
             Environment environment,

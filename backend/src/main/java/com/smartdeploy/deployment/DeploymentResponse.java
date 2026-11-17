@@ -55,7 +55,12 @@ public record DeploymentResponse(
         Long imagesFromId,
 
         // Commit exact construit par le pipeline
-        String builtCommit
+        String builtCommit,
+
+        // Approbation avant la production : qui a décidé, quand, et pourquoi
+        String approvedBy,
+        LocalDateTime approvalDecidedAt,
+        String approvalComment
 ) {
     /** Compatibilité : sans promotion ni commit connu. */
     public DeploymentResponse(Long id, Long applicationId, String applicationName, Long versionId, String version,
@@ -68,6 +73,6 @@ public record DeploymentResponse(
         this(id, applicationId, applicationName, versionId, version, environmentId, environmentName, environmentType,
                 requestedById, requestedByEmail, status, startedAt, finishedAt, durationSeconds, jenkinsBuildNumber,
                 deploymentLogsUrl, errorMessage, rollbackOfId, deleted, createdAt, updatedAt, deployedBackendImage,
-                deployedFrontendImage, current, null, null);
+                deployedFrontendImage, current, null, null, null, null, null);
     }
 }

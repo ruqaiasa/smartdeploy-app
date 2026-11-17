@@ -24,8 +24,15 @@ public record DeploymentPrecheck(
         Degraded degraded,
         LastFailure lastFailure,
         Reuse reuse,
-        String pinnedCommit
+        String pinnedCommit,
+        Promotion promotion
 ) {
+    /**
+     * RG-P2 : la cible exige-t-elle une validation préalable, est-elle satisfaite, et où la version a été validée.
+     */
+    public record Promotion(boolean required, boolean satisfied, java.util.List<String> validatedIn) {
+    }
+
     public record Degraded(Long deploymentId, String environmentName, LocalDateTime at, String cause) {
     }
 

@@ -76,7 +76,9 @@ public class Deployment {
     )
     private User requestedBy;
 
-    @Enumerated(EnumType.STRING)
+    // Converti en texte simple : avec @Enumerated(STRING), Hibernate fige les valeurs
+    // autorisées dans une contrainte CHECK et refuserait les nouveaux statuts.
+    @Convert(converter = DeploymentStatusConverter.class)
     @Column(
             nullable = false,
             length = 30
@@ -152,6 +154,16 @@ public class Deployment {
             )
     )
     private Deployment rollbackOf;
+
+    /* Approbation avant la production (principe des quatre yeux) */
+    @Column(name = "approved_by", length = 150)
+    private String approvedBy;
+
+    @Column(name = "approval_decided_at")
+    private LocalDateTime approvalDecidedAt;
+
+    @Column(name = "approval_comment", length = 1000)
+    private String approvalComment;
 
     /*
      * Promotion (RG-V4) : déploiement antérieur de la même version dont les images,

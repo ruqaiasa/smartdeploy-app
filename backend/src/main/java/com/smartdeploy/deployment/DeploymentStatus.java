@@ -12,6 +12,11 @@ public enum DeploymentStatus {
 
     CANCELLED,
 
-    ROLLED_BACK
+    ROLLED_BACK,
+
+    // Approbation avant la production (principe des quatre yeux)
+    AWAITING_APPROVAL,
+
+    REJECTED
 
 }

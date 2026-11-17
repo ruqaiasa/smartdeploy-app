@@ -356,6 +356,12 @@ function formatDate(
               </td>
 
               <td>
+                <div v-if="version.validatedEnvironments?.length" class="delivery-path" title="Chemin de livraison : environnements où le gardien a validé cette version">
+                  <template v-for="(name, index) in version.validatedEnvironments" :key="name">
+                    <span v-if="index > 0" class="delivery-arrow" aria-hidden="true">›</span>
+                    <span class="delivery-step">{{ name }}</span>
+                  </template>
+                </div>
                 <div v-if="version.inServiceEnvironments?.length" class="in-service">
                   <span v-for="name in version.inServiceEnvironments" :key="name" class="env-chip">{{ name }}</span>
                 </div>
@@ -483,6 +489,9 @@ function formatDate(
 .pinned { color: #0f766e; font-weight: 600; }
 .not-pinned { color: #b45309; }
 .in-service { display: flex; flex-wrap: wrap; gap: 4px; }
+.delivery-path { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-bottom: 4px; font-size: 11.5px; color: #4b5563; }
+.delivery-step { padding: 1px 7px; border: 1px solid #bbf7d0; border-radius: 999px; background: #f0fdf4; color: #166534; font-weight: 600; }
+.delivery-arrow { color: #9ca3af; }
 .env-chip { padding: 2px 8px; border-radius: 999px; background: #ccfbf1; color: #115e59; font-size: 12px; font-weight: 600; }
 .verdict { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #f3f4f6; color: #4b5563; }
 .verdict.is-ok { background: #dcfce7; color: #166534; }

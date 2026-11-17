@@ -24,6 +24,11 @@ public final class SlackMessageBuilder {
             case DEPLOYMENT_SUCCEEDED -> "Déploiement réussi";
             case DEPLOYMENT_FAILED -> "Déploiement échoué";
             case DEPLOYMENT_CANCELLED -> "Déploiement annulé";
+            case DEPLOYMENT_APPROVAL_REQUESTED -> "Déploiement en production : approbation demandée";
+            case DEPLOYMENT_APPROVED -> "Déploiement en production approuvé";
+            case DEPLOYMENT_REJECTED -> "Déploiement en production refusé";
+            case DEPLOYMENT_APPROVAL_EXPIRED -> "Demande d'approbation expirée";
+            case DEPLOYMENT_EMERGENCY_OVERRIDE -> "Exception d'urgence : déploiement sans validation préalable";
             case DEPLOYMENT_ROLLBACK_REQUESTED -> "Rollback demandé";
             case DEPLOYMENT_EXPIRED -> "Déploiement bloqué";
             case SUSPICIOUS_ACTIVITY -> "Activité suspecte";

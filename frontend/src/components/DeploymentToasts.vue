@@ -2,7 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDeployments } from '@/api/deployments.api'
-import { detectFinishedDeployments, hasActiveDeployment } from '@/composables/deploymentWatch'
+import { detectApprovalEvents, detectFinishedDeployments, hasActiveDeployment, type ApprovalEventKind } from '@/composables/deploymentWatch'
+import { useAuthStore } from '@/stores/auth'
 import type { DeploymentResponse, DeploymentStatus } from '@/types/deployment'
 
 /*
@@ -14,6 +15,8 @@ import type { DeploymentResponse, DeploymentStatus } from '@/types/deployment'
 interface Toast {
   key: number
   deployment: DeploymentResponse
+  /* « finished » : fin d'un déploiement ; les autres : approbation avant la production. */
+  kind: 'finished' | ApprovalEventKind
 }
 
 const ACTIVE_INTERVAL_MS = 5_000
@@ -21,6 +24,7 @@ const IDLE_INTERVAL_MS = 20_000
 const MAX_TOASTS = 3
 
 const router = useRouter()
+const authStore = useAuthStore()
 const toasts = ref<Toast[]>([])
 const known = new Map<number, DeploymentStatus>()
 const browserPermission = ref<NotificationPermission | 'unsupported'>(
@@ -30,6 +34,34 @@ let initialized = false
 let stopped = false
 let timer: ReturnType<typeof setTimeout> | null = null
 let toastKey = 0
+
+const APPROVAL_TITLES: Record<ApprovalEventKind, string> = {
+  requested: 'Approbation demandée',
+  approved: 'Votre déploiement a été approuvé',
+  rejected: 'Votre déploiement a été refusé',
+  expired: 'Votre demande a expiré',
+}
+
+function toastTitle(toast: Toast) {
+  return toast.kind === 'finished' ? title(toast.deployment) : APPROVAL_TITLES[toast.kind]
+}
+
+function toastDescription(toast: Toast) {
+  const d = toast.deployment
+  const what = description(d)
+  switch (toast.kind) {
+    case 'requested': return `${d.requestedByEmail} demande à déployer ${what} : votre décision est attendue`
+    case 'approved': return `${what}, par ${d.approvedBy}${d.approvalComment ? ` : « ${d.approvalComment} »` : ''}. Le pipeline a démarré.`
+    case 'rejected': return `${what}, par ${d.approvedBy} : « ${d.approvalComment ?? ''} »`
+    case 'expired': return `${what} : aucune réponse en 24 heures. Relancez la demande si besoin.`
+    default: return what
+  }
+}
+
+function toastTone(toast: Toast) {
+  if (toast.kind === 'finished') return tone(toast.deployment)
+  return toast.kind === 'approved' ? 'success' : toast.kind === 'requested' ? 'approval' : 'neutral'
+}
 
 function title(deployment: DeploymentResponse) {
   const rollback = deployment.rollbackOfId ? 'Rollback' : 'Déploiement'
@@ -46,17 +78,17 @@ function tone(deployment: DeploymentResponse) {
   return deployment.status === 'SUCCESS' ? 'success' : deployment.status === 'FAILED' ? 'danger' : 'neutral'
 }
 
-function show(deployment: DeploymentResponse) {
+function show(deployment: DeploymentResponse, kind: Toast['kind'] = 'finished') {
   const key = ++toastKey
-  toasts.value = [{ key, deployment }, ...toasts.value].slice(0, MAX_TOASTS)
-  // Un échec reste affiché plus longtemps : il demande une action.
-  const duration = deployment.status === 'FAILED' ? 20_000 : 8_000
-  setTimeout(() => dismiss(key), duration)
-
+  const toast: Toast = { key, deployment, kind }
+  toasts.value = [toast, ...toasts.value].slice(0, MAX_TOASTS)
+  // Un échec, un refus ou une demande à traiter restent affichés plus longtemps : ils demandent une action.
+  const needsAction = deployment.status === 'FAILED' || kind === 'requested' || kind === 'rejected'
+  setTimeout(() => dismiss(key), needsAction ? 20_000 : 8_000)
   if (browserPermission.value === 'granted' && document.visibilityState === 'hidden') {
-    const body = description(deployment)
-      + (deployment.status === 'FAILED' && deployment.errorMessage ? `\n${deployment.errorMessage.slice(0, 140)}` : '')
-    const notification = new Notification(`SmartDeploy · ${title(deployment)}`, { body, tag: `deployment-${deployment.id}` })
+    const body = toastDescription(toast)
+      + (kind === 'finished' && deployment.status === 'FAILED' && deployment.errorMessage ? `\n${deployment.errorMessage.slice(0, 140)}` : '')
+    const notification = new Notification(`SmartDeploy · ${toastTitle(toast)}`, { body, tag: `deployment-${deployment.id}-${kind}` })
     notification.onclick = () => {
       window.focus()
       void router.push('/deployments')
@@ -84,7 +116,10 @@ async function poll() {
   let nextDelay = IDLE_INTERVAL_MS
   try {
     const page = await getDeployments({ page: 0, size: 20 })
-    detectFinishedDeployments(known, page.content, initialized).forEach(show)
+    // Approbation d'abord : la détection des fins met à jour l'état connu.
+    detectApprovalEvents(known, page.content, initialized, authStore.currentUser?.id,
+      authStore.hasRole('DEVOPS', 'ADMIN')).forEach(event => show(event.deployment, event.kind))
+    detectFinishedDeployments(known, page.content, initialized).forEach(deployment => show(deployment))
     initialized = true
     if (hasActiveDeployment(page.content)) nextDelay = ACTIVE_INTERVAL_MS
   } catch (error: unknown) {
@@ -108,18 +143,19 @@ onBeforeUnmount(() => {
 <template>
   <div class="dt-stack" aria-live="polite">
     <TransitionGroup name="dt">
-      <article v-for="toast in toasts" :key="toast.key" class="dt-toast" :class="`is-${tone(toast.deployment)}`" role="status">
+      <article v-for="toast in toasts" :key="toast.key" class="dt-toast" :class="`is-${toastTone(toast)}`" role="status">
         <span class="dt-icon" aria-hidden="true">
-          <svg v-if="toast.deployment.status === 'SUCCESS'" viewBox="0 0 20 20" width="18" height="18"><path d="M5 10.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          <svg v-else-if="toast.deployment.status === 'FAILED'" viewBox="0 0 20 20" width="18" height="18"><path d="M6 6l8 8M14 6l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          <svg v-if="toast.kind === 'requested'" viewBox="0 0 20 20" width="18" height="18"><path d="M10 3.5l6 3v4c0 3.4-2.5 5.6-6 6.5-3.5-.9-6-3.1-6-6.5v-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+          <svg v-else-if="toast.kind === 'approved' || (toast.kind === 'finished' && toast.deployment.status === 'SUCCESS')" viewBox="0 0 20 20" width="18" height="18"><path d="M5 10.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <svg v-else-if="toast.kind === 'rejected' || (toast.kind === 'finished' && toast.deployment.status === 'FAILED')" viewBox="0 0 20 20" width="18" height="18"><path d="M6 6l8 8M14 6l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
           <svg v-else viewBox="0 0 20 20" width="18" height="18"><rect x="6" y="6" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
         </span>
         <div class="dt-body">
-          <strong>{{ title(toast.deployment) }}</strong>
-          <span>{{ description(toast.deployment) }}</span>
-          <small v-if="toast.deployment.status === 'FAILED' && toast.deployment.errorMessage" class="dt-error">{{ toast.deployment.errorMessage }}</small>
+          <strong>{{ toastTitle(toast) }}</strong>
+          <span>{{ toastDescription(toast) }}</span>
+          <small v-if="toast.kind === 'finished' && toast.deployment.status === 'FAILED' && toast.deployment.errorMessage" class="dt-error">{{ toast.deployment.errorMessage }}</small>
           <div class="dt-actions">
-            <button type="button" class="dt-link" @click="open(toast.key)">Voir les déploiements</button>
+            <button type="button" class="dt-link" @click="open(toast.key)">{{ toast.kind === 'requested' ? 'Examiner la demande' : 'Voir les déploiements' }}</button>
             <button v-if="browserPermission === 'default'" type="button" class="dt-link dt-muted" @click="enableBrowserNotifications">
               Activer les notifications du navigateur
             </button>
@@ -134,6 +170,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.dt-toast.is-approval { border-left-color: #4338ca; }
+.is-approval .dt-icon { background: #eef2ff; color: #4338ca; }
 .dt-stack {
   position: fixed; right: 24px; bottom: 24px; z-index: 1000;
   display: flex; flex-direction: column-reverse; gap: 10px;

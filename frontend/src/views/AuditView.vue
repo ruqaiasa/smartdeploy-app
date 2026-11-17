@@ -37,6 +37,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   RAID_RESTORED: 'RAID de nouveau sain',
   PASSWORD_RESET_REQUESTED: 'Réinitialisation du mot de passe demandée',
   PASSWORD_RESET_COMPLETED: 'Mot de passe réinitialisé',
+  DEPLOYMENT_APPROVAL_REQUESTED: 'Approbation demandée',
+  DEPLOYMENT_APPROVED: 'Déploiement approuvé',
+  DEPLOYMENT_REJECTED: 'Déploiement refusé',
+  DEPLOYMENT_APPROVAL_EXPIRED: 'Demande d’approbation expirée',
+  DEPLOYMENT_EMERGENCY_OVERRIDE: 'Exception d’urgence',
   DEPLOYMENT_CREATED: 'Déploiement lancé',
   DEPLOYMENT_STARTED: 'Pipeline démarré',
   DEPLOYMENT_SUCCEEDED: 'Déploiement réussi',
@@ -78,6 +83,11 @@ const ACTION_TONES: Record<AuditAction, 'success' | 'danger' | 'info' | 'neutral
   RAID_RESTORED: 'success',
   PASSWORD_RESET_REQUESTED: 'info',
   PASSWORD_RESET_COMPLETED: 'warning',
+  DEPLOYMENT_APPROVAL_REQUESTED: 'info',
+  DEPLOYMENT_APPROVED: 'success',
+  DEPLOYMENT_REJECTED: 'warning',
+  DEPLOYMENT_APPROVAL_EXPIRED: 'warning',
+  DEPLOYMENT_EMERGENCY_OVERRIDE: 'danger',
   DEPLOYMENT_CREATED: 'info',
   DEPLOYMENT_STARTED: 'info',
   DEPLOYMENT_SUCCEEDED: 'success',
@@ -108,7 +118,7 @@ const CATEGORIES: { key: string; label: string; actions: AuditAction[] }[] = [
   },
   {
     key: 'failures', label: 'Échecs et alertes',
-    actions: ['SUSPICIOUS_ACTIVITY', 'GUARD_DEGRADED', 'BACKUP_FAILED', 'RESTORE_FAILED', 'RAID_DEGRADED', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
+    actions: ['SUSPICIOUS_ACTIVITY', 'GUARD_DEGRADED', 'BACKUP_FAILED', 'RESTORE_FAILED', 'RAID_DEGRADED', 'DEPLOYMENT_EMERGENCY_OVERRIDE', 'DEPLOYMENT_REJECTED', 'ALERT_OPENED', 'ALERT_RESOLVED', 'LOGIN_FAILURE', 'ACCESS_DENIED', 'API_KEY_REJECTED', 'ACTION_FAILED', 'DEPLOYMENT_FAILED', 'DEPLOYMENT_EXPIRED'],
   },
 ]
 

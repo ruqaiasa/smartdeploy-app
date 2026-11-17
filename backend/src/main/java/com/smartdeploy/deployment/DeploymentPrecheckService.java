@@ -44,10 +44,18 @@ public class DeploymentPrecheckService {
     private final DeploymentGuardRepository guardRepository;
     private final IncidentAnalysisRepository incidentRepository;
     private final GitHubClient gitHub;
+    private final java.util.Set<com.smartdeploy.environment.EnvironmentType> promotionRequiredTypes =
+            java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
 
     public DeploymentPrecheckService(VersionRepository versionRepository, EnvironmentRepository environmentRepository,
                                      DeploymentRepository deploymentRepository, DeploymentGuardRepository guardRepository,
-                                     IncidentAnalysisRepository incidentRepository, GitHubClient gitHub) {
+                                     IncidentAnalysisRepository incidentRepository, GitHubClient gitHub,
+                                     @org.springframework.beans.factory.annotation.Value("${smartdeploy.promotion.required-for:PRODUCTION}") String promotionTypes) {
+        for (String type : promotionTypes.split(",")) {
+            if (!type.isBlank()) {
+                this.promotionRequiredTypes.add(com.smartdeploy.environment.EnvironmentType.valueOf(type.trim().toUpperCase()));
+            }
+        }
         this.versionRepository = versionRepository;
         this.environmentRepository = environmentRepository;
         this.deploymentRepository = deploymentRepository;
@@ -105,7 +113,27 @@ public class DeploymentPrecheckService {
                 current == null ? null : current.getId(),
                 current == null ? null : current.getVersion().getVersion(),
                 current == null ? null : (current.getFinishedAt() != null ? current.getFinishedAt() : current.getCreatedAt()),
-                same, older, rollbackTarget, degraded, lastFailure(version, history), reuse, version.getGitCommit());
+                same, older, rollbackTarget, degraded, lastFailure(version, history), reuse, version.getGitCommit(),
+                promotion(environment, history));
+    }
+
+    /** RG-P2 : où la version a été validée par le gardien, et si la cible exige une telle validation. */
+    private DeploymentPrecheck.Promotion promotion(Environment target, List<Deployment> history) {
+        List<Long> ids = history.stream().map(Deployment::getId).toList();
+        Set<Long> validatedIds = ids.isEmpty() ? Set.of() : guardRepository.findByDeploymentIdIn(ids).stream()
+                .filter(guard -> guard.getStatus() == GuardStatus.HEALTHY || guard.getStatus() == GuardStatus.HEALTHY_WITH_WARNINGS)
+                .map(DeploymentGuard::getDeploymentId)
+                .collect(Collectors.toSet());
+        List<Deployment> validated = history.stream().filter(d -> validatedIds.contains(d.getId())).toList();
+        List<String> validatedIn = validated.stream()
+                .sorted(Comparator.comparing(d -> d.getEnvironment().getType().ordinal()))
+                .map(d -> d.getEnvironment().getName())
+                .distinct()
+                .toList();
+        boolean required = target.getType() != null && promotionRequiredTypes.contains(target.getType());
+        boolean satisfied = validated.stream().anyMatch(d -> d.getEnvironment().getType() != null && target.getType() != null
+                && d.getEnvironment().getType().ordinal() < target.getType().ordinal());
+        return new DeploymentPrecheck.Promotion(required, satisfied, validatedIn);
     }
 
     /** RG-V8 : le dernier échec de la version, s'il est postérieur à sa dernière réussite. */

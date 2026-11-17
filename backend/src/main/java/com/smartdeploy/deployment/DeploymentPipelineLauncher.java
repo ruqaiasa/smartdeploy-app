@@ -156,7 +156,7 @@ public class DeploymentPipelineLauncher {
                 .findByIdAndDeletedFalse(deploymentId)
                 .orElseThrow(() -> new DeploymentNotFoundException(deploymentId));
 
-        deploymentService.ensureCancellable(deployment);
+        deploymentService.ensureCancellableBy(deployment, currentUser);
 
         JenkinsCancellationResult result = jenkinsService.cancelPipeline(
                 deployment.getJenkinsQueueUrl(),

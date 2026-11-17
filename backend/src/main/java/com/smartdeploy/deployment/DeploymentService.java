@@ -60,6 +60,67 @@ public class DeploymentService {
         this.guardRepository = guardRepository;
     }
 
+    /* RG-A1 : types d'environnement soumis à approbation ; RG-A7 : délai de réponse. */
+    // Vide hors de Spring (tests construisant le service à la main) ; Spring injecte PRODUCTION par défaut.
+    private java.util.Set<com.smartdeploy.environment.EnvironmentType> approvalTypes =
+            java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
+    private java.time.Duration approvalTimeout = java.time.Duration.ofHours(24);
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setApprovalSettings(
+            @org.springframework.beans.factory.annotation.Value("${smartdeploy.approval.environment-types:PRODUCTION}") String types,
+            @org.springframework.beans.factory.annotation.Value("${smartdeploy.approval.timeout-hours:24}") long timeoutHours) {
+        java.util.Set<com.smartdeploy.environment.EnvironmentType> parsed =
+                java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
+        for (String type : types.split(",")) {
+            if (!type.isBlank()) {
+                parsed.add(com.smartdeploy.environment.EnvironmentType.valueOf(type.trim().toUpperCase()));
+            }
+        }
+        this.approvalTypes = parsed;
+        this.approvalTimeout = java.time.Duration.ofHours(timeoutHours);
+    }
+
+    /* RG-P2 : types d'environnement où une validation préalable par le gardien est exigée. */
+    private java.util.Set<com.smartdeploy.environment.EnvironmentType> promotionRequiredTypes =
+            java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setPromotionSettings(
+            @org.springframework.beans.factory.annotation.Value("${smartdeploy.promotion.required-for:PRODUCTION}") String types) {
+        java.util.Set<com.smartdeploy.environment.EnvironmentType> parsed =
+                java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
+        for (String type : types.split(",")) {
+            if (!type.isBlank()) {
+                parsed.add(com.smartdeploy.environment.EnvironmentType.valueOf(type.trim().toUpperCase()));
+            }
+        }
+        this.promotionRequiredTypes = parsed;
+    }
+
+    /**
+     * RG-P2 : la version a-t-elle été validée par le gardien (« validé », avec ou sans réserves)
+     * dans un environnement inférieur ? Les environnements sont ordonnés : DEVELOPMENT < TEST
+     * < STAGING < PREPRODUCTION < PRODUCTION (ordre de l'énumération).
+     */
+    boolean validatedBelow(Version version, Environment target) {
+        if (guardRepository == null || version == null || version.getId() == null || target.getType() == null) {
+            return false;
+        }
+        List<Long> lowerIds = deploymentRepository.findByVersion_IdAndDeletedFalse(version.getId()).stream()
+                .filter(d -> d.getEnvironment() != null && d.getEnvironment().getType() != null
+                        && d.getEnvironment().getType().ordinal() < target.getType().ordinal())
+                .map(Deployment::getId)
+                .toList();
+        return !lowerIds.isEmpty() && guardRepository.findByDeploymentIdIn(lowerIds).stream()
+                .anyMatch(guard -> guard.getStatus() == com.smartdeploy.guard.GuardStatus.HEALTHY
+                        || guard.getStatus() == com.smartdeploy.guard.GuardStatus.HEALTHY_WITH_WARNINGS);
+    }
+
+    boolean requiresApproval(Environment environment) {
+        return environment != null && environment.getType() != null && approvalTypes.contains(environment.getType());
+    }
+
     public DeploymentService(
             DeploymentRepository deploymentRepository,
             VersionRepository versionRepository,
@@ -137,15 +198,32 @@ public class DeploymentService {
                                 environment,
                                 List.of(
                                         DeploymentStatus.PENDING,
-                                        DeploymentStatus.RUNNING
+                                        DeploymentStatus.RUNNING,
+                                        DeploymentStatus.AWAITING_APPROVAL
                                 )
                         );
 
         if (deploymentAlreadyRunning) {
             throw new DeploymentStateException(
-                    "Un déploiement est déjà en attente ou en cours "
+                    "Un déploiement est déjà en attente, en cours ou en attente d'approbation "
                             + "sur cet environnement"
             );
+        }
+
+        // RG-P2 : jamais en production sans validation préalable par le gardien ;
+        // RG-P5 : sauf exception d'urgence, par un administrateur, justifiée et tracée.
+        String emergencyJustification = null;
+        if (promotionRequiredTypes.contains(environment.getType()) && !validatedBelow(version, environment)) {
+            String justification = normalizeNullableText(request.emergencyJustification());
+            boolean admin = currentUser != null && currentUser.getRole() == com.smartdeploy.user.Role.ADMIN;
+            if (!admin || justification == null || justification.length() < 10) {
+                throw new DeploymentStateException(
+                        "La version " + version.getVersion() + " n'a été validée par le gardien dans aucun environnement "
+                                + "inférieur à " + environment.getName() + " : déployez-la d'abord en test, puis promouvez-la"
+                                + (admin ? " (ou justifiez une exception d'urgence, en 10 caractères au moins)" : "")
+                );
+            }
+            emergencyJustification = justification.length() <= 500 ? justification : justification.substring(0, 500);
         }
 
         // RG-V5 : redéployer la version déjà en service demande une confirmation explicite.
@@ -172,7 +250,9 @@ public class DeploymentService {
                         .environment(environment)
                         .requestedBy(currentUser)
                         .status(
-                                DeploymentStatus.PENDING
+                                requiresApproval(environment)
+                                        ? DeploymentStatus.AWAITING_APPROVAL
+                                        : DeploymentStatus.PENDING
                         )
                         .imagesFrom(imagesSource)
                         .deleted(false)
@@ -230,9 +310,25 @@ public class DeploymentService {
         // Jenkins est déclenché APRÈS le commit (DeploymentPipelineLauncher) :
         // le déploiement et sa configuration sont alors visibles pour le
         // webhook et l'export des manifests. Un échec Jenkins devient FAILED.
-        eventPublisher.publishEvent(
-                new DeploymentPipelineRequestedEvent(savedDeployment.getId())
-        );
+        if (emergencyJustification != null) {
+            audit(AuditAction.DEPLOYMENT_EMERGENCY_OVERRIDE, savedDeployment,
+                    currentUser == null ? null : currentUser.getEmail(),
+                    "Exception d'urgence : déploiement #" + savedDeployment.getId() + " de la version "
+                            + versionLabel(savedDeployment) + " vers " + environment.getName()
+                            + " sans validation préalable. Justification : " + emergencyJustification);
+        }
+
+        if (savedDeployment.getStatus() == DeploymentStatus.AWAITING_APPROVAL) {
+            // RG-A1 : rien ne part avant l'accord d'une seconde personne.
+            audit(AuditAction.DEPLOYMENT_APPROVAL_REQUESTED, savedDeployment,
+                    currentUser == null ? null : currentUser.getEmail(),
+                    "Déploiement #" + savedDeployment.getId() + " de la version " + versionLabel(savedDeployment)
+                            + " vers " + environment.getName() + " : approbation demandée");
+        } else {
+            eventPublisher.publishEvent(
+                    new DeploymentPipelineRequestedEvent(savedDeployment.getId())
+            );
+        }
 
         audit(
                 AuditAction.DEPLOYMENT_CREATED,
@@ -776,7 +872,8 @@ public class DeploymentService {
         return status == DeploymentStatus.SUCCESS
                 || status == DeploymentStatus.FAILED
                 || status == DeploymentStatus.CANCELLED
-                || status == DeploymentStatus.ROLLED_BACK;
+                || status == DeploymentStatus.ROLLED_BACK
+                || status == DeploymentStatus.REJECTED;
     }
 
     /* ==========================================================
@@ -795,7 +892,7 @@ public class DeploymentService {
         int expired = 0;
 
         for (Deployment candidate : deploymentRepository.findByStatusInAndDeletedFalse(
-                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING))) {
+                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING, DeploymentStatus.AWAITING_APPROVAL))) {
 
             Deployment deployment = deploymentRepository
                     .findActiveByIdForUpdate(candidate.getId())
@@ -804,11 +901,31 @@ public class DeploymentService {
                 continue;
             }
 
+            // RG-A7 : une demande d'approbation sans réponse expire.
+            if (deployment.getStatus() == DeploymentStatus.AWAITING_APPROVAL) {
+                if (deployment.getCreatedAt() != null && deployment.getCreatedAt().isBefore(now.minus(approvalTimeout))) {
+                    String expiredReason = "Demande d'approbation expirée : aucune réponse en " + approvalTimeout.toHours() + " heures.";
+                    deployment.setApprovalDecidedAt(now);
+                    deployment.setApprovalComment(expiredReason);
+                    completeDeployment(deployment, now, expiredReason);
+                    deployment.setStatus(DeploymentStatus.REJECTED);
+                    deploymentRepository.saveAndFlush(deployment);
+                    audit(AuditAction.DEPLOYMENT_APPROVAL_EXPIRED, deployment, "Système (garde-fou)",
+                            "Déploiement #" + deployment.getId() + " : " + expiredReason);
+                    expired++;
+                }
+                continue;
+            }
+
             String reason = null;
 
+            // Après une approbation, le délai d'attente part de la décision, pas de la demande.
+            LocalDateTime pendingSince = deployment.getApprovalDecidedAt() != null
+                    ? deployment.getApprovalDecidedAt()
+                    : deployment.getCreatedAt();
             if (deployment.getStatus() == DeploymentStatus.PENDING
-                    && deployment.getCreatedAt() != null
-                    && deployment.getCreatedAt().isBefore(now.minus(pendingTimeout))) {
+                    && pendingSince != null
+                    && pendingSince.isBefore(now.minus(pendingTimeout))) {
                 reason = "Le pipeline n'a pas démarré dans les "
                         + pendingTimeout.toMinutes()
                         + " minutes : Jenkins est peut-être arrêté ou sa file d'attente bloquée.";
@@ -858,7 +975,7 @@ public class DeploymentService {
                         new DeploymentNotFoundException(deploymentId)
                 );
 
-        ensureCancellable(deployment);
+        ensureCancellableBy(deployment, cancelledBy);
 
         String author = cancelledBy != null && cancelledBy.getEmail() != null
                 ? cancelledBy.getEmail()
@@ -879,13 +996,102 @@ public class DeploymentService {
         return toResponse(saved);
     }
 
+    /**
+     * Une demande d'approbation ne peut être retirée que par son auteur : un approbateur
+     * doit la refuser, avec un motif, pour que la décision soit expliquée et tracée.
+     */
+    void ensureCancellableBy(Deployment deployment, User user) {
+        ensureCancellable(deployment);
+        User requester = deployment.getRequestedBy();
+        if (deployment.getStatus() == DeploymentStatus.AWAITING_APPROVAL
+                && requester != null && requester.getId() != null
+                && (user == null || !requester.getId().equals(user.getId()))) {
+            throw new DeploymentStateException(
+                    "Seule la personne qui a fait la demande peut la retirer : utilisez « Refuser », avec un motif");
+        }
+    }
+
     void ensureCancellable(Deployment deployment) {
         DeploymentStatus status = deployment.getStatus();
-        if (status != DeploymentStatus.PENDING && status != DeploymentStatus.RUNNING) {
+        if (status != DeploymentStatus.PENDING && status != DeploymentStatus.RUNNING
+                && status != DeploymentStatus.AWAITING_APPROVAL) {
             throw new DeploymentStateException(
                     "Seul un déploiement en attente ou en cours peut être annulé (statut actuel : "
                             + status + ")"
             );
+        }
+    }
+
+    /* ==========================================================
+     *          APPROBATION AVANT LA PRODUCTION (RG-A2 à RG-A4)
+     * ==========================================================
+     */
+    public DeploymentResponse approve(Long deploymentId, User approver, String comment) {
+        Deployment deployment = awaitingApproval(deploymentId);
+        ensureNotRequester(deployment, approver);
+        boolean busy = deploymentRepository.existsByEnvironmentAndStatusInAndDeletedFalse(
+                deployment.getEnvironment(), List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING));
+        if (busy) {
+            throw new DeploymentStateException(
+                    "Un déploiement est en cours sur cet environnement : approuvez cette demande à sa fin");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        deployment.setStatus(DeploymentStatus.PENDING);
+        deployment.setApprovedBy(approver.getEmail());
+        deployment.setApprovalDecidedAt(now);
+        deployment.setApprovalComment(normalizeNullableText(comment));
+        Deployment saved = deploymentRepository.saveAndFlush(deployment);
+        // Le pipeline part maintenant, par le même chemin qu'un déploiement ordinaire.
+        eventPublisher.publishEvent(new DeploymentPipelineRequestedEvent(saved.getId()));
+        audit(AuditAction.DEPLOYMENT_APPROVED, saved, approver.getEmail(),
+                "Déploiement #" + saved.getId() + " de la version " + versionLabel(saved) + " approuvé par "
+                        + approver.getEmail() + (saved.getApprovalComment() == null ? "" : " : " + saved.getApprovalComment()));
+        return toResponse(saved);
+    }
+
+    public DeploymentResponse reject(Long deploymentId, User approver, String comment) {
+        String reason = normalizeNullableText(comment);
+        if (reason == null) {
+            throw new DeploymentStateException("Un refus doit être motivé : indiquez la raison");
+        }
+        Deployment deployment = awaitingApproval(deploymentId);
+        ensureNotRequester(deployment, approver);
+        LocalDateTime now = LocalDateTime.now();
+        deployment.setApprovedBy(approver.getEmail());
+        deployment.setApprovalDecidedAt(now);
+        deployment.setApprovalComment(reason.length() <= 1000 ? reason : reason.substring(0, 1000));
+        completeDeployment(deployment, now, "Refusé par " + approver.getEmail() + " : " + deployment.getApprovalComment());
+        deployment.setStatus(DeploymentStatus.REJECTED);
+        Deployment saved = deploymentRepository.saveAndFlush(deployment);
+        audit(AuditAction.DEPLOYMENT_REJECTED, saved, approver.getEmail(),
+                "Déploiement #" + saved.getId() + " de la version " + versionLabel(saved) + " refusé par "
+                        + approver.getEmail() + " : " + saved.getApprovalComment());
+        return toResponse(saved);
+    }
+
+    public long pendingApprovals() {
+        return deploymentRepository.countByStatusInAndDeletedFalse(List.of(DeploymentStatus.AWAITING_APPROVAL));
+    }
+
+    private Deployment awaitingApproval(Long deploymentId) {
+        Deployment deployment = deploymentRepository.findActiveByIdForUpdate(deploymentId)
+                .orElseThrow(() -> new DeploymentNotFoundException(deploymentId));
+        if (deployment.getStatus() != DeploymentStatus.AWAITING_APPROVAL) {
+            throw new DeploymentStateException(
+                    "Ce déploiement n'attend pas d'approbation (statut actuel : " + deployment.getStatus() + ")");
+        }
+        return deployment;
+    }
+
+    /** RG-A2 : le demandeur ne peut jamais décider de sa propre demande, même administrateur. */
+    static void ensureNotRequester(Deployment deployment, User approver) {
+        if (approver == null) {
+            throw new DeploymentStateException("Approbateur inconnu");
+        }
+        User requester = deployment.getRequestedBy();
+        if (requester != null && requester.getId() != null && requester.getId().equals(approver.getId())) {
+            throw new DeploymentStateException(
+                    "Vous ne pouvez pas décider de votre propre demande : une seconde personne doit la valider");
         }
     }
 
@@ -1202,7 +1408,12 @@ public class DeploymentService {
             case SUCCESS ->
                     newStatus == DeploymentStatus.ROLLED_BACK;
 
-            case FAILED, CANCELLED, ROLLED_BACK ->
+            // Une demande d'approbation ne se décide que par « approuver » ou « refuser » (règles RG-A2 et RG-A4) :
+            // une modification manuelle du statut ne peut que l'annuler, jamais la contourner.
+            case AWAITING_APPROVAL ->
+                    newStatus == DeploymentStatus.CANCELLED;
+
+            case FAILED, CANCELLED, ROLLED_BACK, REJECTED ->
                     false;
         };
 
@@ -1286,7 +1497,10 @@ public class DeploymentService {
                 deployment.getDeployedFrontendImage(),
                 isCurrentDeployment(deployment),
                 deployment.getImagesFrom() == null ? null : deployment.getImagesFrom().getId(),
-                deployment.getBuiltCommit()
+                deployment.getBuiltCommit(),
+                deployment.getApprovedBy(),
+                deployment.getApprovalDecidedAt(),
+                deployment.getApprovalComment()
         );
     }
 

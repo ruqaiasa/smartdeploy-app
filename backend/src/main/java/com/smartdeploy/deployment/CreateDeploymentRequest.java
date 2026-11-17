@@ -20,14 +20,17 @@ public record CreateDeploymentRequest(
         Boolean confirmRedeploy,
 
         // RG-V4 : reconstruire l'image même si la version a déjà été construite
-        Boolean forceRebuild
+        Boolean forceRebuild,
+
+        // RG-P5 : justification d'une exception d'urgence (administrateur seulement)
+        String emergencyJustification
 ) {
         public CreateDeploymentRequest(
                 Long versionId,
                 Long environmentId,
                 KubernetesApplicationRequest kubernetesConfig
         ) {
-                this(versionId, environmentId, kubernetesConfig, null, null);
+                this(versionId, environmentId, kubernetesConfig, null, null, null);
         }
 
         // Compatibilité temporaire avec les anciens appels
@@ -35,6 +38,6 @@ public record CreateDeploymentRequest(
                 Long versionId,
                 Long environmentId
         ) {
-                this(versionId, environmentId, null, null, null);
+                this(versionId, environmentId, null, null, null, null);
         }
 }

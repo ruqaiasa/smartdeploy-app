@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+
+import { getPendingApprovalsCount } from '@/api/deployments.api'
 
 import { useAlertsStore } from '@/stores/alerts'
 import { useAuthStore } from '@/stores/auth'
@@ -16,6 +18,24 @@ const {
 const isAdmin = computed(() =>
   authStore.hasRole('ADMIN'),
 )
+
+/* Demandes d’approbation en attente (pour les approbateurs : DevOps et administrateurs). */
+const canApprove = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
+const pendingApprovals = ref(0)
+let approvalsTimer: ReturnType<typeof setInterval> | null = null
+async function loadPendingApprovals() {
+  if (!canApprove.value || document.visibilityState !== 'visible') return
+  try {
+    pendingApprovals.value = await getPendingApprovalsCount()
+  } catch {
+    // Information de confort : une erreur ne doit rien bloquer.
+  }
+}
+onMounted(() => {
+  void loadPendingApprovals()
+  approvalsTimer = setInterval(() => { void loadPendingApprovals() }, 30000)
+})
+onBeforeUnmount(() => { if (approvalsTimer) clearInterval(approvalsTimer) })
 
 defineProps<{
   collapsed: boolean
@@ -283,6 +303,14 @@ defineEmits<{
           >
             Déploiements
           </span>
+
+          <span
+            v-if="!collapsed && canApprove && pendingApprovals > 0"
+            class="approval-count"
+            :title="`${pendingApprovals} déploiement(s) en production attendent une approbation`"
+          >
+            {{ pendingApprovals > 99 ? '99+' : pendingApprovals }}
+          </span>
         </RouterLink>
       </div>
 
@@ -499,6 +527,7 @@ defineEmits<{
 </template>
 
 <style scoped>
+.approval-count { margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #4338ca; color: #fff; font-size: 11.5px; font-weight: 700; text-align: center; }
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;

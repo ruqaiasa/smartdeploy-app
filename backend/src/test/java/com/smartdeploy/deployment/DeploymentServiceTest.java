@@ -1750,4 +1750,120 @@ class DeploymentServiceTest {
         assertTrue(exception.getMessage().contains("image déjà en service"));
         verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
     }
+
+    /* ================= Approbation avant la production (RG-A1 à RG-A7) ================= */
+
+    private Deployment awaitingDeployment() {
+        Deployment deployment = createDeployment(DeploymentStatus.AWAITING_APPROVAL);
+        deployment.setId(10L);
+        when(deploymentRepository.findActiveByIdForUpdate(10L)).thenReturn(Optional.of(deployment));
+        return deployment;
+    }
+
+    /** L'enregistrement n'est simulé que dans les tests où une décision est réellement enregistrée. */
+    private void saveReturnsItsArgument() {
+        when(deploymentRepository.saveAndFlush(any(Deployment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    private User secondApprover() {
+        User approver = createUser();
+        approver.setId(4L);
+        approver.setEmail("approbatrice@smartdeploy.com");
+        return approver;
+    }
+
+    @Test
+    void approve_shouldRefuseTheRequesterEvenAsAdministrator() {
+        awaitingDeployment();
+
+        DeploymentStateException exception = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.approve(10L, createUser(), "ok"));
+
+        assertTrue(exception.getMessage().contains("propre demande"));
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+        verify(eventPublisher, never()).publishEvent(any(DeploymentPipelineRequestedEvent.class));
+    }
+
+    @Test
+    void approve_shouldLaunchThePipelineThroughTheUsualPath() {
+        Deployment deployment = awaitingDeployment();
+        saveReturnsItsArgument();
+
+        DeploymentResponse response = deploymentService.approve(10L, secondApprover(), "Validé en test le 16/11");
+
+        assertEquals(DeploymentStatus.PENDING, response.status());
+        assertEquals("approbatrice@smartdeploy.com", deployment.getApprovedBy());
+        assertNotNull(deployment.getApprovalDecidedAt(), "le garde-fou comptera son délai depuis cette décision");
+        verify(eventPublisher).publishEvent(new DeploymentPipelineRequestedEvent(10L));
+    }
+
+    @Test
+    void reject_shouldRequireAReasonAndNeverStartThePipeline() {
+        Deployment deployment = awaitingDeployment();
+        saveReturnsItsArgument();
+
+        assertThrows(DeploymentStateException.class, () -> deploymentService.reject(10L, secondApprover(), "  "));
+        DeploymentResponse response = deploymentService.reject(10L, secondApprover(), "Version jamais validée en test");
+
+        assertEquals(DeploymentStatus.REJECTED, response.status());
+        assertEquals("Version jamais validée en test", deployment.getApprovalComment());
+        verify(eventPublisher, never()).publishEvent(any(DeploymentPipelineRequestedEvent.class));
+    }
+
+    @Test
+    void expireStaleDeployments_shouldExpireAnUnansweredRequest() {
+        Deployment deployment = createDeployment(DeploymentStatus.AWAITING_APPROVAL);
+        deployment.setId(10L);
+        deployment.setCreatedAt(LocalDateTime.now().minusHours(25));
+        when(deploymentRepository.findByStatusInAndDeletedFalse(any())).thenReturn(List.of(deployment));
+        when(deploymentRepository.findActiveByIdForUpdate(10L)).thenReturn(Optional.of(deployment));
+
+        int expired = deploymentService.expireStaleDeployments(LocalDateTime.now(),
+                java.time.Duration.ofMinutes(30), java.time.Duration.ofHours(2));
+
+        assertEquals(1, expired);
+        assertEquals(DeploymentStatus.REJECTED, deployment.getStatus());
+        assertTrue(deployment.getApprovalComment().contains("expirée"));
+    }
+
+    @Test
+    void ensureCancellableBy_shouldLetOnlyTheRequesterWithdrawARequest() {
+        Deployment deployment = createDeployment(DeploymentStatus.AWAITING_APPROVAL);
+
+        DeploymentStateException exception = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.ensureCancellableBy(deployment, secondApprover()));
+
+        assertTrue(exception.getMessage().contains("Refuser"));
+        assertDoesNotThrow(() -> deploymentService.ensureCancellableBy(deployment, createUser()), "l'auteur peut retirer sa demande");
+    }
+
+    /* ================= Promotion entre environnements (RG-P2, RG-P5) ================= */
+
+    @Test
+    void create_shouldRefuseProductionWithoutPriorValidationUnlessAdminJustifies() {
+        deploymentService.setPromotionSettings("PRODUCTION");
+        Application application = createApplication(100L, "SmartDeploy Backend");
+        Version version = createVersion(application, BuildStatus.SUCCESS);
+        Environment production = createEnvironment(application);   // de type PRODUCTION
+        KubernetesApplicationRequest config = new KubernetesApplicationRequest("sd-prod-ecommerce", null,
+                new KubernetesComponentRequest("ecommerce-backend", "localhost:5000/ecommerce-backend:v1", 2, 8080), null, null);
+        when(versionRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(version));
+        when(environmentRepository.findByIdAndDeletedFalse(2L)).thenReturn(Optional.of(production));
+        when(deploymentRepository.existsByEnvironmentAndStatusInAndDeletedFalse(eq(production), any())).thenReturn(false);
+
+        // Un DevOps : refusé, la version n'a jamais été validée en test.
+        User devops = createUser();
+        devops.setRole(Role.DEVOPS);
+        DeploymentStateException refused = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.create(new CreateDeploymentRequest(1L, 2L, config), devops));
+        assertTrue(refused.getMessage().contains("validée par le gardien"));
+
+        // Un administrateur sans justification suffisante : refusé aussi, avec l'indication de l'exception.
+        User admin = createUser();
+        admin.setRole(Role.ADMIN);
+        DeploymentStateException noReason = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.create(new CreateDeploymentRequest(1L, 2L, config, null, null, "urgent"), admin));
+        assertTrue(noReason.getMessage().contains("exception d'urgence"));
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
 }

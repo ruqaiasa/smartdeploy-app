@@ -39,7 +39,10 @@ public record VersionResponse(
         // RG-V10 : où elle est en service, et le verdict de son dernier déploiement
         java.util.List<String> inServiceEnvironments,
         String lastVerdict,
-        String lastVerdictTone
+        String lastVerdictTone,
+
+        // Chemin de livraison : environnements où la version a été validée par le gardien
+        java.util.List<String> validatedEnvironments
 ) {
     /** Compatibilité : sans les informations d'usage. */
     public VersionResponse(Long id, Long applicationId, String applicationName, String version, String gitBranch,
@@ -47,6 +50,7 @@ public record VersionResponse(
                            String artifactPath, String buildLogsUrl, boolean deleted, LocalDateTime createdAt,
                            LocalDateTime updatedAt) {
         this(id, applicationId, applicationName, version, gitBranch, gitCommit, dockerImage, buildStatus, buildNumber,
-                artifactPath, buildLogsUrl, deleted, createdAt, updatedAt, null, false, java.util.List.of(), null, null);
+                artifactPath, buildLogsUrl, deleted, createdAt, updatedAt, null, false, java.util.List.of(), null, null,
+                java.util.List.of());
     }
 }

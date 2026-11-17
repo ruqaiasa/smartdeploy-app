@@ -35,6 +35,8 @@ export interface VersionResponse {
   inServiceEnvironments?: string[]
   lastVerdict?: string | null
   lastVerdictTone?: 'ok' | 'warning' | 'ko' | 'pending' | 'muted' | null
+  /** Chemin de livraison : environnements où la version a été validée par le gardien. */
+  validatedEnvironments?: string[]
 }
 
 export interface CreateVersionRequest {

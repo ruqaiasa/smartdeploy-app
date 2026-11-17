@@ -158,6 +158,37 @@ public class DeploymentController {
         return pipelineLauncher.cancel(id, currentUser);
     }
 
+    /** Corps des décisions d'approbation : un commentaire, obligatoire pour un refus. */
+    public record ApprovalDecision(String comment) {
+    }
+
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    public DeploymentResponse approve(
+            @PathVariable Long id,
+            @RequestBody(required = false) ApprovalDecision decision,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return deploymentService.approve(id, currentUser, decision == null ? null : decision.comment());
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    public DeploymentResponse reject(
+            @PathVariable Long id,
+            @RequestBody(required = false) ApprovalDecision decision,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        return deploymentService.reject(id, currentUser, decision == null ? null : decision.comment());
+    }
+
+    /** Nombre de demandes d'approbation en attente (pastille du menu). */
+    @GetMapping("/approvals/pending-count")
+    @PreAuthorize("isAuthenticated()")
+    public java.util.Map<String, Long> pendingApprovals() {
+        return java.util.Map.of("count", deploymentService.pendingApprovals());
+    }
+
     @PostMapping("/{id}/rollback")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")

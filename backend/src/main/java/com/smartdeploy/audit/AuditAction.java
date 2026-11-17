@@ -51,6 +51,15 @@ public enum AuditAction {
     PASSWORD_RESET_REQUESTED,
     PASSWORD_RESET_COMPLETED,
 
+    // Approbation avant la production
+    DEPLOYMENT_APPROVAL_REQUESTED,
+    DEPLOYMENT_APPROVED,
+    DEPLOYMENT_REJECTED,
+    DEPLOYMENT_APPROVAL_EXPIRED,
+
+    // Promotion entre environnements : exception d'urgence (RG-P5)
+    DEPLOYMENT_EMERGENCY_OVERRIDE,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

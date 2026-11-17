@@ -5,6 +5,8 @@ export type DeploymentStatus =
   | 'FAILED'
   | 'CANCELLED'
   | 'ROLLED_BACK'
+  | 'AWAITING_APPROVAL'
+  | 'REJECTED'
 
 export interface DeploymentResponse {
   id: number
@@ -48,6 +50,10 @@ export interface DeploymentResponse {
   imagesFromId?: number | null
   /** Commit exact construit par le pipeline. */
   builtCommit?: string | null
+  /** Approbation avant la production : qui a décidé, quand, et pourquoi. */
+  approvedBy?: string | null
+  approvalDecidedAt?: string | null
+  approvalComment?: string | null
   /** Vrai pour le déploiement actuellement en service dans son environnement. */
   current?: boolean
 }
@@ -106,6 +112,21 @@ export interface CreateDeploymentRequest {
   confirmRedeploy?: boolean
   /** RG-V4 : reconstruire même si la version a déjà une image. */
   forceRebuild?: boolean
+  /** RG-P5 : justification d’une exception d’urgence (administrateur). */
+  emergencyJustification?: string
+}
+
+/** Promotion guidée : environnement suivant d’un déploiement validé, et sa configuration. */
+export interface PromotionProposal {
+  sourceDeploymentId: number
+  sourceEnvironmentName: string
+  applicationId: number
+  versionId: number
+  version: string
+  targetEnvironmentId: number
+  targetEnvironmentName: string
+  targetEnvironmentType: string
+  configuration: KubernetesApplicationRequest | null
 }
 
 /** Vérification préalable d’un déploiement (règles RG-V4 à RG-V8). */
@@ -128,6 +149,8 @@ export interface DeploymentPrecheck {
   } | null
   reuse: { deploymentId: number; environmentName: string; commit: string | null } | null
   pinnedCommit: string | null
+  /** RG-P2 : validation préalable exigée, satisfaite, et environnements où la version a été validée. */
+  promotion?: { required: boolean; satisfied: boolean; validatedIn: string[] } | null
 }
 
 export interface UpdateDeploymentStatusRequest {

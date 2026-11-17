@@ -12,6 +12,8 @@
  */
 import ConfidenceScoreCard from '@/components/deployments/ConfidenceScoreCard.vue'
 import DeploymentPrecheckNotices from '@/components/deployments/DeploymentPrecheckNotices.vue'
+import type { PromotionProposal } from '@/types/deployment'
+import { useAuthStore } from '@/stores/auth'
 import { computed, reactive, ref, watch } from 'vue'
 import { getVersionsByApplication } from '@/api/versions.api'
 import { listKubernetesSecrets, createKubernetesSecret, type KubernetesSecretSummary } from '@/api/kubernetesSecrets.api'
@@ -25,6 +27,8 @@ const props = defineProps<{
   applications: ApplicationResponse[]
   environments: EnvironmentResponse[]
   loading?: boolean
+  /** Promotion guidée : l’assistant s’ouvre prérempli (RG-P4). */
+  preset?: PromotionProposal | null
 }>()
 const emit = defineEmits<{
   close: []
@@ -104,6 +108,63 @@ const newSecret = reactive({ name: '', password: '' })
 const confirmRedeploy = ref(false)
 const forceRebuild = ref(false)
 const precheckBlocked = ref(false)
+const emergencyJustification = ref('')
+const isAdmin = computed(() => useAuthStore().hasRole('ADMIN'))
+
+/* ------------------------------------------------------------------
+ * Promotion guidée (RG-P4) : même version, environnement suivant, même configuration.
+ * Chaque valeur attend le chargement qu’elle déclenche (versions, puis Secrets).
+ * ------------------------------------------------------------------ */
+function waitUntil(condition: () => boolean, timeoutMs = 8000) {
+  return new Promise<void>(resolve => {
+    const started = Date.now()
+    const check = () => (condition() || Date.now() - started > timeoutMs ? resolve() : setTimeout(check, 50))
+    check()
+  })
+}
+
+async function applyPreset(preset: PromotionProposal) {
+  form.applicationId = preset.applicationId
+  await waitUntil(() => !loadingVersions.value && versions.value.length > 0)
+  form.versionId = preset.versionId
+  form.environmentId = preset.targetEnvironmentId
+  await waitUntil(() => !loadingSecrets.value)
+  const config = preset.configuration
+  if (config) {
+    form.architecture = config.frontend
+      ? (config.database?.mode === 'MANAGED' ? 'FULLSTACK_MANAGED' : 'FULLSTACK_EXTERNAL')
+      : 'BACKEND'
+    form.backendReplicas = config.backend?.replicas ?? form.backendReplicas
+    ports.backend = config.backend?.containerPort ?? ports.backend
+    form.backendBuildContext = config.backend?.buildContext ?? form.backendBuildContext
+    form.backendDockerfilePath = config.backend?.dockerfilePath ?? form.backendDockerfilePath
+    if (config.frontend) {
+      form.frontendReplicas = config.frontend.replicas ?? form.frontendReplicas
+      ports.frontend = config.frontend.containerPort ?? ports.frontend
+      form.frontendRepositoryUrl = config.frontend.repositoryUrl ?? form.frontendRepositoryUrl
+      form.frontendGitBranch = config.frontend.gitBranch ?? form.frontendGitBranch
+      form.frontendBuildContext = config.frontend.buildContext ?? form.frontendBuildContext
+      form.frontendDockerfilePath = config.frontend.dockerfilePath ?? form.frontendDockerfilePath
+    }
+    if (config.database) {
+      form.databaseName = config.database.databaseName ?? form.databaseName
+      form.databaseUser = config.database.username ?? form.databaseUser
+      form.databasePort = config.database.port ?? form.databasePort
+      form.storageGi = config.database.storageGi ?? form.storageGi
+      form.externalHost = config.database.externalHost ?? ''
+      // Chaque environnement a son propre Secret : réutilisé s’il existe déjà, sinon créé au lancement.
+      const secretName = config.database.passwordSecretName
+      if (secretName && secrets.value.some(secret => secret.name === secretName)) selectExistingSecret(secretName)
+      else if (secretName) { secretMode.value = 'NEW'; newSecret.name = secretName }
+    }
+    if (config.cicd) {
+      form.buildStrategy = config.cicd.buildStrategy ?? form.buildStrategy
+      form.sonarMode = config.cicd.sonarMode ?? form.sonarMode
+      form.runBackendTests = config.cicd.runBackendTests ?? form.runBackendTests
+    }
+  }
+  currentStep.value = wizardSteps.length
+}
 let secretRequestSequence = 0
 const selectedSecret = computed(() => secrets.value.find(s => s.name === form.passwordSecretName))
 
@@ -229,7 +290,11 @@ function resetForm() {
     externalHost: '', databasePort: DEFAULTS.databasePort, storageGi: DEFAULTS.storageGi,
   })
 }
-watch(() => props.open, open => { if (open) resetForm() })
+watch(() => props.open, open => {
+  if (!open) return
+  resetForm()
+  if (props.preset) void applyPreset(props.preset)
+})
 
 watch(() => form.applicationId, async applicationId => {
   const sequence = ++versionRequestSequence
@@ -487,6 +552,7 @@ async function submitForm() {
     kubernetesConfig,
     confirmRedeploy: confirmRedeploy.value,
     forceRebuild: forceRebuild.value,
+    emergencyJustification: emergencyJustification.value.trim() || undefined,
   })
 }
 </script>
@@ -604,9 +670,15 @@ async function submitForm() {
 
           <!-- Étape 4 : options avancées, puis récapitulatif -->
           <template v-if="currentStep === 4 && selectedApplication && selectedEnvironment">
+            <p v-if="preset" class="dfm-promotion" role="status">
+              Promotion de la version <strong>{{ preset.version }}</strong>, validée en <strong>{{ preset.sourceEnvironmentName }}</strong>,
+              vers <strong>{{ preset.targetEnvironmentName }}</strong> : configuration reprise du déploiement #{{ preset.sourceDeploymentId }}.
+              Vérifiez, puis lancez.
+            </p>
             <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />
             <DeploymentPrecheckNotices :version-id="form.versionId" :environment-id="form.environmentId"
-              v-model:confirm-redeploy="confirmRedeploy" v-model:force-rebuild="forceRebuild" v-model:blocked="precheckBlocked" />
+              v-model:confirm-redeploy="confirmRedeploy" v-model:force-rebuild="forceRebuild" v-model:blocked="precheckBlocked"
+              v-model:emergency-justification="emergencyJustification" :can-override="isAdmin" />
             <section class="dfm-section dfm-advanced">
               <button type="button" class="dfm-disclosure" :aria-expanded="showAdvanced" @click="showAdvanced = !showAdvanced">
                 <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" :class="{ 'is-open': showAdvanced }"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -718,6 +790,7 @@ async function submitForm() {
 </template>
 
 <style scoped>
+.dfm-promotion { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #c7d2fe; border-left: 4px solid #4338ca; border-radius: 8px; background: #eef2ff; color: #312e81; font-size: 13.5px; line-height: 1.5; }
 .dfm-overlay {
   --ink: var(--color-gray-900, #111827);
   --muted: var(--color-gray-500, #6b7280);

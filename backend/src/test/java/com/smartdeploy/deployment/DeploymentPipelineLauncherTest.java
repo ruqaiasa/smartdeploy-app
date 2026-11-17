@@ -110,7 +110,7 @@ class DeploymentPipelineLauncherTest {
         launcher.cancel(10L, user);
 
         InOrder order = inOrder(deploymentService, jenkinsService);
-        order.verify(deploymentService).ensureCancellable(deployment);
+        order.verify(deploymentService).ensureCancellableBy(eq(deployment), any());
         order.verify(jenkinsService).cancelPipeline("http://jenkins/queue/item/9/", 46);
         order.verify(deploymentService).markCancelled(10L, user, "Build Jenkins #46 arrêté.");
     }
@@ -133,7 +133,7 @@ class DeploymentPipelineLauncherTest {
         Deployment deployment = deployment(DeploymentStatus.SUCCESS);
         when(deploymentRepository.findByIdAndDeletedFalse(10L)).thenReturn(Optional.of(deployment));
         doThrow(new DeploymentStateException("terminé"))
-                .when(deploymentService).ensureCancellable(deployment);
+                .when(deploymentService).ensureCancellableBy(eq(deployment), any());
 
         assertThrows(DeploymentStateException.class, () -> launcher.cancel(10L, new User()));
 

@@ -5,6 +5,9 @@ import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.
 import DeploymentGuardPanel from '@/components/deployments/DeploymentGuardPanel.vue'
 import IncidentAnalysisPanel from '@/components/deployments/IncidentAnalysisPanel.vue'
 import RestoreBeforeDialog from '@/components/deployments/RestoreBeforeDialog.vue'
+import ApprovalDialog from '@/components/deployments/ApprovalDialog.vue'
+import { approveDeployment, getPromotion, rejectDeployment } from '@/api/deployments.api'
+import type { PromotionProposal } from '@/types/deployment'
 import { getRestorePoints, restoreBackup } from '@/api/backups.api'
 import type { BackupInfo } from '@/types/backup'
 import { getDeploymentGuards } from '@/api/guard.api'
@@ -24,6 +27,43 @@ const authStore = useAuthStore()
 
 const canManageDeployments = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
 const canDeleteDeployments = computed(() => authStore.hasRole('ADMIN'))
+
+/* ---------------------------------------------------------------
+ * Approbation avant la production (principe des quatre yeux)
+ * --------------------------------------------------------------- */
+function canDecide(deployment: DeploymentResponse) {
+  // RG-A2 : jamais le demandeur (le serveur le refuse aussi).
+  return canManageDeployments.value && deployment.status === 'AWAITING_APPROVAL'
+    && deployment.requestedById !== authStore.currentUser?.id
+}
+/* Une demande d’approbation n’est retirée que par son auteur ; l’approbateur la refuse, avec un motif. */
+function canCancel(deployment: DeploymentResponse) {
+  if (!canManageDeployments.value || !OPEN_STATUSES.includes(deployment.status)) return false
+  return deployment.status !== 'AWAITING_APPROVAL' || deployment.requestedById === authStore.currentUser?.id
+}
+const approvalTarget = ref<DeploymentResponse | null>(null)
+const approvalLoading = ref(false)
+const approvalError = ref('')
+function openApproval(deployment: DeploymentResponse) {
+  approvalError.value = ''
+  approvalTarget.value = deployment
+}
+async function decide(kind: 'approve' | 'reject', comment: string) {
+  const deployment = approvalTarget.value
+  if (!deployment) return
+  approvalLoading.value = true
+  approvalError.value = ''
+  try {
+    await (kind === 'approve' ? approveDeployment(deployment.id, comment) : rejectDeployment(deployment.id, comment))
+    approvalTarget.value = null
+    await deploymentsStore.loadDeployments()
+  } catch (exception: unknown) {
+    const response = (exception as { response?: { data?: { message?: string } } }).response
+    approvalError.value = response?.data?.message ?? 'La décision n’a pas pu être enregistrée.'
+  } finally {
+    approvalLoading.value = false
+  }
+}
 
 /*
  * Rollback : redéploie les images exactes (par empreinte) d'un déploiement
@@ -61,16 +101,21 @@ const STATUS_LABELS: Record<DeploymentStatus, string> = {
   FAILED: 'Échoué',
   CANCELLED: 'Annulé',
   ROLLED_BACK: 'Remplacé',
+  AWAITING_APPROVAL: 'À approuver',
+  REJECTED: 'Refusé',
 }
 const statusFilters: { value: DeploymentStatus | null; label: string }[] = [
   { value: null, label: 'Tous' },
   { value: 'RUNNING', label: 'En cours' },
+  { value: 'AWAITING_APPROVAL', label: 'À approuver' },
   { value: 'PENDING', label: 'En attente' },
   { value: 'SUCCESS', label: 'Réussis' },
   { value: 'FAILED', label: 'Échoués' },
   { value: 'CANCELLED', label: 'Annulés' },
 ]
 const ACTIVE_STATUSES: DeploymentStatus[] = ['PENDING', 'RUNNING']
+/* En attente d’approbation : annulable et non supprimable, mais sans rafraîchissement rapide. */
+const OPEN_STATUSES: DeploymentStatus[] = ['PENDING', 'RUNNING', 'AWAITING_APPROVAL']
 
 /* ---------------------------------------------------------------
  * Recherche en direct (anti-rebond de 300 ms)
@@ -158,6 +203,37 @@ async function loadGuards() {
 }
 const hasWatchingGuards = computed(() => Object.values(guards.value).some(g => g.status === 'WATCHING'))
 watch(() => deploymentsStore.deployments, () => { void loadGuards() })
+
+/* ---------------------------------------------------------------
+ * Promotion guidée (RG-P3) : un déploiement en service, validé par le gardien,
+ * propose de monter vers l’environnement suivant de son application.
+ * --------------------------------------------------------------- */
+const promotions = ref<Record<number, PromotionProposal | null>>({})
+function isPromotable(deployment: DeploymentResponse) {
+  const verdict = guards.value[deployment.id]?.status
+  return canManageDeployments.value && deployment.current && deployment.status === 'SUCCESS'
+    && (verdict === 'HEALTHY' || verdict === 'HEALTHY_WITH_WARNINGS')
+}
+async function loadPromotions() {
+  for (const deployment of deploymentsStore.deployments.filter(isPromotable)) {
+    if (deployment.id in promotions.value) continue
+    try {
+      promotions.value = { ...promotions.value, [deployment.id]: await getPromotion(deployment.id) }
+    } catch {
+      // Pas d’environnement suivant (ou dernier environnement) : pas de bouton.
+      promotions.value = { ...promotions.value, [deployment.id]: null }
+    }
+  }
+}
+watch(guards, () => { void loadPromotions() })
+
+const modalPreset = ref<PromotionProposal | null>(null)
+function promote(deployment: DeploymentResponse) {
+  const proposal = promotions.value[deployment.id]
+  if (!proposal) return
+  modalPreset.value = proposal
+  modalOpen.value = true
+}
 watch(hasWatchingGuards, watching => {
   if (watching && !guardTimer) {
     guardTimer = setInterval(() => {
@@ -255,7 +331,7 @@ onBeforeUnmount(() => {
 /* ---------------------------------------------------------------
  * Actions
  * --------------------------------------------------------------- */
-function openCreateModal() { modalOpen.value = true }
+function openCreateModal() { modalPreset.value = null; modalOpen.value = true }
 function closeModal() { if (!deploymentsStore.actionLoading) modalOpen.value = false }
 
 async function submitDeployment(request: CreateDeploymentRequest) {
@@ -444,6 +520,14 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}
                 </span>
                 <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
+                <small v-if="deployment.status === 'AWAITING_APPROVAL'" class="dp-approval is-waiting">
+                  {{ deployment.requestedById === authStore.currentUser?.id ? 'En attente de l’accord d’une seconde personne' : 'Votre décision est attendue' }}
+                </small>
+                <small v-else-if="deployment.approvedBy && deployment.status !== 'REJECTED'" class="dp-approval is-approved"
+                  :title="deployment.approvalComment ?? ''">Approuvé par {{ deployment.approvedBy }}</small>
+                <small v-else-if="deployment.status === 'REJECTED'" class="dp-approval is-rejected">
+                  {{ deployment.approvedBy ? `Refusé par ${deployment.approvedBy}` : 'Refusé' }}<template v-if="deployment.approvalComment"> : {{ deployment.approvalComment }}</template>
+                </small>
                 <DeploymentGuardBadge v-if="guards[deployment.id]" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
                 <small v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)"
                   :title="restorePointTitle(restorePoints[deployment.id]!)"><svg class="dp-rp-icon" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M4 3.5h9.5L16.5 6.5V16a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>{{ restorePointLabel(restorePoints[deployment.id]!) }}</small>
@@ -466,15 +550,20 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                 <div class="dp-actions">
                   <button v-if="hasIncident(deployment)" type="button" class="dp-action dp-action-analysis" @click="analysisDeployment = deployment">Analyse</button>
                   <button v-if="deployment.status === 'SUCCESS'" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
-                  <button v-if="canManageDeployments && ACTIVE_STATUSES.includes(deployment.status)" type="button" class="dp-action dp-action-danger"
+                  <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="dp-action dp-action-promote"
+                    :title="`Même version, même image, même configuration : vers ${promotions[deployment.id]!.targetEnvironmentName}`"
+                    @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
+                  <button v-if="canDecide(deployment)" type="button" class="dp-action dp-action-approve"
+                    @click="openApproval(deployment)">Examiner et décider</button>
+                  <button v-if="canCancel(deployment)" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
                   <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
                     :disabled="deploymentsStore.actionLoading" title="Redéployer exactement ces images" @click="rollback(deployment)">Revenir ici</button>
                   <button v-if="canRestoreBefore(deployment)" type="button" class="dp-action dp-action-danger"
                     title="Remettre l’application et ses données dans leur état d’avant ce déploiement" @click="restoreTarget = deployment">Restaurer l’état d’avant</button>
                   <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
-                    :disabled="deploymentsStore.actionLoading || ACTIVE_STATUSES.includes(deployment.status)"
-                    :title="ACTIVE_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours' : 'Supprimer de l’historique'"
+                    :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)"
+                    :title="OPEN_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours ou en attente' : 'Supprimer de l’historique'"
                     @click="removeDeployment(deployment)">Supprimer</button>
                 </div>
               </td>
@@ -497,7 +586,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
     </footer>
 
     <DeploymentFormModal :open="modalOpen" :applications="applicationsStore.applications"
-      :environments="environmentsStore.environments" :loading="deploymentsStore.actionLoading"
+      :environments="environmentsStore.environments" :loading="deploymentsStore.actionLoading" :preset="modalPreset"
       @close="closeModal" @submit="submitDeployment" />
 
     <!-- Garde de déploiement : verdict, chronologie et preuves -->
@@ -558,6 +647,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </section>
       </div>
     </Teleport>
+    <ApprovalDialog :open="approvalTarget !== null" :deployment="approvalTarget" :loading="approvalLoading" :error="approvalError"
+      @close="approvalTarget = null" @approve="decide('approve', $event)" @reject="decide('reject', $event)" />
     <RestoreBeforeDialog :open="restoreTarget !== null" :deployment="restoreTarget"
       :restore-point="restoreTarget ? restorePoints[restoreTarget.id] ?? null : null" :loading="restoreLoading"
       @close="restoreTarget = null" @confirm="confirmRestoreBefore" />
@@ -640,7 +731,14 @@ small.dp-muted { font-size: 12px; }
 .dp-status.is-running { background: var(--accent-soft); color: var(--accent); }
 .dp-status.is-running .dp-status-dot { animation: dp-pulse 1.6s ease-in-out infinite; }
 .dp-status.is-pending { background: #fffbeb; color: #b45309; }
-.dp-status.is-cancelled, .dp-status.is-rolled_back { background: var(--soft); color: var(--muted); }
+.dp-status.is-cancelled, .dp-status.is-rolled_back, .dp-status.is-rejected { background: var(--soft); color: var(--muted); }
+.dp-status.is-awaiting_approval { background: #eef2ff; color: #4338ca; }
+.dp-approval { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; }
+.dp-approval.is-waiting { color: #4338ca; }
+.dp-approval.is-approved { color: #0f766e; }
+.dp-approval.is-rejected { color: #6b7280; }
+.dp-action-promote { border-color: #0e9f8e; color: #0f766e; font-weight: 700; }
+.dp-action-approve { border-color: #4338ca; color: #4338ca; font-weight: 700; }
 
 .dp-live-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border: 1px solid #a7f3d0; border-radius: 999px; color: #047857; font-size: 11px; font-weight: 600; vertical-align: middle; }
 .dp-build { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-variant-numeric: tabular-nums; text-decoration: none; }
