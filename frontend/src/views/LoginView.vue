@@ -332,6 +332,10 @@ async function handleLogin() {
 
           </div>
 
+          <div class="forgot-row">
+            <RouterLink to="/forgot-password" class="forgot-link">Mot de passe oublié ?</RouterLink>
+          </div>
+
           <!-- ERROR -->
 
           <div
@@ -412,6 +416,9 @@ async function handleLogin() {
 </template>
 
 <style scoped>
+.forgot-row { display: flex; justify-content: flex-end; margin-top: -6px; }
+.forgot-link { color: #0e9f8e; font-size: 13.5px; font-weight: 600; text-decoration: none; }
+.forgot-link:hover { text-decoration: underline; }
 /* ============================================================
    PAGE
    ============================================================ */

@@ -13,6 +13,11 @@ spring:
     hibernate:
       ddl-auto: update
 
+  # E-mails : Mailpit en développement (smtp localhost:1025, page web http://localhost:8025)
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+
 security:
   jwt:
     secret-key: ${JWT_SECRET_KEY}
@@ -20,6 +25,12 @@ security:
     refresh-expiration: 604800000
 
 smartdeploy:
+  # Adresse du frontend, pour les liens envoyés par e-mail
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  mail:
+    from: ${SMARTDEPLOY_MAIL_FROM:SmartDeploy <no-reply@smartdeploy.local>}
+  password-reset:
+    ttl-minutes: 30
   jenkins:
     url: ${JENKINS_URL:http://192.168.85.129:8080}
     username: ${JENKINS_USERNAME:admin}

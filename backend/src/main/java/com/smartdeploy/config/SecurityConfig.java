@@ -117,6 +117,10 @@ public class SecurityConfig {
 
                                 "/api/auth/login",
                                 "/api/auth/refresh",
+                                // Mot de passe oublié (le jeton voyage dans le corps des requêtes)
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password",
+                                "/api/auth/reset-password/validate",
 
                                 "/api/users/register",
 

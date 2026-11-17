@@ -47,6 +47,10 @@ public enum AuditAction {
     RAID_RECOVERING,
     RAID_RESTORED,
 
+    // Mot de passe oublié
+    PASSWORD_RESET_REQUESTED,
+    PASSWORD_RESET_COMPLETED,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

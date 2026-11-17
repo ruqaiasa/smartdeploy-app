@@ -6,6 +6,8 @@ import {
 import AppLayout from '@/layouts/AppLayout.vue'
 
 import LoginView from '@/views/LoginView.vue'
+import ForgotPasswordView from '@/views/ForgotPasswordView.vue'
+import ResetPasswordView from '@/views/ResetPasswordView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import ApplicationsView from '@/views/ApplicationsView.vue'
@@ -36,6 +38,26 @@ const router = createRouter({
       meta: {
         title: 'Connexion',
         requiresGuest: true,
+      },
+    },
+
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: ForgotPasswordView,
+      meta: {
+        title: 'Mot de passe oublié',
+        requiresGuest: true,
+      },
+    },
+
+    {
+      // Accessible connecté ou non : le lien arrive par e-mail.
+      path: '/reset-password',
+      name: 'reset-password',
+      component: ResetPasswordView,
+      meta: {
+        title: 'Nouveau mot de passe',
       },
     },
 

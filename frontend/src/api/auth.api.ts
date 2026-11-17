@@ -29,3 +29,18 @@ export async function register(
 
   return response.data
 }
+/* Mot de passe oublié : le jeton voyage toujours dans le corps des requêtes. */
+export async function requestPasswordReset(email: string): Promise<string> {
+  const response = await httpClient.post<{ message: string }>('/api/auth/forgot-password', { email })
+  return response.data.message
+}
+
+export async function validateResetToken(token: string): Promise<boolean> {
+  const response = await httpClient.post<{ valid: boolean }>('/api/auth/reset-password/validate', { token })
+  return response.data.valid === true
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<string> {
+  const response = await httpClient.post<{ message: string }>('/api/auth/reset-password', { token, newPassword })
+  return response.data.message
+}
