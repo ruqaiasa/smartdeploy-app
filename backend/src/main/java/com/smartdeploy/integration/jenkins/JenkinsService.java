@@ -195,7 +195,10 @@ public class JenkinsService {
 
             // Rollback : images exactes (par empreinte) du déploiement visé.
             // Le Jenkinsfile saute alors toutes les étapes de construction.
-            Deployment rollbackTarget = deployment.getRollbackOf();
+            // Promotion (RG-V4) : même mécanisme, avec les images d'un déploiement antérieur de la version.
+            Deployment rollbackTarget = deployment.getRollbackOf() != null
+                    ? deployment.getRollbackOf()
+                    : deployment.getImagesFrom();
             parameters.put(
                     "ROLLBACK_BACKEND_IMAGE",
                     rollbackTarget == null ? "" : value(rollbackTarget.getDeployedBackendImage())

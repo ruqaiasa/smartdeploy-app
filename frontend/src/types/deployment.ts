@@ -44,6 +44,10 @@ export interface DeploymentResponse {
   /** Images réellement déployées, référencées par empreinte (sha256). */
   deployedBackendImage?: string | null
   deployedFrontendImage?: string | null
+  /** Promotion : déploiement dont les images ont été réutilisées, sans reconstruction. */
+  imagesFromId?: number | null
+  /** Commit exact construit par le pipeline. */
+  builtCommit?: string | null
   /** Vrai pour le déploiement actuellement en service dans son environnement. */
   current?: boolean
 }
@@ -98,6 +102,31 @@ export interface CreateDeploymentRequest {
   versionId: number
   environmentId: number
   kubernetesConfig: KubernetesApplicationRequest
+  /** RG-V5 : confirmation explicite pour redéployer la version en service. */
+  confirmRedeploy?: boolean
+  /** RG-V4 : reconstruire même si la version a déjà une image. */
+  forceRebuild?: boolean
+}
+
+/** Vérification préalable d’un déploiement (règles RG-V4 à RG-V8). */
+export interface DeploymentPrecheck {
+  currentDeploymentId: number | null
+  currentVersion: string | null
+  currentSince: string | null
+  sameVersionInService: boolean
+  olderThanCurrent: boolean
+  rollbackTargetId: number | null
+  degraded: { deploymentId: number; environmentName: string; at: string; cause: string } | null
+  lastFailure: {
+    deploymentId: number
+    at: string
+    title: string
+    detail: string | null
+    codeCause: boolean
+    unchangedSinceFailure: boolean | null
+  } | null
+  reuse: { deploymentId: number; environmentName: string; commit: string | null } | null
+  pinnedCommit: string | null
 }
 
 export interface UpdateDeploymentStatusRequest {

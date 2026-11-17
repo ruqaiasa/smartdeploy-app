@@ -52,6 +52,14 @@ public class IncidentAnalysis {
     @Column(name = "notes_json", columnDefinition = "text")
     private String notesJson;
 
+    /** Faits précis extraits des preuves (JSON : libellé et valeur). */
+    @Column(name = "facts_json", columnDefinition = "text")
+    private String factsJson;
+
+    /** La ligne de log qui explique le mieux l'incident. */
+    @Column(name = "decisive_line", length = 1000)
+    private String decisiveLine;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 }

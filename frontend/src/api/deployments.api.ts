@@ -1,6 +1,7 @@
 import httpClient from './httpClient'
 
 import type {
+  DeploymentPrecheck,
   CreateDeploymentRequest,
   DeploymentPageResponse,
   DeploymentResponse,
@@ -106,5 +107,11 @@ export async function cancelDeployment(
       `${DEPLOYMENTS_ENDPOINT}/${id}/cancel`,
     )
 
+  return response.data
+}
+
+/** Ce qu’il faut savoir avant de déployer cette version sur cet environnement. */
+export async function getDeploymentPrecheck(versionId: number, environmentId: number): Promise<DeploymentPrecheck> {
+  const response = await httpClient.get<DeploymentPrecheck>('/api/deployments/precheck', { params: { versionId, environmentId } })
   return response.data
 }

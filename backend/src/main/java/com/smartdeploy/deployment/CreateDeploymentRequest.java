@@ -14,15 +14,27 @@ public record CreateDeploymentRequest(
 
         @Valid
         @NotNull(message = "La configuration Kubernetes est obligatoire")
-        KubernetesApplicationRequest kubernetesConfig
+        KubernetesApplicationRequest kubernetesConfig,
 
+        // RG-V5 : confirmation explicite pour redéployer la version déjà en service
+        Boolean confirmRedeploy,
+
+        // RG-V4 : reconstruire l'image même si la version a déjà été construite
+        Boolean forceRebuild
 ) {
+        public CreateDeploymentRequest(
+                Long versionId,
+                Long environmentId,
+                KubernetesApplicationRequest kubernetesConfig
+        ) {
+                this(versionId, environmentId, kubernetesConfig, null, null);
+        }
 
         // Compatibilité temporaire avec les anciens appels
         public CreateDeploymentRequest(
                 Long versionId,
                 Long environmentId
         ) {
-                this(versionId, environmentId, null);
+                this(versionId, environmentId, null, null, null);
         }
 }

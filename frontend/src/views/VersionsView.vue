@@ -301,8 +301,8 @@ function formatDate(
               <th>Application</th>
               <th>Git</th>
               <th>Image Docker</th>
-              <th>Build</th>
-              <th>Build #</th>
+              <th>En service</th>
+              <th>Dernier verdict</th>
               <th>Créée le</th>
               <th>Actions</th>
             </tr>
@@ -331,11 +331,11 @@ function formatDate(
                     {{ version.gitBranch }}
                   </strong>
 
-                  <small>
-                    {{
-                      version.gitCommit
-                        || 'Commit non défini'
-                    }}
+                  <small v-if="version.pinned" class="pinned" title="Figée à sa première construction : son numéro, sa branche et son commit ne changent plus">
+                    Figée{{ version.gitCommit ? ` · ${version.gitCommit.slice(0, 7)}` : '' }}
+                  </small>
+                  <small v-else class="not-pinned" title="Le commit sera fixé lors de la première construction réussie">
+                    Non figée{{ version.gitCommit ? ` · commit ${version.gitCommit.slice(0, 7)}` : '' }}
                   </small>
                 </div>
               </td>
@@ -356,21 +356,16 @@ function formatDate(
               </td>
 
               <td>
-                <span
-                  class="status-badge"
-                  :class="
-                    version.buildStatus.toLowerCase()
-                  "
-                >
-                  {{ version.buildStatus }}
-                </span>
+                <div v-if="version.inServiceEnvironments?.length" class="in-service">
+                  <span v-for="name in version.inServiceEnvironments" :key="name" class="env-chip">{{ name }}</span>
+                </div>
+                <span v-else class="empty-value">—</span>
               </td>
 
               <td>
-                {{
-                  version.buildNumber
-                    ?? '—'
-                }}
+                <span class="verdict" :class="`is-${version.lastVerdictTone ?? 'muted'}`">
+                  {{ version.lastVerdict ?? '—' }}
+                </span>
               </td>
 
               <td>
@@ -482,6 +477,15 @@ function formatDate(
 </template>
 
 <style scoped>
+.pinned { color: #0f766e; font-weight: 600; }
+.not-pinned { color: #b45309; }
+.in-service { display: flex; flex-wrap: wrap; gap: 4px; }
+.env-chip { padding: 2px 8px; border-radius: 999px; background: #ccfbf1; color: #115e59; font-size: 12px; font-weight: 600; }
+.verdict { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #f3f4f6; color: #4b5563; }
+.verdict.is-ok { background: #dcfce7; color: #166534; }
+.verdict.is-warning { background: #fef3c7; color: #92400e; }
+.verdict.is-ko { background: #fee2e2; color: #991b1b; }
+.verdict.is-pending { background: #dbeafe; color: #1e40af; }
 .versions-page {
   display: flex;
   flex-direction: column;

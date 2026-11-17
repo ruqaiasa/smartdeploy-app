@@ -12,6 +12,9 @@ public interface IncidentAnalysisRepository extends JpaRepository<IncidentAnalys
 
     Optional<IncidentAnalysis> findFirstByDeploymentIdOrderByIdDesc(Long deploymentId);
 
+    /** La première analyse, faite au moment de l'incident (preuves les plus complètes). */
+    Optional<IncidentAnalysis> findFirstByDeploymentIdOrderByIdAsc(Long deploymentId);
+
     /** Déploiements distincts touchés par un incident (une analyse relancée ne compte qu'une fois). */
     @Query("select count(distinct a.deploymentId) from IncidentAnalysis a where a.deploymentId in :ids and a.createdAt > :after")
     long countIncidentDeployments(@Param("ids") Collection<Long> deploymentIds, @Param("after") LocalDateTime after);

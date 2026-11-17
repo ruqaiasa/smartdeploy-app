@@ -59,9 +59,13 @@ public final class IncidentAnalyzer {
                 .map(m -> m.rule().title())
                 .toList();
 
+        // Faits précis et action concrète, avec les vraies valeurs (fichier, ligne, port, version…).
+        IncidentFacts.Enrichment enrichment = IncidentFacts.enrich(best.rule().code(), evidence);
+        String action = enrichment.action() != null ? enrichment.action() : best.rule().action();
         return new IncidentDiagnosis(best.rule().code(), best.rule().title(), confidence,
-                best.rule().explanation(), best.rule().action(),
-                evidenceLines.stream().limit(MAX_EVIDENCE + 1L).toList(), alternatives);
+                best.rule().explanation(), action,
+                evidenceLines.stream().limit(MAX_EVIDENCE + 1L).toList(), alternatives,
+                enrichment.facts(), enrichment.decisiveLine());
     }
 
     private record Match(IncidentRule rule, int score, int patternsFound, boolean stageMatched, List<String> lines) {
@@ -75,6 +79,12 @@ public final class IncidentAnalyzer {
         // ses motifs proviendraient d'étapes qui ont réussi.
         if (evidence.failedStage() != null && !stageMatched && rule.sources().contains(Source.JENKINS)
                 && !rule.sources().contains(Source.POD)) {
+            return new Match(rule, 0, 0, false, List.of());
+        }
+        // De même, un échec du pipeline avant le déploiement (compilation, image…) n'a rien mis
+        // en service : une signature d'exécution (plantage, sondes, mémoire) proviendrait d'un
+        // autre incident, encore visible dans l'espace de noms (cas réel #131 après #129).
+        if (evidence.failedStage() != null && !stageMatched && rule.sources().contains(Source.POD)) {
             return new Match(rule, 0, 0, false, List.of());
         }
         Set<String> lines = new LinkedHashSet<>();
@@ -121,7 +131,7 @@ public final class IncidentAnalyzer {
         return new IncidentDiagnosis(IncidentDiagnosis.UNKNOWN, "Cause non identifiée", Confidence.LOW,
                 "Aucune signature de panne connue ne correspond aux preuves rassemblées. Les lignes d'erreur brutes sont présentées ci-dessous.",
                 "Examiner les preuves ci-dessous et le log complet du build ; si la panne se reproduit, ajouter sa signature au catalogue.",
-                lines, List.of());
+                lines, List.of(), List.of(), IncidentFacts.decisiveLine(evidence));
     }
 
     static String abbreviate(String line) {

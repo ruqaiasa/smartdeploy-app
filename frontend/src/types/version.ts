@@ -27,6 +27,14 @@ export interface VersionResponse {
 
   createdAt: string
   updatedAt: string
+
+  /** RG-V2 : figée à sa première construction réussie (commit et image fixés). */
+  pinnedAt?: string | null
+  pinned?: boolean
+  /** RG-V10 : environnements où elle est en service, et verdict de son dernier déploiement. */
+  inServiceEnvironments?: string[]
+  lastVerdict?: string | null
+  lastVerdictTone?: 'ok' | 'warning' | 'ko' | 'pending' | 'muted' | null
 }
 
 export interface CreateVersionRequest {

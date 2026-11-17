@@ -95,6 +95,10 @@ public class Version {
     )
     private Application application;
 
+    /** RG-V2 : date à laquelle la version a été figée (première construction réussie). */
+    @Column(name = "pinned_at")
+    private LocalDateTime pinnedAt;
+
     @Column(
             name = "created_at",
             nullable = false,

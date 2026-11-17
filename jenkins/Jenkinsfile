@@ -48,7 +48,8 @@ def notifySmartDeploy(String status, String errorMessage, String k8sDeploymentNa
   "errorMessage": ${json(errorMessage)},
   "kubernetesDeploymentName": ${json(k8sDeploymentName)},
   "backendImage": ${json(env.BACKEND_IMAGE_BUILT ?: '')},
-  "frontendImage": ${json(env.FRONTEND_IMAGE_BUILT ?: '')}
+  "frontendImage": ${json(env.FRONTEND_IMAGE_BUILT ?: '')},
+  "gitCommit": ${json(env.SD_BUILT_COMMIT ?: '')}
 }"""
 
     writeFile file: '.smartdeploy-callback.json', text: payload
@@ -355,6 +356,10 @@ void sdCheckoutGit() {
                     branch: "${params.GIT_BRANCH}",
                     url: "${params.REPOSITORY_URL}"
                 )
+
+                // RG-V2 : commit exact construit, transmis à SmartDeploy pour figer la version.
+                env.SD_BUILT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                echo "Commit construit : ${env.SD_BUILT_COMMIT}"
             }
 
 /** Étape « Verify Checkout » (corps extrait du bloc pipeline : limite de taille de Jenkins). */

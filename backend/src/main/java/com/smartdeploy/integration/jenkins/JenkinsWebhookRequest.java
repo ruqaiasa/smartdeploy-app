@@ -18,6 +18,8 @@ public record JenkinsWebhookRequest(
 
         // Images publiées, par empreinte (absentes avec un ancien Jenkinsfile)
         String backendImage,
-        String frontendImage
+        String frontendImage,
+        // Commit exact construit (git rev-parse HEAD), absent avec un ancien Jenkinsfile
+        String gitCommit
 ) {
 }

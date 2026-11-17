@@ -11,6 +11,7 @@
  * La requête envoyée au backend (CreateDeploymentRequest) est inchangée.
  */
 import ConfidenceScoreCard from '@/components/deployments/ConfidenceScoreCard.vue'
+import DeploymentPrecheckNotices from '@/components/deployments/DeploymentPrecheckNotices.vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { getVersionsByApplication } from '@/api/versions.api'
 import { listKubernetesSecrets, createKubernetesSecret, type KubernetesSecretSummary } from '@/api/kubernetesSecrets.api'
@@ -98,6 +99,11 @@ const creatingSecret = ref(false)
 const secretError = ref('')
 const secretMode = ref<'EXISTING' | 'NEW'>('NEW')
 const newSecret = reactive({ name: '', password: '' })
+
+/* Vérification préalable (règles RG-V4 à RG-V8) */
+const confirmRedeploy = ref(false)
+const forceRebuild = ref(false)
+const precheckBlocked = ref(false)
 let secretRequestSequence = 0
 const selectedSecret = computed(() => secrets.value.find(s => s.name === form.passwordSecretName))
 
@@ -415,6 +421,10 @@ async function submitForm() {
   validationError.value = ''
   // Entrée dans un champ intermédiaire ne doit jamais déclencher Jenkins.
   if (currentStep.value !== wizardSteps.length) { nextStep(); return }
+  if (precheckBlocked.value) {
+    validationError.value = 'Cette version est déjà en service : cochez la confirmation pour la redéployer.'
+    return
+  }
 
   for (let step = 1; step <= wizardSteps.length; step++) {
     const error = validateWizardStep(step)
@@ -471,7 +481,13 @@ async function submitForm() {
       runBackendTests: form.runBackendTests,
     },
   }
-  emit('submit', { versionId: form.versionId, environmentId: form.environmentId, kubernetesConfig })
+  emit('submit', {
+    versionId: form.versionId,
+    environmentId: form.environmentId,
+    kubernetesConfig,
+    confirmRedeploy: confirmRedeploy.value,
+    forceRebuild: forceRebuild.value,
+  })
 }
 </script>
 <template>
@@ -589,6 +605,8 @@ async function submitForm() {
           <!-- Étape 4 : options avancées, puis récapitulatif -->
           <template v-if="currentStep === 4 && selectedApplication && selectedEnvironment">
             <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />
+            <DeploymentPrecheckNotices :version-id="form.versionId" :environment-id="form.environmentId"
+              v-model:confirm-redeploy="confirmRedeploy" v-model:force-rebuild="forceRebuild" v-model:blocked="precheckBlocked" />
             <section class="dfm-section dfm-advanced">
               <button type="button" class="dfm-disclosure" :aria-expanded="showAdvanced" @click="showAdvanced = !showAdvanced">
                 <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" :class="{ 'is-open': showAdvanced }"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -688,7 +706,7 @@ async function submitForm() {
               <button v-if="currentStep > 1" type="button" class="dfm-btn dfm-btn-ghost" :disabled="loading || creatingSecret" @click="previousStep">Retour</button>
               <button v-else type="button" class="dfm-btn dfm-btn-ghost" :disabled="loading || creatingSecret" @click="closeModal">Annuler</button>
               <button v-if="currentStep < wizardSteps.length" type="button" class="dfm-btn dfm-btn-primary" :disabled="loading || loadingVersions || creatingSecret" @click="nextStep">Continuer</button>
-              <button v-else type="submit" class="dfm-btn dfm-btn-primary" :disabled="loading || loadingVersions || loadingSecrets || creatingSecret">
+              <button v-else type="submit" class="dfm-btn dfm-btn-primary" :disabled="loading || loadingVersions || loadingSecrets || creatingSecret || precheckBlocked">
                 {{ loading ? 'Déploiement en cours…' : creatingSecret ? 'Création du Secret…' : 'Lancer le déploiement' }}
               </button>
             </div>

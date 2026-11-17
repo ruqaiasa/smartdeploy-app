@@ -174,6 +174,15 @@ public class IncidentEvidenceCollector {
             var last = status.getLastState().getTerminated();
             line.append(" ; dernier arrêt : ").append(last.getReason())
                     .append(" (exit code ").append(last.getExitCode()).append(')');
+            // Durée de fonctionnement avant l'arrêt : distingue un échec au démarrage d'un échec en cours d'exécution.
+            try {
+                if (last.getStartedAt() != null && last.getFinishedAt() != null) {
+                    long seconds = Duration.between(Instant.parse(last.getStartedAt()), Instant.parse(last.getFinishedAt())).toSeconds();
+                    line.append(" ; durée de fonctionnement : ").append(Math.max(0, seconds)).append(" s");
+                }
+            } catch (RuntimeException ignored) {
+                // horodatage illisible : la durée est simplement omise
+            }
         }
         line.append(" ; ").append(status.getRestartCount() == null ? 0 : status.getRestartCount()).append(" redémarrage(s)");
         return line.toString();

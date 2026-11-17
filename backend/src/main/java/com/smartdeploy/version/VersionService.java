@@ -29,6 +29,14 @@ public class VersionService {
      * ==========================================================
      */
 
+    private VersionUsage usage;
+
+    /** Facultatif : usage des versions (en service, déploiements en cours, verdict). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setUsage(VersionUsage usage) {
+        this.usage = usage;
+    }
+
     public VersionService(
             VersionRepository versionRepository,
             ApplicationRepository applicationRepository
@@ -155,6 +163,20 @@ public class VersionService {
         String normalizedVersion =
                 request.version().trim();
 
+        // RG-V3 : une version figée (déjà construite) ne change plus de numéro, de branche ni de commit.
+        if (version.getPinnedAt() != null) {
+            boolean identityChanged = !version.getVersion().equals(normalizedVersion)
+                    || !version.getGitBranch().equals(request.gitBranch().trim())
+                    || !java.util.Objects.equals(version.getGitCommit(), normalizeNullableText(request.gitCommit()));
+            if (identityChanged) {
+                throw new VersionStateException(
+                        "Version figée depuis sa première construction"
+                                + (version.getGitCommit() == null ? "" : " (commit " + shortCommit(version.getGitCommit()) + ")")
+                                + " : son numéro, sa branche et son commit ne peuvent plus changer. Créez une nouvelle version."
+                );
+            }
+        }
+
         boolean versionChanged =
                 !version.getVersion()
                         .equalsIgnoreCase(normalizedVersion);
@@ -268,6 +290,22 @@ public class VersionService {
             );
         }
 
+        // RG-V9 : une version en service, ou en cours de déploiement, ne peut pas être supprimée.
+        if (usage != null) {
+            List<String> inService = usage.inServiceEnvironments(version.getId());
+            if (!inService.isEmpty()) {
+                throw new VersionStateException(
+                        "La version " + version.getVersion() + " est en service sur : " + String.join(", ", inService)
+                                + ". Déployez d'abord une autre version."
+                );
+            }
+            if (usage.hasActiveDeployment(version.getId())) {
+                throw new VersionStateException(
+                        "Un déploiement de la version " + version.getVersion() + " est en attente ou en cours."
+                );
+            }
+        }
+
         version.setDeleted(true);
 
         versionRepository.saveAndFlush(version);
@@ -343,6 +381,8 @@ public class VersionService {
     private VersionResponse toResponse(
             Version version
     ) {
+        VersionUsage.Verdict verdict = usage == null || version.getId() == null ? null : usage.lastVerdict(version.getId());
+
         return new VersionResponse(
                 version.getId(),
                 version.getApplication().getId(),
@@ -357,8 +397,17 @@ public class VersionService {
                 version.getBuildLogsUrl(),
                 version.isDeleted(),
                 version.getCreatedAt(),
-                version.getUpdatedAt()
+                version.getUpdatedAt(),
+                version.getPinnedAt(),
+                version.getPinnedAt() != null,
+                usage == null || version.getId() == null ? List.of() : usage.inServiceEnvironments(version.getId()),
+                verdict == null ? null : verdict.label(),
+                verdict == null ? null : verdict.tone()
         );
+    }
+
+    private static String shortCommit(String commit) {
+        return commit.length() > 7 ? commit.substring(0, 7) : commit;
     }
     /* ==========================================================
      *              SEARCH AND PAGINATE VERSIONS

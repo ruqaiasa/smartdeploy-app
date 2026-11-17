@@ -26,6 +26,9 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
+/** RG-V3 : une version figée ne change plus d’identité (le serveur le refuse aussi). */
+const pinned = computed(() => props.version?.pinned === true)
+
 const emit = defineEmits<{
   close: []
 
@@ -290,7 +293,7 @@ function submitForm() {
                 type="text"
                 maxlength="50"
                 placeholder="1.0.0"
-                :disabled="loading"
+                :disabled="loading || pinned"
               />
             </div>
 
@@ -304,7 +307,7 @@ function submitForm() {
                 type="text"
                 maxlength="150"
                 placeholder="main"
-                :disabled="loading"
+                :disabled="loading || pinned"
               />
             </div>
           </div>
@@ -319,9 +322,14 @@ function submitForm() {
               type="text"
               maxlength="100"
               placeholder="a83fd42..."
-              :disabled="loading"
+              :disabled="loading || pinned"
             />
           </div>
+
+          <p v-if="pinned" class="pinned-note">
+            Version figée depuis sa première construction : son numéro, sa branche et son commit ne peuvent plus
+            changer. Pour modifier le code, créez une nouvelle version.
+          </p>
 
           <p
             v-if="validationError"
@@ -355,6 +363,7 @@ function submitForm() {
 </template>
 
 <style scoped>
+.pinned-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: #f0fdfa; border: 1px solid #99f6e4; color: #134e4a; font-size: 13px; }
 .modal-overlay {
   position: fixed;
   inset: 0;

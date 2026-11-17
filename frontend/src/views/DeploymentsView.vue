@@ -427,6 +427,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <span class="dp-version">{{ deployment.version }}</span>
                 </div>
                 <small v-if="deployment.rollbackOfId" class="dp-muted">Retour au déploiement #{{ deployment.rollbackOfId }}</small>
+                <small v-else-if="deployment.imagesFromId" class="dp-muted" title="Même image, à l’octet près : construite une fois, déployée partout">Image réutilisée du déploiement #{{ deployment.imagesFromId }}</small>
               </td>
               <td data-label="Environnement">
                 <span>{{ deployment.environmentName }}</span>

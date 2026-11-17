@@ -4,7 +4,8 @@ import java.util.List;
 
 /**
  * Diagnostic d'un incident : la cause retenue, son niveau de confiance,
- * l'action proposée et les lignes de preuve qui la justifient.
+ * l'action proposée, les lignes de preuve qui la justifient, les faits
+ * précis qui en sont extraits et la ligne décisive.
  */
 public record IncidentDiagnosis(
         String code,
@@ -13,8 +14,14 @@ public record IncidentDiagnosis(
         String explanation,
         String action,
         List<String> evidence,
-        List<String> alternatives
+        List<String> alternatives,
+        List<IncidentFacts.Fact> facts,
+        String decisiveLine
 ) {
+    public IncidentDiagnosis {
+        facts = facts == null ? List.of() : List.copyOf(facts);
+    }
+
     public enum Confidence {
         HIGH, MEDIUM, LOW
     }

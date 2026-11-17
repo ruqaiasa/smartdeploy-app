@@ -40,7 +40,8 @@ public class JenkinsWebhookController {
                         request.errorMessage(),
                         request.kubernetesDeploymentName(),
                         request.backendImage(),
-                        request.frontendImage()
+                        request.frontendImage(),
+                        request.gitCommit()
                 );
 
         log.info(

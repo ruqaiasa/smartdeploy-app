@@ -90,6 +90,8 @@ public class IncidentAnalysisService {
                 .evidenceJson(json(diagnosis.evidence()))
                 .alternativesJson(json(diagnosis.alternatives()))
                 .notesJson(json(evidence.notes()))
+                .factsJson(factsJson(diagnosis.facts()))
+                .decisiveLine(diagnosis.decisiveLine() == null ? null : IncidentAnalyzer.abbreviate(diagnosis.decisiveLine()))
                 .createdAt(LocalDateTime.now())
                 .build());
 
@@ -101,11 +103,23 @@ public class IncidentAnalysisService {
                         + " (" + CONFIDENCE_LABELS.get(diagnosis.confidence().name()) + ")",
                 "Action proposée : " + diagnosis.action(), false));
         log.info("Analyse d'incident : déploiement #{} → {} ({})", deploymentId, diagnosis.code(), diagnosis.confidence());
-        return Optional.of(toResponse(saved));
+        return Optional.of(withInitial(saved));
     }
 
     public Optional<IncidentAnalysisResponse> latest(Long deploymentId) {
-        return analysisRepository.findFirstByDeploymentIdOrderByIdDesc(deploymentId).map(IncidentAnalysisService::toResponse);
+        return analysisRepository.findFirstByDeploymentIdOrderByIdDesc(deploymentId).map(this::withInitial);
+    }
+
+    /** La réponse, accompagnée de la première analyse si celle-ci a été relancée depuis. */
+    private IncidentAnalysisResponse withInitial(IncidentAnalysis latest) {
+        IncidentAnalysisResponse.InitialAnalysis initial = analysisRepository
+                .findFirstByDeploymentIdOrderByIdAsc(latest.getDeploymentId())
+                .filter(first -> !first.getId().equals(latest.getId()))
+                .filter(first -> bringsMore(first, latest))
+                .map(first -> new IncidentAnalysisResponse.InitialAnalysis(first.getId(), first.getTitle(), first.getConfidence(),
+                        first.getCreatedAt(), list(first.getEvidenceJson()), facts(first.getFactsJson()), first.getDecisiveLine()))
+                .orElse(null);
+        return toResponse(latest, initial);
     }
 
     private record Context(IncidentContext context, boolean failed) {
@@ -141,10 +155,51 @@ public class IncidentAnalysisService {
     }
 
     static IncidentAnalysisResponse toResponse(IncidentAnalysis analysis) {
+        return toResponse(analysis, null);
+    }
+
+    static IncidentAnalysisResponse toResponse(IncidentAnalysis analysis, IncidentAnalysisResponse.InitialAnalysis initial) {
         return new IncidentAnalysisResponse(analysis.getId(), analysis.getDeploymentId(), analysis.getTrigger(),
                 analysis.getCode(), analysis.getTitle(), analysis.getConfidence(), analysis.getExplanation(),
                 analysis.getAction(), list(analysis.getEvidenceJson()), list(analysis.getAlternativesJson()),
-                list(analysis.getNotesJson()), analysis.getCreatedAt());
+                list(analysis.getNotesJson()), analysis.getCreatedAt(),
+                facts(analysis.getFactsJson()), analysis.getDecisiveLine(), initial);
+    }
+
+    /**
+     * La première analyse n'est montrée que si elle apporte quelque chose : une autre cause,
+     * une ligne décisive ou des faits que la dernière n'a plus, ou davantage de preuves.
+     */
+    static boolean bringsMore(IncidentAnalysis first, IncidentAnalysis latest) {
+        if (!java.util.Objects.equals(first.getTitle(), latest.getTitle())) {
+            return true;
+        }
+        if (first.getDecisiveLine() != null && latest.getDecisiveLine() == null) {
+            return true;
+        }
+        if (facts(first.getFactsJson()).size() > facts(latest.getFactsJson()).size()) {
+            return true;
+        }
+        return list(first.getEvidenceJson()).size() > list(latest.getEvidenceJson()).size();
+    }
+
+    private static String factsJson(List<IncidentFacts.Fact> facts) {
+        try {
+            return MAPPER.writeValueAsString(facts);
+        } catch (Exception exception) {
+            return "[]";
+        }
+    }
+
+    private static List<IncidentFacts.Fact> facts(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(json, new TypeReference<List<IncidentFacts.Fact>>() { });
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 
     private static String json(List<String> values) {

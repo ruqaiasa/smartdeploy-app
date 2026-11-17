@@ -386,4 +386,33 @@ class VersionServiceTest {
                 .updatedAt(now)
                 .build();
     }
+
+    /* ================= Module des versions : RG-V3 et RG-V9 ================= */
+
+    @Test
+    void update_shouldRefuseToChangeTheIdentityOfAPinnedVersion() {
+        Version version = createVersion(BuildStatus.SUCCESS, false);
+        version.setPinnedAt(LocalDateTime.now().minusDays(1));
+        when(versionRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(version));
+
+        VersionStateException exception = assertThrows(VersionStateException.class, () -> versionService.update(1L,
+                new UpdateVersionRequest("1.0.0", "autre-branche", "abc123", null, null, null)));
+
+        assertTrue(exception.getMessage().contains("Version figée"));
+        assertEquals("main", version.getGitBranch(), "rien n'a été modifié");
+    }
+
+    @Test
+    void softDelete_shouldRefuseAVersionInService() {
+        Version version = createVersion(BuildStatus.SUCCESS, false);
+        when(versionRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(version));
+        VersionUsage usage = mock(VersionUsage.class);
+        when(usage.inServiceEnvironments(1L)).thenReturn(java.util.List.of("Testing", "Production"));
+        versionService.setUsage(usage);
+
+        VersionStateException exception = assertThrows(VersionStateException.class, () -> versionService.softDelete(1L));
+
+        assertTrue(exception.getMessage().contains("en service sur : Testing, Production"));
+        assertFalse(version.isDeleted());
+    }
 }

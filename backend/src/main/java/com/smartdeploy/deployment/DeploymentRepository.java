@@ -30,6 +30,9 @@ public interface DeploymentRepository extends
     );
 
     /** Déploiements réussis d'un environnement, du plus récent au plus ancien. */
+    /** RG-V9 : un déploiement de cette version est-il en attente ou en cours ? */
+    boolean existsByVersion_IdAndStatusInAndDeletedFalse(Long versionId, java.util.Collection<DeploymentStatus> statuses);
+
     List<Deployment> findByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(
             Environment environment,
             DeploymentStatus status

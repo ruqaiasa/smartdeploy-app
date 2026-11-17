@@ -153,6 +153,23 @@ public class Deployment {
     )
     private Deployment rollbackOf;
 
+    /*
+     * Promotion (RG-V4) : déploiement antérieur de la même version dont les images,
+     * par empreinte, sont réutilisées sans reconstruction (« construire une fois, déployer partout »).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "images_from_id",
+            foreignKey = @ForeignKey(
+                    name = "fk_deployment_images_from"
+            )
+    )
+    private Deployment imagesFrom;
+
+    /* Commit exact construit par le pipeline (git rev-parse HEAD), transmis par Jenkins. */
+    @Column(name = "built_commit", length = 40)
+    private String builtCommit;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean deleted = false;

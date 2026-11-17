@@ -107,6 +107,21 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
             <span>{{ analysis.explanation }}</span>
           </div>
 
+          <div v-if="analysis.decisiveLine" class="ia-decisive">
+            <span class="ia-label">Ligne décisive</span>
+            <code>{{ analysis.decisiveLine }}</code>
+          </div>
+
+          <div v-if="analysis.facts?.length" class="ia-facts">
+            <span class="ia-label">Faits établis</span>
+            <dl>
+              <template v-for="fact in analysis.facts" :key="fact.label">
+                <dt>{{ fact.label }}</dt>
+                <dd>{{ fact.value }}</dd>
+              </template>
+            </dl>
+          </div>
+
           <div class="ia-action">
             <span class="ia-label">Action proposée</span>
             <span>{{ analysis.action }}</span>
@@ -125,6 +140,27 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
           <p v-if="analysis.alternatives?.length" class="ia-muted">
             Autres causes possibles : {{ analysis.alternatives.join(', ') }}.
           </p>
+          <details v-if="analysis.initial" class="ia-initial">
+            <summary>
+              Première analyse, au moment de l’incident ({{ new Date(analysis.initial.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }}) :
+              {{ analysis.initial.title }}
+            </summary>
+            <p class="ia-muted">Les pods remplacés depuis ont emporté leurs logs : cette première analyse contient les preuves les plus complètes.</p>
+            <div v-if="analysis.initial.decisiveLine" class="ia-decisive">
+              <span class="ia-label">Ligne décisive</span>
+              <code>{{ analysis.initial.decisiveLine }}</code>
+            </div>
+            <dl v-if="analysis.initial.facts?.length" class="ia-facts-list">
+              <template v-for="fact in analysis.initial.facts" :key="fact.label">
+                <dt>{{ fact.label }}</dt>
+                <dd>{{ fact.value }}</dd>
+              </template>
+            </dl>
+            <ul class="ia-evidence">
+              <li v-for="(line, index) in analysis.initial.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </details>
+
           <div v-if="analysis.notes?.length" class="ia-notes" role="note">
             <strong>Sources incomplètes</strong>
             <span v-for="note in analysis.notes" :key="note">{{ note }}</span>
@@ -168,6 +204,15 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 .ia-confidence.is-high { background: #dcfce7; color: #166534; }
 .ia-confidence.is-medium { background: #fef3c7; color: #92400e; }
 .ia-confidence.is-low { background: var(--color-gray-100, #f3f4f6); color: var(--muted); }
+.ia-decisive { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid #fecaca; border-left: 4px solid #dc2626; border-radius: 8px; background: #fef2f2; }
+.ia-decisive code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; color: #7f1d1d; white-space: pre-wrap; word-break: break-word; }
+.ia-facts { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.ia-facts dl, .ia-facts-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 13.5px; }
+.ia-facts dt, .ia-facts-list dt { color: var(--muted, #6b7280); }
+.ia-facts dd, .ia-facts-list dd { margin: 0; font-weight: 600; word-break: break-word; }
+.ia-initial { padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; font-size: 13.5px; }
+.ia-initial summary { cursor: pointer; font-weight: 600; }
+.ia-initial > * + * { margin-top: 8px; }
 .ia-action { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 14px; }
 .ia-label { font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
 .ia-h3 { margin: 0 0 8px; font-size: 15px; }

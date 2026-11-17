@@ -1683,4 +1683,50 @@ class DeploymentServiceTest {
                 .updatedAt(now)
                 .build();
     }
+
+    /* ================= Module des versions : RG-V4 et RG-V5 ================= */
+
+    @Test
+    void create_shouldRequireConfirmationToRedeployTheVersionInService() {
+        Application application = createApplication(100L, "SmartDeploy Backend");
+        Version version = createVersion(application, BuildStatus.SUCCESS);
+        Environment environment = createEnvironment(application);
+        Deployment inService = createDeployment(DeploymentStatus.SUCCESS);
+        inService.setId(9L);
+        inService.setVersion(version);
+        KubernetesApplicationRequest config = new KubernetesApplicationRequest("sd-dev-ecommerce", null,
+                new KubernetesComponentRequest("ecommerce-backend", "localhost:5000/ecommerce-backend:v1", 5, 8080), null, null);
+        when(versionRepository.findByIdAndDeletedFalse(1L)).thenReturn(Optional.of(version));
+        when(environmentRepository.findByIdAndDeletedFalse(2L)).thenReturn(Optional.of(environment));
+        when(deploymentRepository.existsByEnvironmentAndStatusInAndDeletedFalse(eq(environment), any())).thenReturn(false);
+        when(deploymentRepository.findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.SUCCESS))
+                .thenReturn(Optional.of(inService));
+
+        DeploymentStateException exception = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.create(new CreateDeploymentRequest(1L, 2L, config), createUser()));
+
+        assertTrue(exception.getMessage().contains("confirmez le redéploiement"));
+        verify(deploymentRepository, never()).saveAndFlush(any(Deployment.class));
+    }
+
+    @Test
+    void reusableImages_shouldPickTheLatestBuiltDeploymentOfTheVersion() {
+        Application application = createApplication(100L, "SmartDeploy Backend");
+        Version version = createVersion(application, BuildStatus.SUCCESS);
+        Deployment older = createDeployment(DeploymentStatus.ROLLED_BACK);
+        older.setId(20L);
+        older.setCreatedAt(LocalDateTime.now().minusDays(2));
+        older.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "a".repeat(64));
+        Deployment latest = createDeployment(DeploymentStatus.SUCCESS);
+        latest.setId(21L);
+        latest.setCreatedAt(LocalDateTime.now().minusHours(1));
+        latest.setDeployedBackendImage("localhost:5000/app-backend@sha256:" + "b".repeat(64));
+        Deployment failed = createDeployment(DeploymentStatus.FAILED);
+        failed.setId(22L);
+        failed.setCreatedAt(LocalDateTime.now());
+        when(deploymentRepository.findByVersion_IdAndDeletedFalse(version.getId())).thenReturn(List.of(older, latest, failed));
+
+        assertEquals(21L, deploymentService.reusableImages(version, false).getId(), "le plus récent réussi, jamais un échec");
+        assertNull(deploymentService.reusableImages(version, true), "frontend demandé, mais aucune image de frontend connue");
+    }
 }

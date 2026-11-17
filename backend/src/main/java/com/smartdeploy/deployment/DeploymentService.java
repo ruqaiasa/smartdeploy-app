@@ -148,6 +148,24 @@ public class DeploymentService {
             );
         }
 
+        // RG-V5 : redéployer la version déjà en service demande une confirmation explicite.
+        Deployment inService = deploymentRepository
+                .findFirstByEnvironmentAndStatusAndDeletedFalseOrderByCreatedAtDesc(environment, DeploymentStatus.SUCCESS)
+                .orElse(null);
+        boolean redeploy = inService != null && inService.getVersion() != null
+                && version.getId() != null && version.getId().equals(inService.getVersion().getId());
+        if (redeploy && !Boolean.TRUE.equals(request.confirmRedeploy())) {
+            throw new DeploymentStateException(
+                    "Cette version est déjà en service sur cet environnement (déploiement #" + inService.getId()
+                            + ") : confirmez le redéploiement"
+            );
+        }
+
+        // RG-V4 : une version déjà construite réutilise son image, sans reconstruction.
+        Deployment imagesSource = Boolean.TRUE.equals(request.forceRebuild())
+                ? null
+                : reusableImages(version, hasFrontend);
+
         Deployment deployment =
                 Deployment.builder()
                         .version(version)
@@ -156,6 +174,7 @@ public class DeploymentService {
                         .status(
                                 DeploymentStatus.PENDING
                         )
+                        .imagesFrom(imagesSource)
                         .deleted(false)
                         .build();
 
@@ -221,6 +240,8 @@ public class DeploymentService {
                 currentUser == null ? null : currentUser.getEmail(),
                 "Déploiement #" + savedDeployment.getId() + " de la version "
                         + versionLabel(savedDeployment) + " lancé"
+                        + (redeploy ? " (redéploiement de la version en service)" : "")
+                        + (imagesSource != null ? " (image réutilisée du déploiement #" + imagesSource.getId() + ", sans reconstruction)" : "")
         );
 
         return toResponse(savedDeployment);
@@ -390,6 +411,21 @@ public class DeploymentService {
             String backendImage,
             String frontendImage
     ) {
+        return applyPipelineCallback(deploymentId, newStatus, buildNumber, logsUrl, errorMessage,
+                kubernetesDeploymentName, backendImage, frontendImage, null);
+    }
+
+    public PipelineCallbackResult applyPipelineCallback(
+            Long deploymentId,
+            DeploymentStatus newStatus,
+            Integer buildNumber,
+            String logsUrl,
+            String errorMessage,
+            String kubernetesDeploymentName,
+            String backendImage,
+            String frontendImage,
+            String builtCommit
+    ) {
         if (deploymentId == null) {
             throw new DeploymentValidationException(
                     "deploymentId est obligatoire"
@@ -451,6 +487,10 @@ public class DeploymentService {
                 backendImage,
                 frontendImage
         );
+        // Le commit exact construit, s'il est transmis par Jenkins (7 à 40 caractères hexadécimaux).
+        if (builtCommit != null && builtCommit.trim().matches("^[0-9a-f]{7,40}$")) {
+            deployment.setBuiltCommit(builtCommit.trim());
+        }
 
         if (currentStatus == newStatus) {
             deploymentRepository.saveAndFlush(deployment);
@@ -556,6 +596,14 @@ public class DeploymentService {
         }
 
         version.setBuildStatus(BuildStatus.SUCCESS);
+
+        // RG-V2 : la première construction réussie fige la version sur son commit exact.
+        if (version.getPinnedAt() == null) {
+            if (version.getGitCommit() == null && deployment.getBuiltCommit() != null) {
+                version.setGitCommit(deployment.getBuiltCommit());
+            }
+            version.setPinnedAt(LocalDateTime.now());
+        }
 
         // La version garde la référence exacte de l'image construite.
         if (deployment.getDeployedBackendImage() != null) {
@@ -692,6 +740,24 @@ public class DeploymentService {
                 )
                 .map(latest -> deployment.getId().equals(latest.getId()))
                 .orElse(false);
+    }
+
+    /**
+     * RG-V4 : le déploiement le plus récent de cette version dont les images, par empreinte,
+     * peuvent être réutilisées (réussi ou remplacé ; frontend requis si l'architecture en a un).
+     */
+    Deployment reusableImages(Version version, boolean needFrontend) {
+        if (version == null || version.getId() == null) {
+            return null;
+        }
+        return deploymentRepository.findByVersion_IdAndDeletedFalse(version.getId()).stream()
+                .filter(d -> d.getStatus() == DeploymentStatus.SUCCESS || d.getStatus() == DeploymentStatus.ROLLED_BACK)
+                .filter(d -> d.getDeployedBackendImage() != null && d.getDeployedBackendImage().contains("@sha256:"))
+                .filter(d -> !needFrontend
+                        || (d.getDeployedFrontendImage() != null && d.getDeployedFrontendImage().contains("@sha256:")))
+                .max(java.util.Comparator.comparing(Deployment::getCreatedAt,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .orElse(null);
     }
 
     private static final java.util.regex.Pattern IMAGE_REFERENCE =
@@ -1205,7 +1271,9 @@ public class DeploymentService {
                 deployment.getUpdatedAt(),
                 deployment.getDeployedBackendImage(),
                 deployment.getDeployedFrontendImage(),
-                isCurrentDeployment(deployment)
+                isCurrentDeployment(deployment),
+                deployment.getImagesFrom() == null ? null : deployment.getImagesFrom().getId(),
+                deployment.getBuiltCommit()
         );
     }
 
