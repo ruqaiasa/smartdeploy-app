@@ -114,6 +114,12 @@ public class AlertScheduler {
                     metrics.restartCount()
             );
 
+            if (metrics.runningPods() < 0) {
+                // Pas de mesure des pods disponibles : on ne conclut rien (ni alerte, ni résolution).
+                LOGGER.debug("Déploiement #{} : pas de mesure des pods disponibles, alertes non évaluées", deployment.getId());
+                return;
+            }
+
             alertDetectionService.evaluateApplicationHealth(
                     deployment.getEnvironment().getApplication(),
                     deployment.getEnvironment(),

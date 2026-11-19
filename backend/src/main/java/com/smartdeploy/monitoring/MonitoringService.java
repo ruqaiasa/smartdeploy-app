@@ -121,10 +121,13 @@ public class MonitoringService {
                         memoryQuery
                 );
 
-        int runningPods =
-                (int) prometheusClient.querySingleValue(
+        // Aucune série pour les pods disponibles : « pas de mesure » (-1), jamais « zéro pod »,
+        // sinon une simple absence de métrique ouvrirait une fausse alerte d'indisponibilité.
+        java.util.OptionalDouble runningMeasure =
+                prometheusClient.queryOptionalValue(
                         runningPodsQuery
                 );
+        int runningPods = runningMeasure.isPresent() ? (int) runningMeasure.getAsDouble() : -1;
 
         int desiredPods =
                 (int) prometheusClient.querySingleValue(
@@ -136,8 +139,9 @@ public class MonitoringService {
                         restartCountQuery
                 );
 
-        HealthStatus healthStatus =
-                healthEvaluationService.evaluate(
+        HealthStatus healthStatus = runningPods < 0
+                ? HealthStatus.UNKNOWN
+                : healthEvaluationService.evaluate(
                         cpuUsage,
                         memoryUsage,
                         runningPods,

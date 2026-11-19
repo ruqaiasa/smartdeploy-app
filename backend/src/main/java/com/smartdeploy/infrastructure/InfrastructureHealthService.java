@@ -29,6 +29,7 @@ public class InfrastructureHealthService {
     private final ApplicationEventPublisher eventPublisher;
     private final Map<String, RaidSnapshot> lastSnapshots = new ConcurrentHashMap<>();
     private volatile boolean prometheusReachable = true;
+    private final Map<String, FilesystemUsage> lastFilesystems = new ConcurrentHashMap<>();
 
     public InfrastructureHealthService(RaidMetricsReader reader, ApplicationEventPublisher eventPublisher) {
         this.reader = reader;
@@ -63,6 +64,36 @@ public class InfrastructureHealthService {
                 log.warn("RAID {} : {}", current.device(), current.message());
             }
         }
+    }
+
+    /** Espace disque des RAID : une alerte à 80 %, puis à 90 %, et au retour à la normale. */
+    @Scheduled(initialDelayString = "${smartdeploy.infrastructure.raid-initial-delay-ms:20000}",
+               fixedDelayString = "${smartdeploy.infrastructure.space-check-delay-ms:300000}")
+    public void checkSpace() {
+        List<FilesystemUsage> usages;
+        try {
+            usages = reader.readFilesystems(Instant.now());
+        } catch (RuntimeException exception) {
+            log.debug("Santé de l'infrastructure : espace disque illisible ({})", exception.getMessage());
+            return;
+        }
+        for (FilesystemUsage current : usages) {
+            FilesystemUsage previous = lastFilesystems.put(current.device(), current);
+            AuditAction action = FilesystemEvaluator.transition(previous == null ? null : previous.level(), current.level());
+            if (action != null) {
+                eventPublisher.publishEvent(new AuditEvent(action, ACTOR, "INFRASTRUCTURE", null, null, null,
+                        "RAID " + current.device() + " : " + current.message(),
+                        "Seuils : avertissement à 80 %, critique à 90 %", false));
+                log.warn("RAID {} : {}", current.device(), current.message());
+            }
+        }
+    }
+
+    /** Dernière occupation connue des systèmes de fichiers des RAID. */
+    public List<FilesystemUsage> filesystems() {
+        return lastFilesystems.values().stream()
+                .sorted((a, b) -> a.device().compareTo(b.device()))
+                .toList();
     }
 
     /** Dernier état connu de chaque RAID ; liste vide si aucune mesure encore lue. */

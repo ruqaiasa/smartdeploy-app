@@ -60,6 +60,19 @@ public enum AuditAction {
     // Promotion entre environnements : exception d'urgence (RG-P5)
     DEPLOYMENT_EMERGENCY_OVERRIDE,
 
+    // Protection des données et stockage (lot Velero et RAID)
+    BACKUP_PROTECTION_DEGRADED,
+    BACKUP_PROTECTION_RESTORED,
+    BACKUP_STORAGE_UNAVAILABLE,
+    BACKUP_STORAGE_AVAILABLE,
+    PLATFORM_BACKUP_SUCCEEDED,
+    PLATFORM_BACKUP_FAILED,
+    RESTORE_VERIFIED,
+    RESTORE_UNHEALTHY,
+    STORAGE_SPACE_LOW,
+    STORAGE_SPACE_CRITICAL,
+    STORAGE_SPACE_OK,
+
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
     DEPLOYMENT_STARTED,

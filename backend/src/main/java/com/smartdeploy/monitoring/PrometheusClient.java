@@ -38,6 +38,30 @@ public class PrometheusClient {
                 .body(String.class);
     }
 
+    /**
+     * Première valeur d'une requête, ou vide si Prometheus ne renvoie aucune série.
+     * À utiliser quand « pas de mesure » doit être distingué de « zéro ».
+     */
+    public java.util.OptionalDouble queryOptionalValue(String promQlQuery) {
+        return firstValue(query(promQlQuery));
+    }
+
+    static java.util.OptionalDouble firstValue(String response) {
+        try {
+            JsonNode results = new ObjectMapper().readTree(response).path("data").path("result");
+            if (!results.isArray() || results.isEmpty()) {
+                return java.util.OptionalDouble.empty();
+            }
+            JsonNode value = results.get(0).path("value");
+            if (!value.isArray() || value.size() < 2) {
+                return java.util.OptionalDouble.empty();
+            }
+            return java.util.OptionalDouble.of(Double.parseDouble(value.get(1).asText()));
+        } catch (Exception exception) {
+            throw new IllegalStateException("Impossible de lire la réponse Prometheus", exception);
+        }
+    }
+
     public double querySingleValue(String promQlQuery) {
 
         String response = query(promQlQuery);

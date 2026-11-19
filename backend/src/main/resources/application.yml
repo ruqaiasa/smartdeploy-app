@@ -38,6 +38,21 @@ smartdeploy:
   # Promotion entre environnements : types où une validation préalable par le gardien est exigée
   promotion:
     required-for: ${SMARTDEPLOY_PROMOTION_REQUIRED_FOR:PRODUCTION}
+  # Accès au cluster Kubernetes (compte de service smartdeploy-backend)
+  kubernetes:
+    master-url: ${SMARTDEPLOY_K8S_URL:https://192.168.85.129:6443}
+    token-path: ${SMARTDEPLOY_K8S_TOKEN_PATH:C:/smartdeploy-k8s/smartdeploy-token}
+    ca-path: ${SMARTDEPLOY_K8S_CA_PATH:C:/smartdeploy-k8s/smartdeploy-ca.crt}
+  # Sauvegarde de la base de SmartDeploy (pg_dump depuis le conteneur Docker)
+  platform-backup:
+    enabled: ${SMARTDEPLOY_PLATFORM_BACKUP_ENABLED:true}
+    cron: "0 30 2 * * *"
+    container: ${SMARTDEPLOY_DB_CONTAINER:smartdeploy-postgres}
+    database: ${SMARTDEPLOY_DB_NAME:smartdeploy_db}
+    directory: ${SMARTDEPLOY_PLATFORM_BACKUP_DIR:${user.home}/smartdeploy-sauvegardes}
+    retention: 7
+    # Adresse SAS d'un conteneur Azure (facultative) : https://<compte>.blob.core.windows.net/<conteneur>?<jeton>
+    azure-container-sas-url: ${SMARTDEPLOY_PLATFORM_BACKUP_SAS_URL:}
   jenkins:
     url: ${JENKINS_URL:http://192.168.85.129:8080}
     username: ${JENKINS_USERNAME:admin}
@@ -51,7 +66,7 @@ smartdeploy:
       # Webhook entrant Slack : secret, à placer dans .env. Vide = notifications désactivées.
       webhook-url: ${SMARTDEPLOY_SLACK_WEBHOOK_URL:}
       # Actions notifiées (liste séparée par des virgules), voir SlackNotifier.DEFAULT_ACTIONS.
-      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED,GUARD_AUTO_ROLLBACK,INCIDENT_ANALYZED,BACKUP_FAILED,RESTORE_STARTED,RESTORE_COMPLETED,RESTORE_FAILED,RAID_DEGRADED,RAID_RECOVERING,RAID_RESTORED,DEPLOYMENT_APPROVAL_REQUESTED,DEPLOYMENT_APPROVED,DEPLOYMENT_REJECTED,DEPLOYMENT_APPROVAL_EXPIRED,DEPLOYMENT_EMERGENCY_OVERRIDE}
+      actions: ${SMARTDEPLOY_SLACK_ACTIONS:DEPLOYMENT_SUCCEEDED,DEPLOYMENT_FAILED,DEPLOYMENT_ROLLBACK_REQUESTED,DEPLOYMENT_EXPIRED,SUSPICIOUS_ACTIVITY,USER_ROLE_CHANGED,ALERT_OPENED,ALERT_RESOLVED,GUARD_DEGRADED,GUARD_AUTO_ROLLBACK,INCIDENT_ANALYZED,BACKUP_FAILED,RESTORE_STARTED,RESTORE_COMPLETED,RESTORE_FAILED,RAID_DEGRADED,RAID_RECOVERING,RAID_RESTORED,DEPLOYMENT_APPROVAL_REQUESTED,DEPLOYMENT_APPROVED,DEPLOYMENT_REJECTED,DEPLOYMENT_APPROVAL_EXPIRED,DEPLOYMENT_EMERGENCY_OVERRIDE,BACKUP_PROTECTION_DEGRADED,BACKUP_PROTECTION_RESTORED,BACKUP_STORAGE_UNAVAILABLE,BACKUP_STORAGE_AVAILABLE,PLATFORM_BACKUP_FAILED,RESTORE_VERIFIED,RESTORE_UNHEALTHY,STORAGE_SPACE_LOW,STORAGE_SPACE_CRITICAL,STORAGE_SPACE_OK}
   # Gardien de déploiement : surveillance après chaque mise en service.
   guard:
     enabled: ${SMARTDEPLOY_GUARD_ENABLED:true}

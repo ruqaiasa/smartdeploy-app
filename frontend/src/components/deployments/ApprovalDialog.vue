@@ -35,6 +35,7 @@ const requestedAt = computed(() => props.deployment?.createdAt
 
       <label class="ad-label" for="ad-comment">Commentaire <span>(obligatoire pour un refus)</span></label>
       <textarea id="ad-comment" v-model="comment" rows="3" maxlength="1000" placeholder="Par exemple : validée en test le 16/11, sans réserve du gardien." :disabled="loading" />
+      <p v-if="!canReject" class="ad-hint">Pour refuser, indiquez la raison : elle sera transmise à la personne qui a fait la demande.</p>
 
       <p v-if="error" class="ad-error" role="alert">{{ error }}</p>
 
@@ -59,6 +60,7 @@ const requestedAt = computed(() => props.deployment?.createdAt
 .ad-label { font-size: 13.5px; font-weight: 600; color: #334155; }
 .ad-label span { font-weight: 400; color: #64748b; }
 .ad textarea { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
+.ad-hint { margin: -4px 0 0; color: #64748b; font-size: 12.5px; }
 .ad-error { margin: 0; padding: 9px 11px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 13.5px; }
 .ad-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .ad-btn { padding: 8px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }

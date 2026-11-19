@@ -29,6 +29,17 @@ public final class SlackMessageBuilder {
             case DEPLOYMENT_REJECTED -> "Déploiement en production refusé";
             case DEPLOYMENT_APPROVAL_EXPIRED -> "Demande d'approbation expirée";
             case DEPLOYMENT_EMERGENCY_OVERRIDE -> "Exception d'urgence : déploiement sans validation préalable";
+            case BACKUP_PROTECTION_DEGRADED -> "Protection des données dégradée";
+            case BACKUP_PROTECTION_RESTORED -> "Protection des données rétablie";
+            case BACKUP_STORAGE_UNAVAILABLE -> "Stockage des sauvegardes indisponible";
+            case BACKUP_STORAGE_AVAILABLE -> "Stockage des sauvegardes de nouveau disponible";
+            case PLATFORM_BACKUP_SUCCEEDED -> "Base de SmartDeploy sauvegardée";
+            case PLATFORM_BACKUP_FAILED -> "Échec de la sauvegarde de la base de SmartDeploy";
+            case RESTORE_VERIFIED -> "Application de nouveau en bonne santé après restauration";
+            case RESTORE_UNHEALTHY -> "Application non rétablie après restauration";
+            case STORAGE_SPACE_LOW -> "Espace disque du RAID bientôt saturé";
+            case STORAGE_SPACE_CRITICAL -> "Espace disque du RAID presque plein";
+            case STORAGE_SPACE_OK -> "Espace disque du RAID de nouveau suffisant";
             case DEPLOYMENT_ROLLBACK_REQUESTED -> "Rollback demandé";
             case DEPLOYMENT_EXPIRED -> "Déploiement bloqué";
             case SUSPICIOUS_ACTIVITY -> "Activité suspecte";

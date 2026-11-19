@@ -15,18 +15,23 @@ import java.nio.file.Path;
 @Configuration
 public class KubernetesClientConfiguration {
 
+    /*
+     * Adresse du cluster et fichiers d'accès du compte de service, lus dans application.yml
+     * (section smartdeploy.kubernetes), et non plus écrits en dur dans le code.
+     */
+    @org.springframework.beans.factory.annotation.Value("${smartdeploy.kubernetes.master-url:https://192.168.85.129:6443}")
+    private String masterUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${smartdeploy.kubernetes.token-path:C:/smartdeploy-k8s/smartdeploy-token}")
+    private String tokenFile;
+
+    @org.springframework.beans.factory.annotation.Value("${smartdeploy.kubernetes.ca-path:C:/smartdeploy-k8s/smartdeploy-ca.crt}")
+    private String caFile;
+
     @Bean(destroyMethod = "close")
     public KubernetesClient kubernetesClient() throws Exception {
-
-        String masterUrl = "https://192.168.85.129:6443";
-
-        Path tokenPath = Path.of(
-                "C:/smartdeploy-k8s/smartdeploy-token"
-        );
-
-        Path caPath = Path.of(
-                "C:/smartdeploy-k8s/smartdeploy-ca.crt"
-        );
+        Path tokenPath = Path.of(tokenFile);
+        Path caPath = Path.of(caFile);
 
         String token = Files.readString(
                 tokenPath,

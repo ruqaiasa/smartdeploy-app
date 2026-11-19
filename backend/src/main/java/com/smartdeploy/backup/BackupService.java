@@ -38,6 +38,13 @@ public class BackupService {
     private final EnvironmentRepository environmentRepository;
     private final BackupTasks tasks;
     private final ApplicationEventPublisher eventPublisher;
+    private com.smartdeploy.deployment.DeploymentRepository deploymentRepository;
+
+    /** Facultatif : vérifie qu'aucun déploiement n'est en cours avant une restauration. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDeploymentRepository(com.smartdeploy.deployment.DeploymentRepository deploymentRepository) {
+        this.deploymentRepository = deploymentRepository;
+    }
 
     public BackupService(VeleroClient velero, VeleroProperties properties, EnvironmentRepository environmentRepository,
                          BackupTasks tasks, ApplicationEventPublisher eventPublisher) {
@@ -104,6 +111,15 @@ public class BackupService {
         }
         if (!"Completed".equals(VeleroClient.phase(backup))) {
             throw new IllegalStateException("Seule une sauvegarde terminée avec succès peut être restaurée");
+        }
+        // Une restauration en remplacement supprime l'espace de noms : jamais pendant un déploiement.
+        if (mode == RestoreMode.REPLACE && deploymentRepository != null
+                && deploymentRepository.existsByEnvironmentAndStatusInAndDeletedFalse(environment, List.of(
+                        com.smartdeploy.deployment.DeploymentStatus.PENDING,
+                        com.smartdeploy.deployment.DeploymentStatus.RUNNING,
+                        com.smartdeploy.deployment.DeploymentStatus.AWAITING_APPROVAL))) {
+            throw new IllegalStateException(
+                    "Un déploiement est en attente, en cours ou à approuver dans cet environnement : terminez-le ou annulez-le avant de restaurer");
         }
         LocalDateTime now = LocalDateTime.now();
         String target = mode == RestoreMode.SIDE

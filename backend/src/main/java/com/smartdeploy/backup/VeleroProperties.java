@@ -36,4 +36,10 @@ public class VeleroProperties {
     public int restorePointTimeoutSeconds() { return restorePointTimeoutSeconds; }
     public String restorePointTtl() { return restorePointTtl; }
     public String manualBackupTtl() { return manualBackupTtl; }
+
+    /** Délai laissé à l'application pour redémarrer après une restauration (5 minutes par défaut). */
+    @Value("${smartdeploy.velero.restore-health-timeout-seconds:300}")
+    private int restoreHealthTimeoutSeconds = 300;
+
+    public int restoreHealthTimeoutSeconds() { return restoreHealthTimeoutSeconds; }
 }

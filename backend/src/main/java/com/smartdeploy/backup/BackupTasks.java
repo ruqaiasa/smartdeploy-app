@@ -49,6 +49,7 @@ public class BackupTasks {
     public void runRestore(String restoreName, String backupName, String sourceNamespace, String targetNamespace, boolean replace,
                            Long environmentId, String environmentName, String applicationName,
                            java.time.LocalDateTime backupTakenAt, Long restorePointDeploymentId) {
+        long startedAt = System.currentTimeMillis();
         try {
             if (replace && velero.namespaceExists(targetNamespace)) {
                 velero.deleteNamespace(targetNamespace);
@@ -67,6 +68,7 @@ public class BackupTasks {
             if (ok && replace) {
                 // L'environnement tourne de nouveau dans l'état de la sauvegarde.
                 deploymentService.markReplacedAfterRestore(environmentId, backupTakenAt, restorePointDeploymentId, restoreName);
+                verifyRestoredWorkloads(restoreName, targetNamespace, startedAt, environmentId, environmentName, applicationName);
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
@@ -74,6 +76,31 @@ public class BackupTasks {
             log.error("Restauration impossible : {}", restoreName, exception);
             audit(AuditAction.RESTORE_FAILED, environmentId, environmentName, applicationName,
                     "Restauration « " + restoreName + " » impossible : " + exception.getMessage(), null);
+        }
+    }
+
+    /**
+     * Après une restauration en remplacement, vérifie que l'application redémarre réellement :
+     * toutes ses charges doivent être prêtes dans le délai imparti. La durée totale, de la demande
+     * à l'application de nouveau prête, est le temps de reprise (RTO) effectivement mesuré.
+     */
+    void verifyRestoredWorkloads(String restoreName, String namespace, long startedAt,
+                                 Long environmentId, String environmentName, String applicationName) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + properties.restoreHealthTimeoutSeconds() * 1000L;
+        java.util.List<String> unready = velero.unreadyWorkloads(namespace);
+        while (!unready.isEmpty() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(POLL_MILLIS);
+            unready = velero.unreadyWorkloads(namespace);
+        }
+        long seconds = (System.currentTimeMillis() - startedAt) / 1000;
+        if (unready.isEmpty() && velero.workloadCount(namespace) > 0) {
+            audit(AuditAction.RESTORE_VERIFIED, environmentId, environmentName, applicationName,
+                    "Après « " + restoreName + " », l'application est de nouveau prête : temps de reprise mesuré " + seconds + " s",
+                    "Toutes les charges de " + namespace + " sont prêtes.");
+        } else {
+            audit(AuditAction.RESTORE_UNHEALTHY, environmentId, environmentName, applicationName,
+                    "Après « " + restoreName + " », l'application n'est pas rétablie au bout de " + seconds + " s",
+                    unready.isEmpty() ? "Aucune charge trouvée dans " + namespace : "Non prêtes : " + String.join(", ", unready));
         }
     }
 

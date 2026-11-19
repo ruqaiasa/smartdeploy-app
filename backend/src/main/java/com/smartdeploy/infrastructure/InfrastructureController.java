@@ -9,7 +9,7 @@ import java.util.List;
 @RestController
 public class InfrastructureController {
 
-    public record StorageHealthResponse(boolean prometheusReachable, List<RaidSnapshot> raids) {
+    public record StorageHealthResponse(boolean prometheusReachable, List<RaidSnapshot> raids, List<FilesystemUsage> filesystems) {
     }
 
     private final InfrastructureHealthService service;
@@ -22,6 +22,6 @@ public class InfrastructureController {
     @GetMapping("/api/infrastructure/storage")
     @PreAuthorize("isAuthenticated()")
     public StorageHealthResponse storage() {
-        return new StorageHealthResponse(service.prometheusReachable(), service.storage());
+        return new StorageHealthResponse(service.prometheusReachable(), service.storage(), service.filesystems());
     }
 }

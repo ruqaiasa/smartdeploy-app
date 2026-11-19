@@ -69,7 +69,10 @@ const failureTone = computed(() => {
         <label class="pn-label" for="pn-emergency">Exception d’urgence (administrateur) : justification obligatoire</label>
         <textarea id="pn-emergency" v-model="emergencyJustification" rows="2" maxlength="500"
           placeholder="Par exemple : correctif urgent de la panne de paiement en production." />
-        <small>Au moins 10 caractères. L’exception est tracée au journal et notifiée à l’équipe.</small>
+        <small>
+          <strong :class="justificationOk ? 'pn-count-ok' : 'pn-count-ko'">{{ emergencyJustification.trim().length }} / 10 caractères minimum</strong>
+          · L’exception est tracée au journal et notifiée à l’équipe.
+        </small>
       </template>
     </div>
     <div v-else-if="precheck.promotion?.required && precheck.promotion.satisfied" class="pn-box is-ok">
@@ -160,6 +163,8 @@ const failureTone = computed(() => {
 .pn { display: flex; flex-direction: column; gap: 10px; }
 .pn-box { display: flex; flex-direction: column; gap: 4px; padding: 11px 13px; border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; font-size: 13.5px; line-height: 1.5; }
 .pn-box strong { font-size: 14px; }
+.pn-count-ok { color: #15803d; }
+.pn-count-ko { color: #b91c1c; }
 .pn-box.is-ok { border-color: #bbf7d0; border-left-color: #16a34a; background: #f0fdf4; color: #14532d; }
 .pn-label { margin-top: 6px; font-weight: 600; }
 .pn-box textarea { padding: 8px 10px; border: 1px solid #fca5a5; border-radius: 8px; font: inherit; font-size: 13.5px; resize: vertical; background: #fff; }

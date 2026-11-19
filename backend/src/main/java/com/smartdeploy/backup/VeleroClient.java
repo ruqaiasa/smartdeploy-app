@@ -81,6 +81,46 @@ public class VeleroClient {
         kubernetesClient.namespaces().withName(namespace).delete();
     }
 
+    static final ResourceDefinitionContext STORAGE_LOCATION = new ResourceDefinitionContext.Builder()
+            .withGroup("velero.io").withVersion("v1").withKind("BackupStorageLocation").withPlural("backupstoragelocations")
+            .withNamespaced(true).build();
+
+    /** Phase de l'emplacement de stockage « default » (Available, Unavailable), ou vide si illisible. */
+    public Optional<String> storageLocationPhase() {
+        GenericKubernetesResource location = kubernetesClient.genericKubernetesResources(STORAGE_LOCATION)
+                .inNamespace(properties.namespace()).withName("default").get();
+        if (location == null) {
+            return Optional.empty();
+        }
+        Object status = location.getAdditionalProperties().get("status");
+        if (status instanceof Map<?, ?> map && map.get("phase") != null) {
+            return Optional.of(String.valueOf(map.get("phase")));
+        }
+        return Optional.empty();
+    }
+
+    /** Charges de l'espace de noms qui ne sont pas encore prêtes (Deployment, StatefulSet) ; vide si tout est prêt. */
+    public java.util.List<String> unreadyWorkloads(String namespace) {
+        java.util.List<String> unready = new java.util.ArrayList<>();
+        kubernetesClient.apps().deployments().inNamespace(namespace).list().getItems().forEach(d -> {
+            int wanted = d.getSpec() == null || d.getSpec().getReplicas() == null ? 1 : d.getSpec().getReplicas();
+            int ready = d.getStatus() == null || d.getStatus().getReadyReplicas() == null ? 0 : d.getStatus().getReadyReplicas();
+            if (ready < wanted) unready.add(d.getMetadata().getName() + " (" + ready + "/" + wanted + ")");
+        });
+        kubernetesClient.apps().statefulSets().inNamespace(namespace).list().getItems().forEach(st -> {
+            int wanted = st.getSpec() == null || st.getSpec().getReplicas() == null ? 1 : st.getSpec().getReplicas();
+            int ready = st.getStatus() == null || st.getStatus().getReadyReplicas() == null ? 0 : st.getStatus().getReadyReplicas();
+            if (ready < wanted) unready.add(st.getMetadata().getName() + " (" + ready + "/" + wanted + ")");
+        });
+        return unready;
+    }
+
+    /** Nombre de charges (Deployment et StatefulSet) dans l'espace de noms. */
+    public int workloadCount(String namespace) {
+        return kubernetesClient.apps().deployments().inNamespace(namespace).list().getItems().size()
+                + kubernetesClient.apps().statefulSets().inNamespace(namespace).list().getItems().size();
+    }
+
     /** Phase Velero d'un objet (New, InProgress, Completed, PartiallyFailed, Failed…). */
     static String phase(GenericKubernetesResource resource) {
         Object status = resource.getAdditionalProperties().get("status");

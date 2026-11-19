@@ -11,7 +11,20 @@ export interface RaidSnapshot {
   checkedAt: string
 }
 
+/** Occupation du système de fichiers posé sur un RAID. */
+export interface FilesystemUsage {
+  device: string
+  mountpoint: string
+  sizeBytes: number
+  availableBytes: number
+  usedPercent: number
+  level: 'OK' | 'WARNING' | 'CRITICAL'
+  message: string
+  checkedAt: string
+}
+
 export interface StorageHealthResponse {
   prometheusReachable: boolean
   raids: RaidSnapshot[]
+  filesystems?: FilesystemUsage[]
 }

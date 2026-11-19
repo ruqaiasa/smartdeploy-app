@@ -1,5 +1,5 @@
 import httpClient from '@/api/httpClient'
-import type { BackupEnvironment, BackupInfo, EnvironmentProtection, RestoreResult } from '@/types/backup'
+import type { BackupEnvironment, BackupInfo, EnvironmentProtection, PlatformBackupRun, PlatformBackupStatus, RestoreResult, StorageLocationStatus } from '@/types/backup'
 
 export async function getBackups(environmentId: number): Promise<BackupInfo[]> {
   const response = await httpClient.get<BackupInfo[]>(`/api/environments/${environmentId}/backups`)
@@ -39,4 +39,20 @@ export async function getRestorePoints(): Promise<BackupInfo[]> {
 export async function getProtection(): Promise<EnvironmentProtection[]> {
   const response = await httpClient.get<EnvironmentProtection[]>('/api/backups/protection')
   return Array.isArray(response.data) ? response.data : []
+}
+
+export async function getStorageLocation(): Promise<StorageLocationStatus> {
+  const response = await httpClient.get<StorageLocationStatus>('/api/backups/storage-location')
+  return response.data
+}
+
+/* Sauvegarde de la base de SmartDeploy elle-même */
+export async function getPlatformBackupStatus(): Promise<PlatformBackupStatus> {
+  const response = await httpClient.get<PlatformBackupStatus>('/api/platform-backup/status')
+  return response.data
+}
+
+export async function runPlatformBackup(): Promise<PlatformBackupRun> {
+  const response = await httpClient.post<PlatformBackupRun>('/api/platform-backup/run')
+  return response.data
 }

@@ -1,10 +1,5 @@
 import axios from 'axios'
 
-console.log(
-  'VITE_API_BASE_URL =',
-  import.meta.env.VITE_API_BASE_URL,
-)
-
 const AUTH_STORAGE_KEY = 'smartdeploy-auth'
 
 const httpClient = axios.create({

@@ -651,7 +651,13 @@ void sdDockerBuild() {
                         withEnv(["BACKEND_DOCKERFILE=${params.BACKEND_DOCKERFILE_PATH.trim()}"]) {
                             sh '''
                                 set -eu
-                                docker build -f "$BACKEND_DOCKERFILE" -t "$FULL_DOCKER_IMAGE" .
+                                # Une seconde tentative en cas d'incident réseau passager (téléchargement en échec, cas #126).
+                                for tentative in 1 2; do
+                                    if docker build -f "$BACKEND_DOCKERFILE" -t "$FULL_DOCKER_IMAGE" .; then break; fi
+                                    if [ "$tentative" = 2 ]; then echo "Docker Build : échec après 2 tentatives" >&2; exit 1; fi
+                                    echo "Docker Build : échec de la tentative 1 sur 2 (incident réseau possible), nouvelle tentative dans 15 s"
+                                    sleep 15
+                                done
                             '''
                         }
                     }
@@ -832,7 +838,13 @@ void sdDockerBuildFrontend() {
                             FRONTEND_DOCKERFILE="$FRONTEND_CONTEXT/$FRONTEND_DOCKERFILE"
                         fi
                         test -f "$FRONTEND_DOCKERFILE" || { echo "Dockerfile frontend absent : $FRONTEND_DOCKERFILE" >&2; exit 1; }
-                        docker build -f "$FRONTEND_DOCKERFILE" -t "$FRONTEND_TARGET_IMAGE" "$FRONTEND_CONTEXT"
+                        # Une seconde tentative en cas d'incident réseau passager.
+                        for tentative in 1 2; do
+                            if docker build -f "$FRONTEND_DOCKERFILE" -t "$FRONTEND_TARGET_IMAGE" "$FRONTEND_CONTEXT"; then break; fi
+                            if [ "$tentative" = 2 ]; then echo "Docker Build Frontend : échec après 2 tentatives" >&2; exit 1; fi
+                            echo "Docker Build Frontend : échec de la tentative 1 sur 2 (incident réseau possible), nouvelle tentative dans 15 s"
+                            sleep 15
+                        done
                         docker image inspect "$FRONTEND_TARGET_IMAGE" >/dev/null
                     '''
                 }

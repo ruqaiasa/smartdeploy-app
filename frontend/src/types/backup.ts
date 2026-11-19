@@ -40,3 +40,31 @@ export interface EnvironmentProtection {
   lastBackupAt: string | null
   message: string
 }
+
+/** Disponibilité du stockage des sauvegardes (emplacement Velero « default »). */
+export interface StorageLocationStatus {
+  phase: string | null
+  readable: boolean
+  checkedAt: string | null
+}
+
+/** Une exécution de la sauvegarde de la base de SmartDeploy. */
+export interface PlatformBackupRun {
+  id: number
+  startedAt: string
+  finishedAt: string | null
+  success: boolean
+  sizeBytes: number | null
+  uploaded: boolean
+  triggeredBy: string | null
+  message: string | null
+}
+
+export interface PlatformBackupStatus {
+  enabled: boolean
+  uploadConfigured: boolean
+  directory: string
+  retention: number
+  lastRun: PlatformBackupRun | null
+  lastSuccess: PlatformBackupRun | null
+}

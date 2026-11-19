@@ -42,7 +42,7 @@ const steps = computed(() => {
   const g = props.guard
   const list = [
     { label: 'Mise en service', detail: `Surveillance jusqu’à ${time(g.endsAt)}`, at: g.startedAt, done: true },
-    { label: `${g.evaluations} évaluation${g.evaluations > 1 ? 's' : ''}`, detail: 'Une mesure toutes les 30 secondes', at: g.lastEvaluatedAt, done: g.evaluations > 0 },
+    { label: `${g.evaluations} évaluation${g.evaluations > 1 ? 's' : ''}`, detail: 'Une mesure environ toutes les 45 secondes', at: g.lastEvaluatedAt, done: g.evaluations > 0 },
     { label: 'Verdict', detail: STATUS_TITLES[g.status], at: g.decidedAt, done: g.status !== 'WATCHING' },
   ]
   if (g.status === 'DEGRADED' && g.rollbackTargetId) {
