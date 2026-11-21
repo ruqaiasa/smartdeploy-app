@@ -246,11 +246,6 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
         <h2>Historique · {{ environment.applicationName }} · {{ environment.environmentName }}</h2>
         <span class="bk-muted">Conservées 7 jours ; points de restauration avant déploiement : 3 jours</span>
       </header>
-      <p class="bk-explain">
-        Les sauvegardes <strong>automatiques</strong> de la nuit couvrent <strong>tout le cluster</strong> (toutes les applications à la fois) :
-        elles apparaissent dans chaque environnement. Les sauvegardes <strong>manuelles</strong> et <strong>avant déploiement</strong>
-        ne couvrent que <strong>cet environnement</strong> (<code>{{ environment.namespace }}</code>).
-      </p>
       <p v-if="loading && !backups.length" class="bk-muted">Chargement des sauvegardes…</p>
       <p v-else-if="!backups.length" class="bk-muted">Aucune sauvegarde pour le moment.</p>
       <div v-else class="bk-table-wrap">
@@ -320,8 +315,6 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
 .bk-table small { display: block; color: #6b7280; font-size: 12px; }
 .bk-date { font-weight: 600; }
 .bk-table .bk-right { text-align: right; }
-.bk-explain { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 13px; line-height: 1.5; }
-.bk-explain code { font-size: 12px; }
 .bk-scope { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: help; }
 .bk-scope.is-cluster { background: #f1f5f9; color: #334155; }
 .bk-scope.is-env { background: #e0e7ff; color: #3730a3; }
