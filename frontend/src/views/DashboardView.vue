@@ -28,12 +28,34 @@ const kpis = computed(() => {
   const d = dashboard.value
   if (!d) return []
   return [
-    { key: 'apps', label: 'Applications', value: d.totalApplications, detail: `${d.activeApplications} active${d.activeApplications > 1 ? 's' : ''}`, to: '/applications' },
-    { key: 'envs', label: 'Environnements', value: d.totalEnvironments, detail: `${d.activeEnvironments} actif${d.activeEnvironments > 1 ? 's' : ''}`, to: '/environments' },
-    { key: 'deps', label: 'Déploiements', value: d.totalDeployments, detail: `${d.successfulDeployments} réussis · ${d.failedDeployments} échoués`, to: '/deployments' },
+    { key: 'apps', label: 'Applications', value: d.totalApplications, detail: `${d.activeApplications} active${d.activeApplications > 1 ? 's' : ''}`, to: '/applications', tone: 'blue',
+      icon: 'M4 5h12v4H4zM4 11h12v4H4z' },
+    { key: 'envs', label: 'Environnements', value: d.totalEnvironments, detail: `${d.activeEnvironments} actif${d.activeEnvironments > 1 ? 's' : ''}`, to: '/environments', tone: 'teal',
+      icon: 'M10 3l7 4-7 4-7-4zM3 11l7 4 7-4' },
+    { key: 'deps', label: 'Déploiements', value: d.totalDeployments, detail: `${d.successfulDeployments} réussis · ${d.failedDeployments} échoués`, to: '/deployments', tone: 'violet',
+      icon: 'M10 16V5M5.5 9.5 10 5l4.5 4.5' },
   ]
 })
 const successRate = computed(() => Math.round((dashboard.value?.successRate ?? 0) * 10) / 10)
+
+/* Anneau « Résultats des déploiements » : réussis, échoués, autres (annulés, refusés, remplacés…) */
+const ring = computed(() => {
+  const d = dashboard.value
+  const total = d?.totalDeployments ?? 0
+  const ok = d?.successfulDeployments ?? 0
+  const ko = d?.failedDeployments ?? 0
+  const other = Math.max(0, total - ok - ko)
+  const circumference = 2 * Math.PI * 42
+  const part = (n: number) => (total ? (n / total) * circumference : 0)
+  return {
+    total, ok, ko, other, circumference,
+    segments: [
+      { key: 'ok', length: part(ok), offset: 0, color: '#16a34a' },
+      { key: 'ko', length: part(ko), offset: part(ok), color: '#dc2626' },
+      { key: 'other', length: part(other), offset: part(ok) + part(ko), color: '#cbd5e1' },
+    ],
+  }
+})
 const rateTone = computed(() => successRate.value >= 85 ? 'ok' : successRate.value >= 60 ? 'warning' : 'critical')
 
 /* Ce qui demande une action, pour le bandeau d'état et la colonne « À traiter » */
@@ -128,11 +150,17 @@ onMounted(load)
       <!-- Chiffres clés -->
       <div class="db-kpis">
         <RouterLink v-for="k in kpis" :key="k.key" :to="k.to" class="db-kpi">
+          <span class="db-kpi-icon" :class="`is-${k.tone}`" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="18" height="18"><path :d="k.icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </span>
           <span class="db-kpi-label">{{ k.label }}</span>
           <strong class="db-kpi-value">{{ k.value }}</strong>
           <span class="db-kpi-detail">{{ k.detail }}</span>
         </RouterLink>
         <div class="db-kpi">
+          <span class="db-kpi-icon is-green" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="18" height="18"><path d="M4.5 10.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </span>
           <span class="db-kpi-label">Taux de réussite</span>
           <strong class="db-kpi-value">{{ successRate.toLocaleString('fr-FR') }} %</strong>
           <span class="db-bar" :class="`is-${rateTone}`"><span :style="{ width: `${Math.min(100, successRate)}%` }" /></span>
@@ -151,21 +179,25 @@ onMounted(load)
             <RouterLink to="/deployments" class="db-link">Tout voir</RouterLink>
           </header>
           <p v-if="!recentDeployments.length" class="db-empty">Aucun déploiement pour le moment.</p>
-          <ul v-else class="db-list">
-            <li v-for="d in recentDeployments" :key="d.id" class="db-row">
-              <span class="db-dot" :class="`is-${status(d.status).tone}`" aria-hidden="true" />
-              <div class="db-row-main">
-                <RouterLink :to="`/applications/${d.applicationId}`" class="db-app">{{ d.applicationName }}</RouterLink>
-                <span class="db-row-meta">
-                  <span class="db-version">{{ d.version }}</span>
-                  <span>{{ d.environmentName }}</span>
-                  <span>· #{{ d.id }}</span>
-                </span>
-              </div>
-              <span class="db-status" :class="`is-${status(d.status).tone}`">{{ status(d.status).label }}</span>
-              <span class="db-when" :title="new Date(d.createdAt).toLocaleString('fr-FR')">{{ relative(d.createdAt) }}</span>
-            </li>
-          </ul>
+          <div v-else class="db-table-wrap">
+            <table class="db-table">
+              <thead>
+                <tr><th>Application</th><th>Version</th><th>Environnement</th><th>Statut</th><th class="db-right">Date</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in recentDeployments" :key="d.id">
+                  <td>
+                    <RouterLink :to="`/applications/${d.applicationId}`" class="db-app">{{ d.applicationName }}</RouterLink>
+                    <span class="db-id">#{{ d.id }}</span>
+                  </td>
+                  <td><span class="db-version">{{ d.version }}</span></td>
+                  <td>{{ d.environmentName }}</td>
+                  <td><span class="db-status" :class="`is-${status(d.status).tone}`"><span class="db-dot" :class="`is-${status(d.status).tone}`" />{{ status(d.status).label }}</span></td>
+                  <td class="db-right db-when" :title="new Date(d.createdAt).toLocaleString('fr-FR')">{{ relative(d.createdAt) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <aside class="db-side">
@@ -194,13 +226,21 @@ onMounted(load)
           </section>
 
           <section class="db-card">
-            <header class="db-card-head"><h2>Raccourcis</h2></header>
-            <nav class="db-shortcuts">
-              <RouterLink to="/deployments">Lancer un déploiement</RouterLink>
-              <RouterLink to="/versions">Gérer les versions</RouterLink>
-              <RouterLink to="/backups">Sauvegardes</RouterLink>
-              <RouterLink to="/audit">Journal d’activité</RouterLink>
-            </nav>
+            <header class="db-card-head"><h2>Résultats des déploiements</h2></header>
+            <div class="db-ring">
+              <svg viewBox="0 0 100 100" width="132" height="132" role="img" :aria-label="`${ring.ok} réussis, ${ring.ko} échoués, ${ring.other} autres`">
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#f1f5f9" stroke-width="11" />
+                <circle v-for="seg in ring.segments" :key="seg.key" cx="50" cy="50" r="42" fill="none" :stroke="seg.color" stroke-width="11"
+                        :stroke-dasharray="`${seg.length} ${ring.circumference - seg.length}`" :stroke-dashoffset="-seg.offset" transform="rotate(-90 50 50)" />
+                <text x="50" y="47" text-anchor="middle" class="db-ring-value">{{ ring.total }}</text>
+                <text x="50" y="61" text-anchor="middle" class="db-ring-label">déploiements</text>
+              </svg>
+              <ul class="db-legend">
+                <li><span class="db-sq" style="background:#16a34a" />Réussis <strong>{{ ring.ok }}</strong></li>
+                <li><span class="db-sq" style="background:#dc2626" />Échoués <strong>{{ ring.ko }}</strong></li>
+                <li><span class="db-sq" style="background:#cbd5e1" />Autres <strong>{{ ring.other }}</strong></li>
+              </ul>
+            </div>
           </section>
         </aside>
       </div>
@@ -251,6 +291,12 @@ onMounted(load)
 .db-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
 .db-kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: inherit; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
 a.db-kpi:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(30, 58, 138, .07); }
+.db-kpi { position: relative; padding-top: 18px; }
+.db-kpi-icon { display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 6px; border-radius: 9px; }
+.db-kpi-icon.is-blue { background: #e0e7ff; color: #3730a3; }
+.db-kpi-icon.is-teal { background: #ccfbf1; color: #0f766e; }
+.db-kpi-icon.is-violet { background: #ede9fe; color: #6d28d9; }
+.db-kpi-icon.is-green { background: #dcfce7; color: #15803d; }
 .db-kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; }
 .db-kpi-value { font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; }
 .db-kpi-detail { color: var(--muted); font-size: 12.5px; }
@@ -271,17 +317,20 @@ a.db-kpi:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(30, 58, 138,
 .db-link:hover { text-decoration: underline; }
 .db-empty { margin: 0; color: var(--muted); font-size: 14px; }
 
-.db-list { margin: 0; padding: 0; list-style: none; }
-.db-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 4px; border-top: 1px solid #f1f2f4; }
-.db-row:first-child { border-top: 0; }
-.db-dot { width: 9px; height: 9px; border-radius: 999px; }
-.db-row-main { display: flex; flex-direction: column; min-width: 0; }
-.db-app { overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.db-table-wrap { overflow-x: auto; margin: 0 -4px; }
+.db-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.db-table th { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .03em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.db-table td { padding: 11px 10px; border-bottom: 1px solid #f1f2f4; vertical-align: middle; }
+.db-table tbody tr:last-child td { border-bottom: 0; }
+.db-table tbody tr:hover td { background: #fafbff; }
+.db-table .db-right { text-align: right; }
+.db-app { color: var(--ink); font-weight: 600; text-decoration: none; }
 .db-app:hover { color: #1e40af; text-decoration: underline; }
-.db-row-meta { display: flex; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: 12.5px; }
-.db-version { padding: 0 6px; border-radius: 4px; background: #f3f4f6; color: #374151; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-.db-status { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.db-when { min-width: 82px; color: var(--muted); font-size: 12.5px; text-align: right; white-space: nowrap; }
+.db-id { margin-left: 6px; color: var(--muted); font-size: 12px; }
+.db-version { padding: 1px 7px; border-radius: 5px; background: #f3f4f6; color: #374151; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+.db-status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.db-dot { width: 7px; height: 7px; border-radius: 999px; }
+.db-when { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .is-ok.db-dot { background: #16a34a; } .is-ok.db-status { background: #dcfce7; color: #166534; }
 .is-critical.db-dot { background: #dc2626; } .is-critical.db-status { background: #fee2e2; color: #991b1b; }
 .is-running.db-dot { background: #2563eb; } .is-running.db-status { background: #dbeafe; color: #1e40af; }
@@ -297,10 +346,13 @@ a.db-kpi:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(30, 58, 138,
 .db-count.is-critical { background: #fee2e2; color: #991b1b; }
 .db-count.is-approval { background: #ede9fe; color: #5b21b6; }
 .db-count.is-warning { background: #ffedd5; color: #9a3412; }
-.db-shortcuts { display: grid; gap: 6px; }
-.db-shortcuts a { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); font-size: 13.5px; font-weight: 500; text-decoration: none; }
-.db-shortcuts a:hover { border-color: #c7d2fe; background: #f8faff; color: #1e40af; }
-
+.db-ring { display: flex; align-items: center; gap: 16px; }
+.db-ring-value { fill: #111827; font-size: 18px; font-weight: 700; }
+.db-ring-label { fill: #6b7280; font-size: 8px; }
+.db-legend { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+.db-legend li { display: flex; align-items: center; gap: 8px; }
+.db-legend strong { margin-left: auto; padding-left: 12px; }
+.db-sq { width: 10px; height: 10px; border-radius: 3px; }
 .db-section { display: flex; flex-direction: column; gap: 10px; }
 .db-section-title { margin: 6px 0 0; color: #374151; font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .db-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
