@@ -19,6 +19,23 @@ export interface IncidentAnalysis {
   decisiveLine?: string | null
   /** La première analyse, faite au moment de l’incident, si celle-ci a été relancée depuis. */
   initial?: InitialIncidentAnalysis | null
+  /** Mémoire des incidents : les incidents passés les plus proches, et comment ils ont été résolus. */
+  similar?: SimilarIncident[]
+}
+
+export interface SimilarIncident {
+  deploymentId: number
+  version: string
+  environmentName: string
+  at: string
+  /** Similarité de 0 à 100. */
+  similarity: number
+  title: string
+  sameCause: boolean
+  sharedTerms: string[]
+  resolution: string
+  /** Durée de résolution en minutes ; null si inconnue. */
+  resolutionMinutes: number | null
 }
 
 export interface IncidentFact {

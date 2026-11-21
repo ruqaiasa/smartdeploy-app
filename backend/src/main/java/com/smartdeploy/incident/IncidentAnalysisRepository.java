@@ -13,6 +13,9 @@ public interface IncidentAnalysisRepository extends JpaRepository<IncidentAnalys
     Optional<IncidentAnalysis> findFirstByDeploymentIdOrderByIdDesc(Long deploymentId);
 
     /** La première analyse, faite au moment de l'incident (preuves les plus complètes). */
+    /** Corpus de la mémoire des incidents : les analyses les plus récentes. */
+    java.util.List<IncidentAnalysis> findTop500ByOrderByIdDesc();
+
     Optional<IncidentAnalysis> findFirstByDeploymentIdOrderByIdAsc(Long deploymentId);
 
     /** Déploiements distincts touchés par un incident (une analyse relancée ne compte qu'une fois). */

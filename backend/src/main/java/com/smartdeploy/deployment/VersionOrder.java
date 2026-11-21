@@ -4,7 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Comparaison de numéros de version par leurs nombres de tête (« 1.1.2-compilation » → 1.1.2). */
-final class VersionOrder {
+public final class VersionOrder {
 
     private static final Pattern NUMBERS = Pattern.compile("^\\D*(\\d+(?:\\.\\d+)*)");
 
@@ -12,7 +12,7 @@ final class VersionOrder {
     }
 
     /** Vrai si {@code candidate} est strictement plus ancienne que {@code reference} ; faux si incomparable. */
-    static boolean isOlder(String candidate, String reference) {
+    public static boolean isOlder(String candidate, String reference) {
         int[] a = numbers(candidate);
         int[] b = numbers(reference);
         if (a.length == 0 || b.length == 0) {

@@ -56,6 +56,28 @@ public class IncidentAnalysisService {
         this.readTransaction.setReadOnly(true);
     }
 
+    private IncidentMemory memory;
+
+    /** Facultatif : mémoire des incidents (incidents similaires et leur résolution). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMemory(IncidentMemory memory) {
+        this.memory = memory;
+    }
+
+    /** La réponse complète : première analyse et incidents similaires. */
+    private IncidentAnalysisResponse complete(IncidentAnalysis analysis) {
+        IncidentAnalysisResponse response = withInitial(analysis);
+        if (memory == null) {
+            return response;
+        }
+        try {
+            return response.withSimilar(memory.similar(analysis));
+        } catch (RuntimeException exception) {
+            log.debug("Mémoire des incidents indisponible : {}", exception.getMessage());
+            return response;
+        }
+    }
+
     @Async
     public void analyzeInBackground(Long deploymentId, IncidentTrigger trigger) {
         try {
@@ -103,11 +125,11 @@ public class IncidentAnalysisService {
                         + " (" + CONFIDENCE_LABELS.get(diagnosis.confidence().name()) + ")",
                 "Action proposée : " + diagnosis.action(), false));
         log.info("Analyse d'incident : déploiement #{} → {} ({})", deploymentId, diagnosis.code(), diagnosis.confidence());
-        return Optional.of(withInitial(saved));
+        return Optional.of(complete(saved));
     }
 
     public Optional<IncidentAnalysisResponse> latest(Long deploymentId) {
-        return analysisRepository.findFirstByDeploymentIdOrderByIdDesc(deploymentId).map(this::withInitial);
+        return analysisRepository.findFirstByDeploymentIdOrderByIdDesc(deploymentId).map(this::complete);
     }
 
     /** La réponse, accompagnée de la première analyse si celle-ci a été relancée depuis. */

@@ -23,10 +23,10 @@ const isRecent = computed(() => {
 })
 let timer: ReturnType<typeof setTimeout> | null = null
 
-const CONFIDENCE: Record<IncidentAnalysis['confidence'], { label: string; tone: string }> = {
-  HIGH: { label: 'Confiance élevée', tone: 'high' },
-  MEDIUM: { label: 'Confiance moyenne', tone: 'medium' },
-  LOW: { label: 'Confiance faible', tone: 'low' },
+const CONFIDENCE: Record<IncidentAnalysis['confidence'], { label: string; tone: string; hint: string }> = {
+  HIGH: { label: 'Confiance élevée', tone: 'high', hint: 'Une signature connue a été trouvée dans les preuves.' },
+  MEDIUM: { label: 'Confiance moyenne', tone: 'medium', hint: 'Plusieurs indices concordent, sans signature certaine.' },
+  LOW: { label: 'Confiance faible', tone: 'low', hint: 'Peu de preuves disponibles : à confirmer avec la première analyse ou les logs.' },
 }
 const TRIGGERS: Record<IncidentAnalysis['trigger'], string> = {
   PIPELINE: 'échec du pipeline',
@@ -37,11 +37,48 @@ const TRIGGERS: Record<IncidentAnalysis['trigger'], string> = {
 const confidence = computed(() => CONFIDENCE[analysis.value?.confidence ?? 'LOW'] ?? CONFIDENCE.LOW)
 const triggerLabel = computed(() => (analysis.value && TRIGGERS[analysis.value.trigger]) || 'analyse')
 
-/* Une preuve « Source : texte » est affichée avec sa source en étiquette. */
-const evidence = computed(() => (analysis.value?.evidence ?? []).map(line => {
-  const i = line.indexOf(' : ')
-  return i > 0 ? { source: line.slice(0, i), text: line.slice(i + 3) } : { source: '', text: line }
-}))
+/* Preuves regroupées par source (« Gardien : … », « Événement Kubernetes : … »), dans leur ordre d'apparition. */
+function grouper(lines: string[] | undefined) {
+  const groups = new Map<string, string[]>()
+  for (const line of lines ?? []) {
+    const i = line.indexOf(' : ')
+    const source = i > 0 ? line.slice(0, i) : 'Autres preuves'
+    const text = i > 0 ? line.slice(i + 3) : line
+    groups.set(source, [...(groups.get(source) ?? []), text])
+  }
+  return [...groups].map(([source, items]) => ({ source, items }))
+}
+const evidenceGroups = computed(() => grouper(analysis.value?.evidence))
+const initialEvidenceGroups = computed(() => grouper(analysis.value?.initial?.evidence))
+const evidenceSummary = computed(() => evidenceGroups.value.map(g => g.source).join(', '))
+
+/*
+ * Faits et ligne décisive à montrer : ceux de la dernière analyse, sinon ceux de la première
+ * (une analyse relancée après le remplacement des pods n'a souvent plus les logs).
+ */
+const facts = computed(() => analysis.value?.facts?.length ? analysis.value.facts : (analysis.value?.initial?.facts ?? []))
+const factsFromInitial = computed(() => !analysis.value?.facts?.length && !!analysis.value?.initial?.facts?.length)
+const decisiveLine = computed(() => analysis.value?.decisiveLine || analysis.value?.initial?.decisiveLine || '')
+const decisiveFromInitial = computed(() => !analysis.value?.decisiveLine && !!analysis.value?.initial?.decisiveLine)
+const hasWhereToLook = computed(() => facts.value.length > 0 || !!decisiveLine.value)
+
+/* La première analyse est ouverte d'un clic depuis l'étape 2 quand elle contient plus de preuves. */
+const showInitial = ref(false)
+function openInitial() {
+  showInitial.value = true
+  setTimeout(() => document.getElementById('ia-initial')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+}
+
+const copied = ref(false)
+async function copyDecisive() {
+  try {
+    await navigator.clipboard.writeText(decisiveLine.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch {
+    copied.value = false
+  }
+}
 
 async function load() {
   try {
@@ -74,6 +111,16 @@ async function rerun() {
 
 onMounted(load)
 onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
+
+/* Mémoire des incidents : date courte et durée lisible */
+function dateCourte(iso: string) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+}
+function duree(minutes: number) {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  return minutes % 60 ? `${h} h ${minutes % 60} min` : `${h} h`
+}
 </script>
 
 <template>
@@ -86,7 +133,7 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
             <h2 id="ia-title">{{ deployment.applicationName }} {{ deployment.version }} · {{ deployment.environmentName }}</h2>
             <p class="ia-sub">
               Déploiement #{{ deployment.id }}
-              <template v-if="analysis"> · {{ triggerLabel }}, analysé le {{ new Date(analysis.createdAt).toLocaleString('fr-FR') }}</template>
+              <template v-if="analysis"> · analysé le {{ new Date(analysis.createdAt).toLocaleString('fr-FR') }}</template>
             </p>
           </div>
           <button type="button" class="ia-close" aria-label="Fermer" @click="emit('close')">
@@ -99,72 +146,101 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
         <p v-if="rerunning" class="ia-muted">Analyse en cours : collecte du log Jenkins, de l’état des pods et des événements Kubernetes…</p>
 
         <template v-if="analysis">
-          <div class="ia-cause" :class="analysis.code === 'UNKNOWN' ? 'is-unknown' : 'is-found'">
-            <div class="ia-cause-head">
+          <div class="ia-chips">
+            <span class="ia-chip">{{ triggerLabel }}</span>
+            <span class="ia-confidence" :class="`is-${confidence.tone}`" :title="confidence.hint">{{ confidence.label }}</span>
+            <span class="ia-chip-hint">{{ confidence.hint }}</span>
+          </div>
+
+          <!-- 1. Que s'est-il passé ? -->
+          <section class="ia-step">
+            <h3 class="ia-step-title"><span class="ia-num">1</span>Ce qui s’est passé</h3>
+            <div class="ia-cause" :class="analysis.code === 'UNKNOWN' ? 'is-unknown' : 'is-found'">
               <strong>{{ analysis.title }}</strong>
-              <span class="ia-confidence" :class="`is-${confidence.tone}`">{{ confidence.label }}</span>
+              <span>{{ analysis.explanation }}</span>
+              <span v-if="analysis.alternatives?.length" class="ia-alt">Autres causes possibles : {{ analysis.alternatives.join(', ') }}.</span>
             </div>
-            <span>{{ analysis.explanation }}</span>
-          </div>
+          </section>
 
-          <div v-if="analysis.decisiveLine" class="ia-decisive">
-            <span class="ia-label">Ligne décisive</span>
-            <code>{{ analysis.decisiveLine }}</code>
-          </div>
+          <!-- 2. Que dois-je faire ? -->
+          <section class="ia-step">
+            <h3 class="ia-step-title"><span class="ia-num">2</span>Ce qu’il faut faire</h3>
+            <div class="ia-action">
+              <span>{{ analysis.action }}</span>
+              <button v-if="analysis.initial" type="button" class="ia-link" @click="openInitial">
+                Voir la première analyse, plus complète
+              </button>
+            </div>
+            <div v-if="analysis.notes?.length" class="ia-notes" role="note">
+              <strong>Sources incomplètes</strong>
+              <span v-for="note in analysis.notes" :key="note">{{ note }}</span>
+            </div>
+          </section>
 
-          <div v-if="analysis.facts?.length" class="ia-facts">
-            <span class="ia-label">Faits établis</span>
-            <dl>
-              <template v-for="fact in analysis.facts" :key="fact.label">
-                <dt>{{ fact.label }}</dt>
-                <dd>{{ fact.value }}</dd>
-              </template>
-            </dl>
-          </div>
+          <!-- 3. Où regarder ? -->
+          <section v-if="hasWhereToLook" class="ia-step">
+            <h3 class="ia-step-title">
+              <span class="ia-num">3</span>Où regarder
+              <span v-if="factsFromInitial || decisiveFromInitial" class="ia-from-initial">d’après la première analyse</span>
+            </h3>
+            <div v-if="facts.length" class="ia-facts">
+              <div v-for="fact in facts" :key="fact.label" class="ia-fact">
+                <span>{{ fact.label }}</span>
+                <strong>{{ fact.value }}</strong>
+              </div>
+            </div>
+            <div v-if="decisiveLine" class="ia-decisive">
+              <div class="ia-decisive-head">
+                <span class="ia-label">Ligne décisive du log</span>
+                <button type="button" class="ia-copy" @click="copyDecisive">{{ copied ? 'Copiée' : 'Copier' }}</button>
+              </div>
+              <code>{{ decisiveLine }}</code>
+            </div>
+          </section>
 
-          <div class="ia-action">
-            <span class="ia-label">Action proposée</span>
-            <span>{{ analysis.action }}</span>
-          </div>
-
-          <div>
-            <h3 class="ia-h3">Preuves</h3>
-            <ul class="ia-evidence">
-              <li v-for="(line, index) in evidence" :key="index">
-                <span v-if="line.source" class="ia-source">{{ line.source }}</span>
-                <code>{{ line.text }}</code>
+          <!-- 4. Est-ce déjà arrivé ? -->
+          <section class="ia-step">
+            <h3 class="ia-step-title"><span class="ia-num">{{ hasWhereToLook ? 4 : 3 }}</span>Déjà vu ?</h3>
+            <ul v-if="analysis.similar?.length" class="ia-memory">
+              <li v-for="s in analysis.similar" :key="s.deploymentId">
+                <div class="ia-memory-head">
+                  <strong>#{{ s.deploymentId }} · {{ s.version }}</strong>
+                  <span class="ia-muted">{{ s.environmentName }} · {{ dateCourte(s.at) }}</span>
+                  <span class="ia-score" :class="s.similarity >= 80 ? 'is-high' : 'is-mid'">{{ s.similarity }} % similaire</span>
+                </div>
+                <p class="ia-memory-fix" :class="{ 'is-open': s.resolutionMinutes === null }">
+                  {{ s.resolution }}<template v-if="s.resolutionMinutes !== null">, en {{ duree(s.resolutionMinutes) }}</template>
+                </p>
+                <p v-if="s.sharedTerms.length" class="ia-memory-why">Points communs : {{ s.sharedTerms.join(', ') }}</p>
               </li>
             </ul>
-          </div>
+            <p v-else class="ia-muted">Aucun incident similaire dans l’historique : c’est la première fois que cette panne est observée.</p>
+          </section>
 
-          <p v-if="analysis.alternatives?.length" class="ia-muted">
-            Autres causes possibles : {{ analysis.alternatives.join(', ') }}.
-          </p>
-          <details v-if="analysis.initial" class="ia-initial">
-            <summary>
-              Première analyse, au moment de l’incident ({{ new Date(analysis.initial.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }}) :
-              {{ analysis.initial.title }}
-            </summary>
-            <p class="ia-muted">Les pods remplacés depuis ont emporté leurs logs : cette première analyse contient les preuves les plus complètes.</p>
-            <div v-if="analysis.initial.decisiveLine" class="ia-decisive">
-              <span class="ia-label">Ligne décisive</span>
-              <code>{{ analysis.initial.decisiveLine }}</code>
+          <!-- Détails techniques, repliés par défaut -->
+          <details v-if="evidenceGroups.length" class="ia-more">
+            <summary>Preuves de l’analyse ({{ analysis.evidence.length }}) <span class="ia-muted">· {{ evidenceSummary }}</span></summary>
+            <div v-for="group in evidenceGroups" :key="group.source" class="ia-group">
+              <span class="ia-source">{{ group.source }} ({{ group.items.length }})</span>
+              <ul class="ia-evidence">
+                <li v-for="(line, index) in group.items" :key="index"><code>{{ line }}</code></li>
+              </ul>
             </div>
-            <dl v-if="analysis.initial.facts?.length" class="ia-facts-list">
-              <template v-for="fact in analysis.initial.facts" :key="fact.label">
-                <dt>{{ fact.label }}</dt>
-                <dd>{{ fact.value }}</dd>
-              </template>
-            </dl>
-            <ul class="ia-evidence">
-              <li v-for="(line, index) in analysis.initial.evidence" :key="index"><code>{{ line }}</code></li>
-            </ul>
           </details>
 
-          <div v-if="analysis.notes?.length" class="ia-notes" role="note">
-            <strong>Sources incomplètes</strong>
-            <span v-for="note in analysis.notes" :key="note">{{ note }}</span>
-          </div>
+          <details v-if="analysis.initial" id="ia-initial" class="ia-more" :open="showInitial" @toggle="showInitial = ($event.target as HTMLDetailsElement).open">
+            <summary>
+              Première analyse, au moment de l’incident
+              <span class="ia-muted">· {{ new Date(analysis.initial.createdAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) }} · {{ analysis.initial.title }}</span>
+            </summary>
+            <p class="ia-muted">Les pods remplacés depuis ont emporté leurs logs : cette première analyse contient les preuves les plus complètes.</p>
+            <div v-for="group in initialEvidenceGroups" :key="group.source" class="ia-group">
+              <span class="ia-source">{{ group.source }} ({{ group.items.length }})</span>
+              <ul class="ia-evidence">
+                <li v-for="(line, index) in group.items" :key="index"><code>{{ line }}</code></li>
+              </ul>
+            </div>
+          </details>
         </template>
 
         <p v-if="error" class="ia-error" role="alert">{{ error }}</p>
@@ -195,31 +271,50 @@ onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 .ia-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .ia-close { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .ia-close:hover { background: var(--color-gray-100, #f3f4f6); color: var(--ink); }
-.ia-cause { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid; border-left-width: 4px; border-radius: 10px; font-size: 14px; }
-.ia-cause.is-found { border-color: #fecaca; background: #fef2f2; color: #7f1d1d; }
-.ia-cause.is-unknown { border-color: var(--line); background: var(--color-gray-50, #f9fafb); color: var(--ink); }
-.ia-cause-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.ia-cause-head strong { font-size: 16px; }
-.ia-confidence { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.ia-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: -6px; }
+.ia-chip { padding: 2px 10px; border-radius: 999px; background: var(--color-gray-100, #f3f4f6); color: var(--muted); font-size: 12px; font-weight: 600; }
+.ia-chip-hint { color: var(--muted); font-size: 12.5px; }
+.ia-confidence { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: help; }
 .ia-confidence.is-high { background: #dcfce7; color: #166534; }
 .ia-confidence.is-medium { background: #fef3c7; color: #92400e; }
 .ia-confidence.is-low { background: var(--color-gray-100, #f3f4f6); color: var(--muted); }
-.ia-decisive { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid #fecaca; border-left: 4px solid #dc2626; border-radius: 8px; background: #fef2f2; }
+.ia-step { display: flex; flex-direction: column; gap: 8px; }
+.ia-step-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14.5px; }
+.ia-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; background: #1e3a8a; color: #fff; font-size: 12px; font-weight: 700; }
+.ia-from-initial { padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 11.5px; font-weight: 600; }
+.ia-cause { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border: 1px solid; border-left-width: 4px; border-radius: 10px; font-size: 14px; }
+.ia-cause strong { font-size: 16px; }
+.ia-cause.is-found { border-color: #fecaca; background: #fef2f2; color: #7f1d1d; }
+.ia-cause.is-unknown { border-color: var(--line); background: var(--color-gray-50, #f9fafb); color: var(--ink); }
+.ia-alt { font-size: 13px; opacity: .85; }
+.ia-action { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 14px; border: 1px solid #bfdbfe; border-left: 4px solid #2563eb; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 14px; font-weight: 500; }
+.ia-link { padding: 0; border: 0; background: none; color: #1d4ed8; font: inherit; font-size: 13px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.ia-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.ia-fact { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--color-gray-50, #f9fafb); }
+.ia-fact span { color: var(--muted); font-size: 12px; }
+.ia-fact strong { font-size: 13.5px; word-break: break-word; }
+.ia-decisive { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #fecaca; border-left: 4px solid #dc2626; border-radius: 8px; background: #fef2f2; }
+.ia-decisive-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ia-decisive code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; color: #7f1d1d; white-space: pre-wrap; word-break: break-word; }
-.ia-facts { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
-.ia-facts dl, .ia-facts-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 13.5px; }
-.ia-facts dt, .ia-facts-list dt { color: var(--muted, #6b7280); }
-.ia-facts dd, .ia-facts-list dd { margin: 0; font-weight: 600; word-break: break-word; }
-.ia-initial { padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; font-size: 13.5px; }
-.ia-initial summary { cursor: pointer; font-weight: 600; }
-.ia-initial > * + * { margin-top: 8px; }
-.ia-action { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 14px; }
+.ia-copy { padding: 2px 10px; border: 1px solid #fecaca; border-radius: 6px; background: #fff; color: #991b1b; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.ia-memory { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ia-memory li { padding: 10px 12px; border: 1px solid #ddd6fe; border-radius: 10px; background: #f5f3ff; }
+.ia-memory-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; }
+.ia-score { margin-left: auto; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.ia-score.is-high { background: #ede9fe; color: #5b21b6; }
+.ia-score.is-mid { background: #f3f4f6; color: #4b5563; }
+.ia-memory-fix { margin: 6px 0 2px; font-size: 13.5px; font-weight: 600; color: #166534; }
+.ia-memory-fix.is-open { color: #92400e; }
+.ia-memory-why { margin: 0; color: var(--muted); font-size: 12.5px; }
+.ia-more { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13.5px; }
+.ia-more summary { cursor: pointer; font-weight: 600; }
+.ia-more[open] summary { margin-bottom: 8px; }
+.ia-group { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .ia-label { font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
-.ia-h3 { margin: 0 0 8px; font-size: 15px; }
-.ia-evidence { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.ia-evidence li { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ia-evidence { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ia-evidence li { padding: 6px 10px; border-radius: 6px; background: var(--color-gray-50, #f9fafb); }
 .ia-source { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
-.ia-evidence code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+.ia-evidence code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
 .ia-notes { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb; color: #92400e; font-size: 13px; }
 .ia-muted { margin: 0; color: var(--muted); font-size: 13px; }
 .ia-error { margin: 0; color: #b91c1c; font-size: 13px; }

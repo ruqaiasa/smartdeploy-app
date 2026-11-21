@@ -33,6 +33,10 @@ public interface DeploymentRepository extends
     );
 
     /** Déploiements réussis d'un environnement, du plus récent au plus ancien. */
+    /** Mémoire des incidents : les déploiements qui ont suivi un incident dans le même environnement. */
+    List<Deployment> findTop10ByEnvironmentAndCreatedAtAfterAndDeletedFalseOrderByCreatedAtAsc(
+            com.smartdeploy.environment.Environment environment, java.time.LocalDateTime after);
+
     /** RG-V9 : un déploiement de cette version est-il en attente ou en cours ? */
     boolean existsByVersion_IdAndStatusInAndDeletedFalse(Long versionId, java.util.Collection<DeploymentStatus> statuses);
 
