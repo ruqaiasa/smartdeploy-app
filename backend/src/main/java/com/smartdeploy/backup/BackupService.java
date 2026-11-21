@@ -59,8 +59,12 @@ public class BackupService {
         Environment environment = environment(environmentId);
         return velero.backups().stream()
                 .filter(backup -> BackupNames.covers(backup, environment.getNamespace()))
+                // La plus récente en premier, d'après la date de création : toujours renseignée,
+                // même pour une sauvegarde refusée ou pas encore démarrée (sans heure de début).
+                .sorted(Comparator.comparing((io.fabric8.kubernetes.api.model.GenericKubernetesResource b) ->
+                        b.getMetadata() == null || b.getMetadata().getCreationTimestamp() == null
+                                ? "" : b.getMetadata().getCreationTimestamp()).reversed())
                 .map(BackupNames::toInfo)
-                .sorted(Comparator.comparing((BackupInfo b) -> b.startedAt() == null ? "~" : b.startedAt()).reversed())
                 .toList();
     }
 
