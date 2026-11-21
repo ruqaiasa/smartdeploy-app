@@ -35,6 +35,16 @@ public class BackupWatch {
     private final Map<Long, BackupProtection.Level> lastLevels = new ConcurrentHashMap<>();
     private volatile StorageLocationStatus storageLocation = new StorageLocationStatus(null, false, null);
     private volatile boolean storageWarningLogged;
+    private com.smartdeploy.audit.AuditLogRepository auditLog;
+
+    /**
+     * Facultatif : le journal sert de mémoire entre deux démarrages. Sans lui, chaque redémarrage
+     * du serveur ferait « redécouvrir » un état critique déjà signalé, et répéter l'alerte.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAuditLog(com.smartdeploy.audit.AuditLogRepository auditLog) {
+        this.auditLog = auditLog;
+    }
 
     public BackupWatch(BackupService backupService, VeleroClient velero, VeleroProperties properties,
                        ApplicationEventPublisher eventPublisher) {
@@ -56,6 +66,12 @@ public class BackupWatch {
 
     void checkStorageLocation() {
         String previous = storageLocation.phase();
+        if (previous == null && auditLog != null) {
+            previous = auditLog.findTopByTargetTypeAndActionInOrderByIdDesc("INFRASTRUCTURE",
+                            java.util.List.of(AuditAction.BACKUP_STORAGE_UNAVAILABLE, AuditAction.BACKUP_STORAGE_AVAILABLE))
+                    .map(e -> e.getAction() == AuditAction.BACKUP_STORAGE_UNAVAILABLE ? "Unavailable" : "Available")
+                    .orElse(null);
+        }
         try {
             String phase = velero.storageLocationPhase().orElse(null);
             storageLocation = new StorageLocationStatus(phase, phase != null, Instant.now());
@@ -82,6 +98,9 @@ public class BackupWatch {
         try {
             for (BackupProtection.EnvironmentProtection protection : backupService.protection()) {
                 BackupProtection.Level previous = lastLevels.put(protection.environmentId(), protection.level());
+                if (previous == null) {
+                    previous = lastNotified(protection.environmentId());
+                }
                 AuditAction action = protectionTransition(previous, protection.level());
                 if (action != null) {
                     eventPublisher.publishEvent(new AuditEvent(action, ACTOR, "ENVIRONMENT", protection.environmentId(),
@@ -94,6 +113,17 @@ public class BackupWatch {
         } catch (RuntimeException exception) {
             log.debug("Surveillance des sauvegardes : protection illisible ({})", exception.getMessage());
         }
+    }
+
+    /** Le dernier état notifié pour cet environnement, d'après le journal (critique, normal, ou inconnu). */
+    BackupProtection.Level lastNotified(Long environmentId) {
+        if (auditLog == null) {
+            return null;
+        }
+        return auditLog.findTopByTargetTypeAndTargetIdAndActionInOrderByIdDesc("ENVIRONMENT", environmentId,
+                        java.util.List.of(AuditAction.BACKUP_PROTECTION_DEGRADED, AuditAction.BACKUP_PROTECTION_RESTORED))
+                .map(e -> e.getAction() == AuditAction.BACKUP_PROTECTION_DEGRADED ? BackupProtection.Level.CRITICAL : BackupProtection.Level.OK)
+                .orElse(null);
     }
 
     /** Notifie le passage à l'état critique, et le retour à la normale après un état critique. */

@@ -30,6 +30,13 @@ public class InfrastructureHealthService {
     private final Map<String, RaidSnapshot> lastSnapshots = new ConcurrentHashMap<>();
     private volatile boolean prometheusReachable = true;
     private final Map<String, FilesystemUsage> lastFilesystems = new ConcurrentHashMap<>();
+    private com.smartdeploy.audit.AuditLogRepository auditLog;
+
+    /** Facultatif : le journal sert de mémoire entre deux démarrages (pas d'alerte répétée). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAuditLog(com.smartdeploy.audit.AuditLogRepository auditLog) {
+        this.auditLog = auditLog;
+    }
 
     public InfrastructureHealthService(RaidMetricsReader reader, ApplicationEventPublisher eventPublisher) {
         this.reader = reader;
@@ -79,7 +86,8 @@ public class InfrastructureHealthService {
         }
         for (FilesystemUsage current : usages) {
             FilesystemUsage previous = lastFilesystems.put(current.device(), current);
-            AuditAction action = FilesystemEvaluator.transition(previous == null ? null : previous.level(), current.level());
+            FilesystemUsage.Level previousLevel = previous != null ? previous.level() : lastNotifiedSpace(current.device());
+            AuditAction action = FilesystemEvaluator.transition(previousLevel, current.level());
             if (action != null) {
                 eventPublisher.publishEvent(new AuditEvent(action, ACTOR, "INFRASTRUCTURE", null, null, null,
                         "RAID " + current.device() + " : " + current.message(),
@@ -87,6 +95,22 @@ public class InfrastructureHealthService {
                 log.warn("RAID {} : {}", current.device(), current.message());
             }
         }
+    }
+
+    /** Dernier niveau d'espace notifié pour ce RAID, d'après le journal. */
+    private FilesystemUsage.Level lastNotifiedSpace(String device) {
+        if (auditLog == null) {
+            return null;
+        }
+        return auditLog.findTopByActionInAndSummaryContainingOrderByIdDesc(
+                        List.of(AuditAction.STORAGE_SPACE_LOW, AuditAction.STORAGE_SPACE_CRITICAL, AuditAction.STORAGE_SPACE_OK),
+                        "RAID " + device + " ")
+                .map(e -> switch (e.getAction()) {
+                    case STORAGE_SPACE_CRITICAL -> FilesystemUsage.Level.CRITICAL;
+                    case STORAGE_SPACE_LOW -> FilesystemUsage.Level.WARNING;
+                    default -> FilesystemUsage.Level.OK;
+                })
+                .orElse(null);
     }
 
     /** Dernière occupation connue des systèmes de fichiers des RAID. */
