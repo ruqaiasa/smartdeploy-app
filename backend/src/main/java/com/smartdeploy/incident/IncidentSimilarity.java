@@ -27,7 +27,7 @@ public final class IncidentSimilarity {
             // Mots de structure des preuves, présents dans presque toutes : ils ne distinguent aucun incident.
             "etat", "pods", "pod", "pret", "running", "container", "conteneur", "evenement", "kubernetes", "gardien",
             "depuis", "deploiement", "reference", "apres", "min", "dernier", "arret", "redemarrage", "redemarrages",
-            "in", "of", "to", "sd-test", "sd-dev", "sd-prod");
+            "in", "of", "to", "sd-test", "sd-dev", "sd-prod", "moins", "plus", "sortie");
 
     /** Un incident proche, avec les mots qu'il partage le plus fortement avec l'incident courant. */
     public record Match(Long id, double score, List<String> sharedTerms) {

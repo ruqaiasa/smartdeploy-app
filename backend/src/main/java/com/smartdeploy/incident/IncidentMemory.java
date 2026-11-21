@@ -144,6 +144,8 @@ public class IncidentMemory {
         List<String> result = new ArrayList<>(tokens.stream().filter(t -> app.isBlank() || !t.startsWith(app)).toList());
         String version = deployment.getVersion().getVersion();
         if (version != null && !version.isBlank()) {
+            // Comptée deux fois, comme la cause : c'est l'indice le plus fiable d'une même origine.
+            result.add("version:" + version.trim().toLowerCase(Locale.ROOT));
             result.add("version:" + version.trim().toLowerCase(Locale.ROOT));
         }
         return result;
