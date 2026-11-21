@@ -40,6 +40,7 @@ public final class SlackMessageBuilder {
             case STORAGE_SPACE_LOW -> "Espace disque du RAID bientôt saturé";
             case STORAGE_SPACE_CRITICAL -> "Espace disque du RAID presque plein";
             case STORAGE_SPACE_OK -> "Espace disque du RAID de nouveau suffisant";
+            case BACKUP_DELETED -> "Sauvegarde supprimée";
             case DEPLOYMENT_ROLLBACK_REQUESTED -> "Rollback demandé";
             case DEPLOYMENT_EXPIRED -> "Déploiement bloqué";
             case SUSPICIOUS_ACTIVITY -> "Activité suspecte";

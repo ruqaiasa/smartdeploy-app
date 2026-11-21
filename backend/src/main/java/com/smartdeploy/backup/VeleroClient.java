@@ -44,6 +44,24 @@ public class VeleroClient {
         kubernetesClient.genericKubernetesResources(BACKUP).inNamespace(properties.namespace()).resource(backup).create();
     }
 
+    static final ResourceDefinitionContext DELETE_REQUEST = new ResourceDefinitionContext.Builder()
+            .withGroup("velero.io").withVersion("v1").withKind("DeleteBackupRequest").withPlural("deletebackuprequests")
+            .withNamespaced(true).build();
+
+    /**
+     * Demande à Velero de supprimer une sauvegarde : l'objet, et ses données dans le stockage (Azure).
+     * C'est la méthode officielle (équivalente à « velero backup delete ») ; Velero la traite en arrière-plan.
+     */
+    public void deleteBackup(String backupName) {
+        GenericKubernetesResource request = new GenericKubernetesResourceBuilder()
+                .withApiVersion("velero.io/v1").withKind("DeleteBackupRequest")
+                .withNewMetadata().withGenerateName(backupName.length() > 40 ? backupName.substring(0, 40) + "-" : backupName + "-")
+                .withNamespace(properties.namespace()).endMetadata()
+                .withAdditionalProperties(Map.of("spec", Map.of("backupName", backupName)))
+                .build();
+        kubernetesClient.genericKubernetesResources(DELETE_REQUEST).inNamespace(properties.namespace()).resource(request).create();
+    }
+
     public void createRestore(String name, String backupName, String sourceNamespace, String targetNamespace, Map<String, String> labels) {
         Map<String, Object> spec = new java.util.HashMap<>();
         spec.put("backupName", backupName);

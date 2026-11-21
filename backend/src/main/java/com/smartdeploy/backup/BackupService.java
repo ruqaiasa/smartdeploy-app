@@ -68,6 +68,37 @@ public class BackupService {
                 .toList();
     }
 
+    /** Phases pendant lesquelles une sauvegarde est encore en cours : Velero ne sait pas l'interrompre. */
+    static final java.util.Set<String> RUNNING_PHASES = java.util.Set.of("New", "InProgress", "WaitingForPluginOperations",
+            "WaitingForPluginOperationsPartiallyFailed", "Finalizing", "FinalizingPartiallyFailed");
+
+    /**
+     * Supprime une sauvegarde terminée (et ses données dans le stockage). Refusée si elle est encore
+     * en cours, ou si c'est la seule sauvegarde restaurable de l'environnement.
+     */
+    public void delete(Long environmentId, String backupName, String actor) {
+        Environment environment = environment(environmentId);
+        List<io.fabric8.kubernetes.api.model.GenericKubernetesResource> covering = velero.backups().stream()
+                .filter(b -> BackupNames.covers(b, environment.getNamespace()))
+                .toList();
+        io.fabric8.kubernetes.api.model.GenericKubernetesResource backup = covering.stream()
+                .filter(b -> backupName.equals(b.getMetadata().getName()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Sauvegarde introuvable pour cet environnement"));
+        String phase = VeleroClient.phase(backup);
+        if (RUNNING_PHASES.contains(phase)) {
+            throw new IllegalStateException("Une sauvegarde en cours ne peut pas être interrompue : elle pourra être supprimée une fois terminée");
+        }
+        long restorable = covering.stream().filter(b -> "Completed".equals(VeleroClient.phase(b))).count();
+        if ("Completed".equals(phase) && restorable <= 1) {
+            throw new IllegalStateException("C'est la seule sauvegarde restaurable de cet environnement : elle ne peut pas être supprimée");
+        }
+        velero.deleteBackup(backupName);
+        eventPublisher.publishEvent(new com.smartdeploy.audit.AuditEvent(com.smartdeploy.audit.AuditAction.BACKUP_DELETED,
+                actor, "ENVIRONMENT", environment.getId(), environment.getApplication().getName(), environment.getName(),
+                "Sauvegarde « " + backupName + " » supprimée (" + phase + ")", null, false));
+    }
+
     /**
      * Environnements actifs, en indiquant ceux qui existent réellement dans le
      * cluster (les seuls à pouvoir être sauvegardés). Les environnements

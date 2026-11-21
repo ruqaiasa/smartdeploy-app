@@ -69,7 +69,19 @@ public final class BackupNames {
                 text(status.get("expiration")),
                 number(progress.get("itemsBackedUp")),
                 number(status.get("errors")),
-                number(status.get("warnings")));
+                number(status.get("warnings")),
+                includedNamespaces(backup));
+    }
+
+    /** Espaces de noms inclus ; une liste vide (ou « * ») signifie tout le cluster. */
+    @SuppressWarnings("unchecked")
+    static List<String> includedNamespaces(GenericKubernetesResource backup) {
+        if (backup.getAdditionalProperties().get("spec") instanceof Map<?, ?> spec
+                && spec.get("includedNamespaces") instanceof List<?> included
+                && !included.isEmpty() && !included.contains("*")) {
+            return (List<String>) included;
+        }
+        return List.of();
     }
 
     /** Valeur d'étiquette Kubernetes : lettres, chiffres, « . _ - », 63 caractères, bornée par un alphanumérique. */

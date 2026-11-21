@@ -13,6 +13,8 @@ export interface BackupInfo {
   itemsBackedUp: number | null
   errors: number | null
   warnings: number | null
+  /** Espaces de noms inclus ; vide = tout le cluster (sauvegarde de la nuit). */
+  includedNamespaces?: string[]
 }
 
 export interface RestoreResult {

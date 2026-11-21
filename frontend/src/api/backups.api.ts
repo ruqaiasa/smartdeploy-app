@@ -56,3 +56,8 @@ export async function runPlatformBackup(): Promise<PlatformBackupRun> {
   const response = await httpClient.post<PlatformBackupRun>('/api/platform-backup/run')
   return response.data
 }
+
+/** Supprime une sauvegarde terminée (et ses données dans le stockage). */
+export async function deleteBackup(environmentId: number, backupName: string): Promise<void> {
+  await httpClient.delete(`/api/backups/${encodeURIComponent(backupName)}`, { params: { environmentId } })
+}

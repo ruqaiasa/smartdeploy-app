@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { createBackup, getBackupEnvironments, getBackups, getProtection, getRestorePhase, restoreBackup } from '@/api/backups.api'
+import { createBackup, deleteBackup, getBackupEnvironments, getBackups, getProtection, getRestorePhase, restoreBackup } from '@/api/backups.api'
 import { useAuthStore } from '@/stores/auth'
 import type { BackupEnvironment, BackupInfo, EnvironmentProtection } from '@/types/backup'
 
@@ -23,17 +23,6 @@ const busy = ref(false)
 const restoreTracking = ref<{ name: string; target: string; phase: string } | null>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-function originLabel(backup: BackupInfo) {
-  if (backup.origin === 'SCHEDULED') return 'Sauvegarde de la nuit'
-  if (backup.origin === 'MANUAL') return 'Sauvegarde manuelle'
-  return `Avant le déploiement #${backup.deploymentId ?? '?'}`
-}
-function originDetail(backup: BackupInfo) {
-  if (backup.origin === 'PRE_DEPLOYMENT' && backup.protectedVersion) return `contient la version ${backup.protectedVersion}`
-  if (backup.origin === 'SCHEDULED') return 'automatique, chaque nuit à 2 h'
-  return ''
-}
-
 /* État de protection de l'environnement choisi (âge de la dernière sauvegarde réussie). */
 const protections = ref<EnvironmentProtection[]>([])
 const protection = computed(() => protections.value.find(p => p.environmentId === environmentId.value) ?? null)
@@ -50,14 +39,83 @@ const nextNightly = computed(() => {
 const environment = computed(() => environments.value.find(e => e.environmentId === environmentId.value) ?? null)
 const deployedCount = computed(() => environments.value.filter(e => e.deployed).length)
 
+/* En cours : Velero ne sait pas interrompre une sauvegarde lancée. */
+const RUNNING = ['New', 'InProgress', 'WaitingForPluginOperations', 'WaitingForPluginOperationsPartiallyFailed', 'Finalizing', 'FinalizingPartiallyFailed']
 function tone(phase: string) {
   if (phase === 'Completed') return 'ok'
-  if (phase === 'PartiallyFailed' || phase === 'InProgress' || phase === 'New' || phase === 'WaitingForPluginOperations') return 'pending'
+  if (RUNNING.includes(phase)) return 'pending'
+  if (phase === 'PartiallyFailed') return 'warn'
   return 'ko'
 }
 function phaseLabel(phase: string) {
-  return ({ Completed: 'Terminée', InProgress: 'En cours', New: 'En attente', PartiallyFailed: 'Partielle', Failed: 'Échec', FailedValidation: 'Refusée' } as Record<string, string>)[phase] ?? phase
+  return ({ Completed: 'Réussie', InProgress: 'En cours', New: 'En attente', PartiallyFailed: 'Partielle', Failed: 'Échec', FailedValidation: 'Refusée' } as Record<string, string>)[phase] ?? (RUNNING.includes(phase) ? 'En cours' : phase)
 }
+function phaseHint(phase: string) {
+  return ({
+    PartiallyFailed: 'Les ressources sont sauvegardées, mais pas toutes les données des volumes : non proposée à la restauration.',
+    Failed: 'La sauvegarde n’a pas abouti.',
+    FailedValidation: 'Velero a refusé la sauvegarde avant de la commencer (configuration invalide).',
+  } as Record<string, string>)[phase] ?? ''
+}
+
+/* Une seule sauvegarde restaurable : elle est protégée contre la suppression. */
+const restorableCount = computed(() => backups.value.filter(b => b.phase === 'Completed').length)
+function deleteBlockedReason(backup: BackupInfo) {
+  if (RUNNING.includes(backup.phase)) return 'Une sauvegarde en cours ne peut pas être interrompue : elle pourra être supprimée une fois terminée.'
+  if (backup.phase === 'Completed' && restorableCount.value <= 1) return 'C’est la seule sauvegarde restaurable de cet environnement.'
+  return ''
+}
+async function remove(backup: BackupInfo) {
+  if (!environmentId.value) return
+  if (!window.confirm(`Supprimer la sauvegarde du ${date(backup.startedAt ?? backup.expiresAt)} ?\nSes données seront aussi effacées du stockage Azure. Cette action est définitive.`)) return
+  busy.value = true
+  error.value = ''
+  try {
+    await deleteBackup(environmentId.value, backup.name)
+    info.value = 'Suppression demandée : la sauvegarde disparaîtra de la liste d’ici quelques secondes.'
+    setTimeout(() => { void loadBackups() }, 4000)
+  } catch (exception: unknown) {
+    const response = (exception as { response?: { data?: { message?: string } } }).response
+    error.value = response?.data?.message ?? 'La sauvegarde n’a pas pu être supprimée.'
+  } finally {
+    busy.value = false
+  }
+}
+
+function typeLabel(backup: BackupInfo) {
+  if (backup.origin === 'SCHEDULED') return 'Automatique'
+  if (backup.origin === 'MANUAL') return 'Manuelle'
+  return 'Avant déploiement'
+}
+function typeDetail(backup: BackupInfo) {
+  if (backup.origin === 'PRE_DEPLOYMENT') return `#${backup.deploymentId ?? '?'}${backup.protectedVersion ? ` · version ${backup.protectedVersion}` : ''}`
+  return ''
+}
+function relative(value: string | null) {
+  if (!value) return ''
+  const h = (Date.now() - new Date(value).getTime()) / 3_600_000
+  if (h < 1) return 'il y a moins d’une heure'
+  if (h < 24) return `il y a ${Math.round(h)} h`
+  return `il y a ${Math.round(h / 24)} j`
+}
+function technical(backup: BackupInfo) {
+  return [`Nom : ${backup.name}`, `Durée : ${duration(backup)}`, backup.itemsBackedUp ? `${backup.itemsBackedUp} ressources` : '', `Expire le ${date(backup.expiresAt)}`]
+    .filter(Boolean).join('\n')
+}
+/* Ce que contient une sauvegarde : tout le cluster (la nuit), ou cet environnement seulement. */
+function wholeCluster(backup: BackupInfo) {
+  return !backup.includedNamespaces || backup.includedNamespaces.length === 0
+}
+function scopeTitle(backup: BackupInfo) {
+  return wholeCluster(backup)
+    ? 'Sauvegarde de tout le cluster : toutes les applications et tous les environnements, dont celui-ci.'
+    : `Espaces de noms inclus : ${backup.includedNamespaces!.join(', ')}`
+}
+const lastSuccess = computed(() => backups.value.find(b => b.phase === 'Completed') ?? null)
+const statusTitle = computed(() => {
+  const level = protection.value?.level
+  return level === 'OK' ? 'Environnement protégé' : level === 'CRITICAL' ? 'Protection insuffisante' : 'À surveiller'
+})
 function date(value: string | null) {
   return value ? new Date(value).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—'
 }
@@ -143,101 +201,144 @@ watch(environmentId, () => { restoreTracking.value = null; info.value = ''; void
     <header class="bk-head">
       <div>
         <h1>Sauvegardes</h1>
-        <p class="bk-sub">Sauvegardes Velero hors site (Azure Blob Storage) : ressources Kubernetes et données des volumes.</p>
+        <p class="bk-sub">Chaque environnement est sauvegardé (application et données) hors de la machine, dans Azure.</p>
       </div>
-      <div class="bk-actions">
-        <select v-model.number="environmentId" aria-label="Environnement">
-          <optgroup v-if="deployedCount" label="Déployés dans le cluster">
-            <option v-for="env in environments.filter(e => e.deployed)" :key="env.environmentId" :value="env.environmentId">{{ env.applicationName }} · {{ env.environmentName }}</option>
-          </optgroup>
-          <optgroup v-if="deployedCount < environments.length" label="Non déployés">
-            <option v-for="env in environments.filter(e => !e.deployed)" :key="env.environmentId" :value="env.environmentId">{{ env.applicationName }} · {{ env.environmentName }} (non déployé)</option>
-          </optgroup>
-        </select>
-        <button v-if="canManage" type="button" class="bk-btn bk-btn-primary" :disabled="busy || !environment?.deployed" :title="environment && !environment.deployed ? 'Environnement non déployé : rien à sauvegarder' : undefined" @click="backupNow">Sauvegarder maintenant</button>
-      </div>
+      <select v-model.number="environmentId" aria-label="Environnement" class="bk-select">
+        <optgroup v-if="deployedCount" label="Déployés">
+          <option v-for="env in environments.filter(e => e.deployed)" :key="env.environmentId" :value="env.environmentId">{{ env.applicationName }} · {{ env.environmentName }}</option>
+        </optgroup>
+        <optgroup v-if="deployedCount < environments.length" label="Non déployés">
+          <option v-for="env in environments.filter(e => !e.deployed)" :key="env.environmentId" :value="env.environmentId">{{ env.applicationName }} · {{ env.environmentName }}</option>
+        </optgroup>
+      </select>
     </header>
 
-    <p v-if="environment && !environment.deployed" class="bk-info" role="status">
-      Cet environnement n’est pas encore déployé dans le cluster (l’espace de noms <code>{{ environment.namespace }}</code> n’existe pas) : il n’y a rien à sauvegarder. Il sera protégé automatiquement dès son premier déploiement.
+    <p v-if="environment && !environment.deployed" class="bk-note">
+      Cet environnement n’est pas encore déployé : il n’y a rien à sauvegarder. Il sera protégé automatiquement dès son premier déploiement.
     </p>
-    <div v-if="environment && environment.deployed" class="bk-protection" :class="`is-${(protection?.level ?? 'WARNING').toLowerCase()}`">
-      <strong>{{ protection ? protection.message : 'Calcul de l’état de protection…' }}</strong>
-      <span>Prochaine sauvegarde automatique : {{ nextNightly }} · conservée 7 jours. Avant chaque déploiement, un point de restauration est pris s’il y a une version en service (conservé 3 jours).</span>
-    </div>
-    <p v-if="environment" class="bk-ns">Espace de noms : <code>{{ environment.namespace }}</code></p>
+
+    <!-- État de protection -->
+    <section v-if="environment && environment.deployed" class="bk-status" :class="`is-${(protection?.level ?? 'WARNING').toLowerCase()}`">
+      <div class="bk-status-main">
+        <strong>{{ protection ? statusTitle : 'Calcul de l’état…' }}</strong>
+        <span v-if="protection">{{ protection.message.replace(/\s*\([^)]*\)\s*$/, '') }}</span>
+        <span class="bk-status-facts">
+          <span>Dernière réussie : <b>{{ lastSuccess ? `${date(lastSuccess.startedAt)} (${relative(lastSuccess.startedAt)})` : 'aucune' }}</b></span>
+          <span>Prochaine : <b>{{ nextNightly }}</b>, ou au démarrage de la machine</span>
+        </span>
+      </div>
+      <button v-if="canManage" type="button" class="bk-btn bk-btn-primary" :disabled="busy" @click="backupNow">Sauvegarder maintenant</button>
+    </section>
+
     <p v-if="info" class="bk-info" role="status">{{ info }}</p>
     <p v-if="error" class="bk-error" role="alert">{{ error }}</p>
 
     <div v-if="restoreTracking" class="bk-restore" role="status">
-      <strong>Restauration « {{ restoreTracking.name }} »</strong>
-      <span>Vers <code>{{ restoreTracking.target }}</code> · {{ phaseLabel(restoreTracking.phase) }}</span>
-      <span v-if="restoreTracking.phase === 'Completed' && restoreTracking.target !== environment?.namespace" class="bk-hint">
-        Vérification possible : kubectl get pods -n {{ restoreTracking.target }} — puis supprimez cet espace de noms une fois le contrôle fait.
+      <strong>Restauration en cours vers <code>{{ restoreTracking.target }}</code> : {{ phaseLabel(restoreTracking.phase) }}</strong>
+      <span v-if="restoreTracking.phase === 'Completed' && restoreTracking.target !== environment?.namespace">
+        La copie est prête. Une fois le contrôle fait, supprimez l’espace de noms <code>{{ restoreTracking.target }}</code>.
       </span>
     </div>
 
-    <p v-if="loading && !backups.length" class="bk-muted">Chargement des sauvegardes…</p>
-    <p v-else-if="!backups.length" class="bk-muted">Aucune sauvegarde ne couvre encore cet environnement.</p>
-    <div v-else class="bk-table-wrap">
-      <table class="bk-table">
-        <thead>
-          <tr><th scope="col">Sauvegarde</th><th scope="col">Origine</th><th scope="col">Statut</th><th scope="col">Début</th><th scope="col">Durée</th><th scope="col">Expire</th><th scope="col"><span class="sr-only">Actions</span></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="backup in backups" :key="backup.name">
-            <td><code>{{ backup.name }}</code><small v-if="backup.itemsBackedUp">{{ backup.itemsBackedUp }} ressources</small></td>
-            <td>{{ originLabel(backup) }}<small v-if="originDetail(backup)">{{ originDetail(backup) }}</small></td>
-            <td><span class="bk-phase" :class="`is-${tone(backup.phase)}`">{{ phaseLabel(backup.phase) }}</span></td>
-            <td>{{ date(backup.startedAt) }}</td>
-            <td>{{ duration(backup) }}</td>
-            <td>{{ date(backup.expiresAt) }}</td>
-            <td>
-              <div v-if="backup.phase === 'Completed'" class="bk-row-actions">
-                <button v-if="canManage" type="button" class="bk-btn" :disabled="busy" @click="restore(backup, 'side')" title="Restaurer dans un espace de noms séparé, pour vérifier le contenu sans risque">Vérifier dans une copie</button>
-                <button v-if="canReplace" type="button" class="bk-btn bk-btn-danger" :disabled="busy" @click="restore(backup, 'replace')" title="Remettre l’environnement (application et données) dans l’état de cette sauvegarde">Restaurer l’environnement</button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Historique -->
+    <section v-if="environment?.deployed" class="bk-card">
+      <header class="bk-card-head">
+        <h2>Historique · {{ environment.applicationName }} · {{ environment.environmentName }}</h2>
+        <span class="bk-muted">Conservées 7 jours ; points de restauration avant déploiement : 3 jours</span>
+      </header>
+      <p class="bk-explain">
+        Les sauvegardes <strong>automatiques</strong> de la nuit couvrent <strong>tout le cluster</strong> (toutes les applications à la fois) :
+        elles apparaissent dans chaque environnement. Les sauvegardes <strong>manuelles</strong> et <strong>avant déploiement</strong>
+        ne couvrent que <strong>cet environnement</strong> (<code>{{ environment.namespace }}</code>).
+      </p>
+      <p v-if="loading && !backups.length" class="bk-muted">Chargement des sauvegardes…</p>
+      <p v-else-if="!backups.length" class="bk-muted">Aucune sauvegarde pour le moment.</p>
+      <div v-else class="bk-table-wrap">
+        <table class="bk-table">
+          <thead>
+            <tr><th>Date</th><th>Type</th><th>Contenu</th><th>Résultat</th><th class="bk-right"><span class="sr-only">Actions</span></th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="backup in backups" :key="backup.name">
+              <td :title="technical(backup)">
+                <span class="bk-date">{{ date(backup.startedAt) === '—' ? 'Non démarrée' : date(backup.startedAt) }}</span>
+                <small v-if="backup.startedAt">{{ relative(backup.startedAt) }}</small>
+              </td>
+              <td>{{ typeLabel(backup) }}<small v-if="typeDetail(backup)">{{ typeDetail(backup) }}</small></td>
+              <td>
+                <span class="bk-scope" :class="wholeCluster(backup) ? 'is-cluster' : 'is-env'" :title="scopeTitle(backup)">
+                  {{ wholeCluster(backup) ? 'Tout le cluster' : 'Cet environnement' }}
+                </span>
+              </td>
+              <td><span class="bk-phase" :class="`is-${tone(backup.phase)}`" :title="phaseHint(backup.phase) || undefined">{{ phaseLabel(backup.phase) }}</span></td>
+              <td class="bk-right">
+                <div class="bk-row-actions">
+                  <template v-if="backup.phase === 'Completed'">
+                    <button v-if="canManage" type="button" class="bk-btn bk-btn-sm" :disabled="busy" title="Restaurer dans une copie séparée, pour vérifier son contenu sans risque" @click="restore(backup, 'side')">Vérifier</button>
+                    <button v-if="canReplace" type="button" class="bk-btn bk-btn-sm bk-btn-warn" :disabled="busy" title="Remettre l’environnement (application et données) dans l’état de cette sauvegarde" @click="restore(backup, 'replace')">Restaurer</button>
+                  </template>
+                  <button v-if="canManage" type="button" class="bk-btn bk-btn-sm bk-btn-ghost" :disabled="busy || !!deleteBlockedReason(backup)" :title="deleteBlockedReason(backup) || 'Supprimer cette sauvegarde et ses données'" @click="remove(backup)">Supprimer</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.bk { display: flex; flex-direction: column; gap: 14px; }
-.bk-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.bk-head h1 { margin: 0; font-size: 22px; }
-.bk-protection { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; font-size: 13.5px; border: 1px solid #e5e7eb; background: #f9fafb; color: #374151; }
-.bk-protection strong { font-size: 14.5px; }
-.bk-protection.is-ok { border-color: #bbf7d0; background: #f0fdf4; color: #14532d; }
-.bk-protection.is-warning { border-color: #fde68a; background: #fffbeb; color: #78350f; }
-.bk-protection.is-critical { border-color: #fecaca; background: #fef2f2; color: #7f1d1d; }
-.bk-sub { margin: 4px 0 0; color: var(--color-gray-500, #6b7280); font-size: 14px; }
-.bk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.bk-actions select { min-width: 240px; padding: 8px 10px; border: 1px solid var(--color-gray-200, #e5e7eb); border-radius: 8px; background: #fff; font: inherit; }
-.bk-ns, .bk-muted { margin: 0; color: var(--color-gray-500, #6b7280); font-size: 13px; }
-.bk-info { margin: 0; padding: 10px 12px; border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 13.5px; }
-.bk-error { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 13.5px; }
-.bk-restore { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid #ddd6fe; border-radius: 10px; background: #f5f3ff; color: #3b0764; font-size: 13.5px; }
-.bk-hint { font-size: 12.5px; opacity: .85; }
-.bk-table-wrap { overflow-x: auto; border: 1px solid var(--color-gray-200, #e5e7eb); border-radius: 10px; background: #fff; }
-.bk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.bk-table th { padding: 10px 12px; background: var(--color-gray-50, #f9fafb); color: var(--color-gray-500, #6b7280); font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; }
-.bk-table td { padding: 10px 12px; border-top: 1px solid var(--color-gray-200, #e5e7eb); vertical-align: middle; }
-.bk-table td small { display: block; color: var(--color-gray-500, #6b7280); font-size: 12px; }
-.bk-table code { font-size: 12.5px; }
-.bk-phase { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.bk { display: flex; flex-direction: column; gap: 16px; }
+.bk-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.bk-head h1 { margin: 0; font-size: 24px; }
+.bk-sub { margin: 4px 0 0; color: #6b7280; font-size: 14px; }
+.bk-select { min-width: 260px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; font: inherit; font-size: 14px; }
+.bk-note, .bk-info { margin: 0; padding: 10px 14px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 14px; }
+.bk-error { margin: 0; padding: 10px 14px; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #991b1b; font-size: 14px; }
+.bk-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; border: 1px solid #e5e7eb; border-left-width: 5px; border-radius: 12px; background: #fff; }
+.bk-status.is-ok { border-left-color: #16a34a; }
+.bk-status.is-warning { border-left-color: #d97706; }
+.bk-status.is-critical { border-left-color: #dc2626; }
+.bk-status-main { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: #374151; }
+.bk-status-main strong { color: #111827; font-size: 16px; }
+.bk-status.is-ok strong { color: #166534; }
+.bk-status.is-critical strong { color: #991b1b; }
+.bk-status-facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 2px; color: #6b7280; font-size: 13px; }
+.bk-status-facts b { color: #111827; font-weight: 600; }
+.bk-restore { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border: 1px solid #ddd6fe; border-radius: 10px; background: #f5f3ff; color: #4c1d95; font-size: 14px; }
+.bk-card { padding: 16px 18px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+.bk-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.bk-card-head h2 { margin: 0; font-size: 16px; }
+.bk-muted { color: #6b7280; font-size: 13px; }
+.bk-table-wrap { overflow-x: auto; }
+.bk-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.bk-table th { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 12px; font-weight: 600; letter-spacing: .03em; text-align: left; text-transform: uppercase; }
+.bk-table td { padding: 11px 10px; border-bottom: 1px solid #f1f2f4; vertical-align: middle; }
+.bk-table tbody tr:last-child td { border-bottom: 0; }
+.bk-table tbody tr:hover td { background: #fafbff; }
+.bk-table small { display: block; color: #6b7280; font-size: 12px; }
+.bk-date { font-weight: 600; }
+.bk-table .bk-right { text-align: right; }
+.bk-explain { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: #f8fafc; color: #475569; font-size: 13px; line-height: 1.5; }
+.bk-explain code { font-size: 12px; }
+.bk-scope { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: help; }
+.bk-scope.is-cluster { background: #f1f5f9; color: #334155; }
+.bk-scope.is-env { background: #e0e7ff; color: #3730a3; }
+.bk-phase { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: default; }
 .bk-phase.is-ok { background: #dcfce7; color: #166534; }
-.bk-phase.is-pending { background: #fef3c7; color: #92400e; }
+.bk-phase.is-pending { background: #dbeafe; color: #1e40af; }
+.bk-phase.is-warn { background: #ffedd5; color: #9a3412; }
 .bk-phase.is-ko { background: #fee2e2; color: #991b1b; }
-.bk-row-actions { display: flex; justify-content: flex-end; gap: 6px; white-space: nowrap; }
-.bk-btn { padding: 6px 12px; border: 1px solid var(--color-gray-200, #e5e7eb); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.bk-btn:hover:not(:disabled) { background: var(--color-gray-50, #f9fafb); }
-.bk-btn:disabled { opacity: .6; cursor: not-allowed; }
-.bk-btn-primary { border-color: #2563eb; background: #2563eb; color: #fff; }
-.bk-btn-primary:hover:not(:disabled) { background: #1d4ed8; }
-.bk-btn-danger { border-color: #fecaca; color: #b91c1c; }
+.bk-row-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.bk-btn { padding: 8px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.bk-btn:hover:not(:disabled) { background: #f9fafb; }
+.bk-btn:disabled { opacity: .45; cursor: not-allowed; }
+.bk-btn-primary { border-color: #1e3a8a; background: #1e3a8a; color: #fff; }
+.bk-btn-primary:hover:not(:disabled) { background: #1e40af; }
+.bk-btn-sm { padding: 4px 10px; font-size: 12.5px; }
+.bk-btn-warn { border-color: #fed7aa; color: #9a3412; }
+.bk-btn-ghost { border-color: transparent; color: #b91c1c; }
+.bk-btn-ghost:hover:not(:disabled) { background: #fef2f2; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

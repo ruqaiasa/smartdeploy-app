@@ -64,6 +64,18 @@ public class BackupController {
         return handle(backupService::restorePoints);
     }
 
+    /** Supprime une sauvegarde terminée de l'environnement (et ses données dans le stockage). */
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/backups/{backupName}")
+    @PreAuthorize("hasAnyRole('DEVOPS','ADMIN')")
+    public void delete(@org.springframework.web.bind.annotation.PathVariable String backupName,
+                       @org.springframework.web.bind.annotation.RequestParam Long environmentId,
+                       @org.springframework.security.core.annotation.AuthenticationPrincipal com.smartdeploy.user.User currentUser) {
+        handle(() -> {
+            backupService.delete(environmentId, backupName, currentUser == null ? null : currentUser.getEmail());
+            return null;
+        });
+    }
+
     /** État de protection de chaque environnement déployé. */
     @GetMapping("/api/backups/protection")
     @PreAuthorize("isAuthenticated()")

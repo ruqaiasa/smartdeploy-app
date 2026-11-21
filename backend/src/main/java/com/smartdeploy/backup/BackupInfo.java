@@ -18,6 +18,14 @@ public record BackupInfo(
         String expiresAt,
         Integer itemsBackedUp,
         Integer errors,
-        Integer warnings
+        Integer warnings,
+        // Espaces de noms inclus : vide = tout le cluster (sauvegarde de la nuit)
+        java.util.List<String> includedNamespaces
 ) {
+    /** Compatibilité : sans la liste des espaces de noms. */
+    public BackupInfo(String name, String origin, Long deploymentId, String protectedVersion, String phase, String startedAt,
+                      String completedAt, String expiresAt, Integer itemsBackedUp, Integer errors, Integer warnings) {
+        this(name, origin, deploymentId, protectedVersion, phase, startedAt, completedAt, expiresAt, itemsBackedUp,
+                errors, warnings, java.util.List.of());
+    }
 }

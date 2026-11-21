@@ -72,6 +72,7 @@ public enum AuditAction {
     STORAGE_SPACE_LOW,
     STORAGE_SPACE_CRITICAL,
     STORAGE_SPACE_OK,
+    BACKUP_DELETED,
 
     // Cycle de vie d'un déploiement
     DEPLOYMENT_CREATED,
