@@ -54,6 +54,8 @@ export interface DeploymentResponse {
   approvedBy?: string | null
   approvalDecidedAt?: string | null
   approvalComment?: string | null
+  /** Portail développeur : message de la demande. */
+  requestMessage?: string | null
   /** Vrai pour le déploiement actuellement en service dans son environnement. */
   current?: boolean
 }
@@ -114,6 +116,8 @@ export interface CreateDeploymentRequest {
   forceRebuild?: boolean
   /** RG-P5 : justification d’une exception d’urgence (administrateur). */
   emergencyJustification?: string
+  /** Portail développeur : message joint à la demande. */
+  requestMessage?: string
 }
 
 /** Promotion guidée : environnement suivant d’un déploiement validé, et sa configuration. */
@@ -187,4 +191,6 @@ export interface DeploymentSearchParams {
   applicationId?: number
   versionId?: number
   environmentId?: number
+  /** « Mes demandes » : seulement les déploiements de l’utilisateur connecté. */
+  mine?: boolean
 }

@@ -19,6 +19,9 @@ export interface ApplicationResponse {
   active: boolean
   createdAt: string
   updatedAt: string
+  /** RG-O1 : propriétaire de l’application. */
+  ownerId?: number | null
+  ownerEmail?: string | null
 }
 
 export interface CreateApplicationRequest {
@@ -26,6 +29,8 @@ export interface CreateApplicationRequest {
   description: string
   repositoryUrl: string
   technology: Technology
+  /** Propriétaire désigné par un administrateur ou un DevOps. */
+  ownerId?: number | null
 }
 
 export interface UpdateApplicationRequest {
@@ -51,6 +56,8 @@ export interface ApplicationSearchParams {
   search?: string
   technology?: Technology
   active?: boolean
+  /** « Mes applications » : seulement celles dont l’utilisateur est propriétaire. */
+  mine?: boolean
 }
 
 export interface ApplicationDetailsResponse {

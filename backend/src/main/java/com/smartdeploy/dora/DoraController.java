@@ -16,7 +16,7 @@ public class DoraController {
 
     /** Les quatre indicateurs DORA sur une période, éventuellement filtrés. */
     @GetMapping("/api/dora")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('VIEWER', 'DEVOPS', 'ADMIN')")
     public DoraReport report(
             @RequestParam(defaultValue = "30") int days,
             @RequestParam(required = false) Long applicationId,

@@ -50,6 +50,14 @@ public class VersionService {
      * ==========================================================
      */
 
+    private com.smartdeploy.application.ApplicationAccess access;
+
+    /** RG-O1 : contrôle d'accès aux applications (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(com.smartdeploy.application.ApplicationAccess access) {
+        this.access = access;
+    }
+
     public VersionResponse create(
             CreateVersionRequest request
     ) {
@@ -60,6 +68,9 @@ public class VersionService {
                                 request.applicationId()
                         )
                 );
+        if (access != null) {
+            access.ensureCanAccess(application);
+        }
 
         String normalizedVersion =
                 request.version().trim();
@@ -119,8 +130,11 @@ public class VersionService {
     @Transactional(readOnly = true)
     public List<VersionResponse> findAll() {
 
+        Long ownerId = access == null ? null : access.ownerFilter();
         return versionRepository.findAllByDeletedFalse()
                 .stream()
+                .filter(v -> ownerId == null || (v.getApplication().getOwner() != null
+                        && ownerId.equals(v.getApplication().getOwner().getId())))
                 .map(this::toResponse)
                 .toList();
     }
@@ -141,6 +155,9 @@ public class VersionService {
                                 applicationId
                         )
                 );
+        if (access != null) {
+            access.ensureCanAccess(application);
+        }
 
         return versionRepository
                 .findAllByApplicationAndDeletedFalse(application)
@@ -358,11 +375,15 @@ public class VersionService {
 
     private Version findActiveVersionById(Long id) {
 
-        return versionRepository
+        Version version = versionRepository
                 .findByIdAndDeletedFalse(id)
                 .orElseThrow(() ->
                         new VersionNotFoundException(id)
                 );
+        if (access != null) {
+            access.ensureCanAccess(version.getApplication());
+        }
+        return version;
     }
 
     private String normalizeNullableText(String value) {
@@ -438,8 +459,9 @@ public class VersionService {
                 )
         );
 
+        Long ownerId = access == null ? null : access.ownerFilter();
         Specification<Version> specification =
-                VersionSpecifications.notDeleted()
+                VersionSpecifications.ownedBy(ownerId).and(VersionSpecifications.notDeleted())
                         .and(
                                 VersionSpecifications
                                         .containsSearch(search)

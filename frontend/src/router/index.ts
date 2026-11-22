@@ -88,6 +88,12 @@ const router = createRouter({
 
           meta: {
             title: 'Dashboard',
+            // Chiffres de toute la plateforme : le développeur a « Mon espace ».
+            roles: [
+              'VIEWER',
+              'DEVOPS',
+              'ADMIN',
+            ] satisfies UserRole[],
           },
         },
 
@@ -221,6 +227,20 @@ const router = createRouter({
         },
 
         {
+          path: 'portal',
+          name: 'portal',
+
+          component: () =>
+            import(
+              '@/views/PortalView.vue'
+            ),
+
+          meta: {
+            title: 'Mon espace',
+          },
+        },
+
+        {
           path: 'backups',
           name: 'backups',
 
@@ -289,11 +309,17 @@ router.beforeEach((to) => {
     }
   }
 
+  // Page d’accueil selon le rôle : « Mon espace » pour un développeur.
+  const home =
+    authStore.hasRole('DEVELOPER') && !authStore.hasRole('VIEWER', 'DEVOPS', 'ADMIN')
+      ? '/portal'
+      : '/dashboard'
+
   if (
     requiresGuest
     && authStore.isAuthenticated
   ) {
-    return '/dashboard'
+    return home
   }
 
   const allowedRoles =
@@ -307,7 +333,7 @@ router.beforeEach((to) => {
       ...allowedRoles,
     )
   ) {
-    return '/dashboard'
+    return to.path === home ? '/portal' : home
   }
 
   const pageTitle =

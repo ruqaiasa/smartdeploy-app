@@ -107,6 +107,7 @@ public class BackupService {
     public List<BackupEnvironment> environments() {
         return environmentRepository.findAll().stream()
                 .filter(environment -> environment.isActive() && !environment.isDeleted())
+                .filter(this::visible)
                 .map(environment -> new BackupEnvironment(environment.getId(), applicationName(environment),
                         environment.getName(), environment.getNamespace(), deployed(environment.getNamespace())))
                 .sorted(Comparator.comparing((BackupEnvironment e) -> !e.deployed())
@@ -197,9 +198,28 @@ public class BackupService {
         return velero.restore(restoreName).map(VeleroClient::phase).orElse("Inconnue");
     }
 
+    private com.smartdeploy.application.ApplicationAccess access;
+
+    /** RG-O1 : contrôle d'accès aux applications (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(com.smartdeploy.application.ApplicationAccess access) {
+        this.access = access;
+    }
+
+    /** RG-O1 : un développeur ne voit que les environnements de ses applications. */
+    private boolean visible(Environment environment) {
+        Long ownerId = access == null ? null : access.ownerFilter();
+        return ownerId == null || (environment.getApplication() != null && environment.getApplication().getOwner() != null
+                && ownerId.equals(environment.getApplication().getOwner().getId()));
+    }
+
     private Environment environment(Long environmentId) {
-        return environmentRepository.findById(environmentId)
+        Environment environment = environmentRepository.findById(environmentId)
                 .orElseThrow(() -> new NoSuchElementException("Environnement introuvable : " + environmentId));
+        if (access != null && environment.getApplication() != null) {
+            access.ensureCanAccess(environment.getApplication());
+        }
+        return environment;
     }
 
     static String applicationName(Environment environment) {

@@ -29,6 +29,8 @@ const props = defineProps<{
   loading?: boolean
   /** Promotion guidée : l’assistant s’ouvre prérempli (RG-P4). */
   preset?: PromotionProposal | null
+  /** « Mon espace » : l’assistant s’ouvre avec cette application déjà choisie. */
+  initialApplicationId?: number | null
 }>()
 const emit = defineEmits<{
   close: []
@@ -110,6 +112,12 @@ const forceRebuild = ref(false)
 const precheckBlocked = ref(false)
 const emergencyJustification = ref('')
 const isAdmin = computed(() => useAuthStore().hasRole('ADMIN'))
+/* Portail développeur : un développeur ne lance pas, il demande ; un DevOps examinera sa demande. */
+const isDeveloperRequest = computed(() => {
+  const auth = useAuthStore()
+  return auth.hasRole('DEVELOPER') && !auth.hasRole('DEVOPS', 'ADMIN')
+})
+const requestMessage = ref('')
 
 /* ------------------------------------------------------------------
  * Promotion guidée (RG-P4) : même version, environnement suivant, même configuration.
@@ -294,6 +302,7 @@ watch(() => props.open, open => {
   if (!open) return
   resetForm()
   if (props.preset) void applyPreset(props.preset)
+  else if (props.initialApplicationId) form.applicationId = props.initialApplicationId
 })
 
 watch(() => form.applicationId, async applicationId => {
@@ -553,6 +562,7 @@ async function submitForm() {
     confirmRedeploy: confirmRedeploy.value,
     forceRebuild: forceRebuild.value,
     emergencyJustification: emergencyJustification.value.trim() || undefined,
+    requestMessage: isDeveloperRequest.value ? requestMessage.value.trim() || undefined : undefined,
   })
 }
 </script>
@@ -675,6 +685,14 @@ async function submitForm() {
               vers <strong>{{ preset.targetEnvironmentName }}</strong> : configuration reprise du déploiement #{{ preset.sourceDeploymentId }}.
               Vérifiez, puis lancez.
             </p>
+            <section v-if="isDeveloperRequest" class="dfm-request" aria-label="Demande de déploiement">
+              <strong>Demande de déploiement</strong>
+              <p>Votre demande sera examinée par un DevOps ou un administrateur, qui sera prévenu. Rien ne sera déployé avant son accord.</p>
+              <label for="dfm-request-message">Message pour l’équipe (facultatif)</label>
+              <textarea id="dfm-request-message" v-model="requestMessage" rows="3" maxlength="500"
+                placeholder="Par exemple : première mise en ligne de notre API de commandes, à valider avant la démonstration de vendredi." />
+              <small>{{ requestMessage.length }} / 500</small>
+            </section>
             <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />
             <DeploymentPrecheckNotices :version-id="form.versionId" :environment-id="form.environmentId"
               v-model:confirm-redeploy="confirmRedeploy" v-model:force-rebuild="forceRebuild" v-model:blocked="precheckBlocked"
@@ -779,7 +797,7 @@ async function submitForm() {
               <button v-else type="button" class="dfm-btn dfm-btn-ghost" :disabled="loading || creatingSecret" @click="closeModal">Annuler</button>
               <button v-if="currentStep < wizardSteps.length" type="button" class="dfm-btn dfm-btn-primary" :disabled="loading || loadingVersions || creatingSecret" @click="nextStep">Continuer</button>
               <button v-else type="submit" class="dfm-btn dfm-btn-primary" :disabled="loading || loadingVersions || loadingSecrets || creatingSecret || precheckBlocked">
-                {{ loading ? 'Déploiement en cours…' : creatingSecret ? 'Création du Secret…' : 'Lancer le déploiement' }}
+                {{ loading ? (isDeveloperRequest ? 'Envoi de la demande…' : 'Déploiement en cours…') : creatingSecret ? 'Création du Secret…' : (isDeveloperRequest ? 'Envoyer la demande' : 'Lancer le déploiement') }}
               </button>
             </div>
           </footer>
@@ -790,6 +808,11 @@ async function submitForm() {
 </template>
 
 <style scoped>
+.dfm-request { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; border-radius: 10px; background: #f5f3ff; color: #4c1d95; font-size: 13.5px; }
+.dfm-request p { margin: 0; }
+.dfm-request label { margin-top: 4px; font-weight: 600; }
+.dfm-request textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd6fe; border-radius: 8px; font: inherit; resize: vertical; color: #111827; background: #fff; }
+.dfm-request small { align-self: flex-end; color: #6b7280; }
 .dfm-promotion { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #c7d2fe; border-left: 4px solid #4338ca; border-radius: 8px; background: #eef2ff; color: #312e81; font-size: 13.5px; line-height: 1.5; }
 .dfm-overlay {
   --ink: var(--color-gray-900, #111827);

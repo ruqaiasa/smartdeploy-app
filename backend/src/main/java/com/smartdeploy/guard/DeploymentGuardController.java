@@ -15,10 +15,26 @@ public class DeploymentGuardController {
         this.guardService = guardService;
     }
 
+    private com.smartdeploy.deployment.DeploymentReadAccess readAccess;
+
+    /** RG-O1 : un développeur ne lit que les déploiements de ses applications (facultatif dans les tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setReadAccess(com.smartdeploy.deployment.DeploymentReadAccess readAccess) {
+        this.readAccess = readAccess;
+    }
+
+    private void checkRead(Long deploymentId) {
+        if (readAccess != null) {
+            readAccess.ensureCanRead(deploymentId);
+        }
+    }
+
+
     /** Gardien du déploiement : statut, verdict, preuves et cible proposée. */
     @GetMapping("/api/deployments/{deploymentId}/guard")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<DeploymentGuardResponse> forDeployment(@PathVariable Long deploymentId) {
+        checkRead(deploymentId);
         return guardService.findForDeployment(deploymentId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());

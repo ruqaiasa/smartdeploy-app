@@ -1837,6 +1837,34 @@ class DeploymentServiceTest {
         assertDoesNotThrow(() -> deploymentService.ensureCancellableBy(deployment, createUser()), "l'auteur peut retirer sa demande");
     }
 
+    /* ================= Portail développeur : demandes de déploiement (RG-D1, RG-D3) ================= */
+
+    @Test
+    void aDeveloperAlwaysRequestsTheOthersDeploy() {
+        User developer = createUser();
+        developer.setRole(Role.DEVELOPER);
+        User devops = createUser();
+        devops.setRole(Role.DEVOPS);
+
+        assertTrue(DeploymentService.isDeveloperRequest(developer), "RG-D1 : la demande d'un développeur attend un accord");
+        assertFalse(DeploymentService.isDeveloperRequest(devops));
+        assertFalse(DeploymentService.isDeveloperRequest(null));
+    }
+
+    @Test
+    void aDeveloperCanOnlyWithdrawHisOwnPendingRequest() {
+        User developer = createUser();
+        developer.setRole(Role.DEVELOPER);
+
+        Deployment running = createDeployment(DeploymentStatus.RUNNING);
+        DeploymentStateException refused = assertThrows(DeploymentStateException.class,
+                () -> deploymentService.ensureCancellableBy(running, developer));
+        assertTrue(refused.getMessage().contains("développeur"));
+
+        Deployment request = createDeployment(DeploymentStatus.AWAITING_APPROVAL);
+        assertDoesNotThrow(() -> deploymentService.ensureCancellableBy(request, developer), "RG-D3 : il retire sa propre demande");
+    }
+
     /* ================= Promotion entre environnements (RG-P2, RG-P5) ================= */
 
     @Test

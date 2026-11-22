@@ -59,6 +59,11 @@ public class Application {
     @Column(nullable = false)
     private boolean deleted = false;
 
+    /** RG-O1 : propriétaire de l'application (son créateur par défaut). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private com.smartdeploy.user.User owner;
+
     @Column(
             name = "created_at",
             nullable = false,

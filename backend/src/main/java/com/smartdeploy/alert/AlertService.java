@@ -28,6 +28,24 @@ public class AlertService {
         this.environmentRepository = environmentRepository;
     }
 
+    private com.smartdeploy.application.ApplicationAccess access;
+
+    /** RG-O1 : contrôle d'accès aux applications (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(com.smartdeploy.application.ApplicationAccess access) {
+        this.access = access;
+    }
+
+    /** RG-O1 : un développeur ne voit que les alertes de ses applications. */
+    private boolean visible(Alert alert) {
+        Long ownerId = access == null ? null : access.ownerFilter();
+        if (ownerId == null) {
+            return true;
+        }
+        Application application = alert.getApplication();
+        return application != null && application.getOwner() != null && ownerId.equals(application.getOwner().getId());
+    }
+
     @Transactional(readOnly = true)
     public List<AlertResponse> findAll(
             Long applicationId,
@@ -50,6 +68,9 @@ public class AlertService {
                 application,
                 environment
         );
+        if (access != null) {
+            access.ensureCanAccess(application);
+        }
 
         return alertRepository
                 .findByApplicationAndEnvironmentOrderByCreatedAtDesc(
@@ -83,6 +104,9 @@ public class AlertService {
                 application,
                 environment
         );
+        if (access != null) {
+            access.ensureCanAccess(application);
+        }
 
         return alertRepository
                 .findByApplicationAndEnvironmentAndStatusOrderByCreatedAtDesc(
@@ -141,6 +165,7 @@ public class AlertService {
         return alertRepository
                 .findAllByOrderByCreatedAtDesc()
                 .stream()
+                .filter(this::visible)
                 .map(this::toResponse)
                 .toList();
     }
@@ -153,6 +178,7 @@ public class AlertService {
                         AlertStatus.OPEN
                 )
                 .stream()
+                .filter(this::visible)
                 .map(this::toResponse)
                 .toList();
     }

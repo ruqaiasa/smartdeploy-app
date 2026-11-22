@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { getUsers } from '@/api/users.api'
+import type { UserResponse } from '@/types/user'
+import { computed, reactive, ref, watch } from 'vue'
 
 import type {
   ApplicationResponse,
@@ -37,6 +40,7 @@ const form = reactive({
   description: '',
   repositoryUrl: '',
   technology: 'SPRING_BOOT' as Technology,
+  ownerId: null as number | null,
 })
 
 const validationError = reactive({
@@ -79,6 +83,7 @@ watch(
         props.application.repositoryUrl
       form.technology =
         props.application.technology
+      form.ownerId = props.application.ownerId ?? null
 
       return
     }
@@ -95,6 +100,7 @@ function resetForm() {
   form.description = ''
   form.repositoryUrl = ''
   form.technology = 'SPRING_BOOT'
+  form.ownerId = null
 }
 
 function closeModal() {
@@ -141,8 +147,17 @@ function submitForm() {
     description: form.description.trim(),
     repositoryUrl: normalizedRepositoryUrl,
     technology: form.technology,
+    ownerId: canAssignOwner.value ? form.ownerId : undefined,
   })
 }
+
+/* RG-O1 : l’administrateur ou le DevOps choisit le propriétaire (par défaut : le créateur). */
+const canAssignOwner = computed(() => useAuthStore().hasRole('ADMIN', 'DEVOPS'))
+const owners = ref<UserResponse[]>([])
+watch(() => props.open, async open => {
+  if (!open || !canAssignOwner.value || owners.value.length) return
+  try { owners.value = (await getUsers({ size: 100 })).content.filter(u => u.enabled) } catch { owners.value = [] }
+}, { immediate: true })
 </script>
 
 <template>
@@ -243,6 +258,15 @@ function submitForm() {
                 {{ technology }}
               </option>
             </select>
+          </div>
+
+          <div v-if="canAssignOwner" class="form-group">
+            <label for="application-owner">Propriétaire</label>
+            <select id="application-owner" v-model="form.ownerId" :disabled="loading">
+              <option :value="null">Moi (par défaut)</option>
+              <option v-for="u in owners" :key="u.id" :value="u.id">{{ u.firstName }} {{ u.lastName }} · {{ u.email }}</option>
+            </select>
+            <small class="form-hint">Seul le propriétaire (s’il est développeur) voit et déploie cette application.</small>
           </div>
 
           <p

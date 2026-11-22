@@ -65,6 +65,7 @@ public class ApprovalMailNotifier {
                     "Bonjour,\n\n"
                             + (requester == null ? "Un utilisateur" : requester.getEmail()) + " demande à déployer " + what
                             + " (déploiement #" + deployment.getId() + ").\n"
+                            + (deployment.getRequestMessage() == null ? "" : "Son message : « " + deployment.getRequestMessage() + " »\n")
                             + "Rien ne sera lancé avant la décision d'une seconde personne : votre décision est attendue.\n\n"
                             + "Examiner la demande : " + deploymentsUrl + "\n"));
             case DEPLOYMENT_APPROVED -> toRequester(requester, "SmartDeploy : votre déploiement a été approuvé",

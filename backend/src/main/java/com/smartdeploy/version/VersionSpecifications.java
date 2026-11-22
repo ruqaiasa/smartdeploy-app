@@ -7,6 +7,12 @@ public final class VersionSpecifications {
     private VersionSpecifications() {
     }
 
+    /** RG-O1 : versions des applications d'un propriétaire (aucune restriction si null). */
+    public static Specification<Version> ownedBy(Long ownerId) {
+        return (root, query, builder) -> ownerId == null ? null
+                : builder.equal(root.get("application").get("owner").get("id"), ownerId);
+    }
+
     public static Specification<Version> notDeleted() {
         return (root, query, builder) ->
                 builder.isFalse(root.get("deleted"));

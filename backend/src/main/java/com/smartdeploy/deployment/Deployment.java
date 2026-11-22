@@ -165,6 +165,10 @@ public class Deployment {
     @Column(name = "approval_comment", length = 1000)
     private String approvalComment;
 
+    /** Portail développeur : message joint par le développeur à sa demande. */
+    @Column(name = "request_message", length = 500)
+    private String requestMessage;
+
     /*
      * Promotion (RG-V4) : déploiement antérieur de la même version dont les images,
      * par empreinte, sont réutilisées sans reconstruction (« construire une fois, déployer partout »).

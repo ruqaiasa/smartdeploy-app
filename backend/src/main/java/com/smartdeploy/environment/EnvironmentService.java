@@ -43,6 +43,17 @@ public class EnvironmentService {
                         request.applicationId()
                 );
 
+        // RG-O2 : un développeur ne crée que des environnements de développement ou de test,
+        // pour ses propres applications ; la production reste à l'équipe DevOps.
+        com.smartdeploy.user.User current = com.smartdeploy.application.ApplicationAccess.authenticatedUser();
+        if (com.smartdeploy.application.ApplicationAccess.isRestricted(current)) {
+            com.smartdeploy.application.ApplicationAccess.ensureCanAccess(application, current);
+            if (request.type() != EnvironmentType.DEVELOPMENT && request.type() != EnvironmentType.TEST) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "Un développeur crée seulement des environnements de développement ou de test ; demandez la production à un DevOps");
+            }
+        }
+
         // 2. Vérifier l'unicité du type d'environnement
         checkEnvironmentAvailability(
                 application,
@@ -116,6 +127,14 @@ public class EnvironmentService {
      * ==========================================================
      */
 
+    private com.smartdeploy.application.ApplicationAccess access;
+
+    /** RG-O1 : contrôle d'accès aux applications (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(com.smartdeploy.application.ApplicationAccess access) {
+        this.access = access;
+    }
+
     @Transactional(readOnly = true)
     public EnvironmentPageResponse searchEnvironments(
             int page,
@@ -151,8 +170,11 @@ public class EnvironmentService {
             normalizedSearch = "";
         }
 
-        Page<Environment> environmentPage =
-                environmentRepository.searchEnvironments(
+        // RG-O1 : un développeur ne voit que les environnements de ses applications.
+        Long ownerId = access == null ? null : access.ownerFilter();
+        Page<Environment> environmentPage = ownerId != null
+                ? environmentRepository.searchOwnedEnvironments(normalizedSearch, type, active, applicationId, ownerId, pageable)
+                : environmentRepository.searchEnvironments(
                         normalizedSearch,
                         type,
                         active,
@@ -348,11 +370,15 @@ public class EnvironmentService {
     private Environment findExistingEnvironment(
             Long id
     ) {
-        return environmentRepository
+        Environment environment = environmentRepository
                 .findByIdAndDeletedFalse(id)
                 .orElseThrow(() ->
                         new EnvironmentNotFoundException(id)
                 );
+        if (access != null) {
+            access.ensureCanAccess(environment.getApplication());
+        }
+        return environment;
     }
 
     private Application findActiveApplication(

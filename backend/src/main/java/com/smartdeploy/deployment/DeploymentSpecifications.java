@@ -50,6 +50,18 @@ public final class DeploymentSpecifications {
                 );
     }
 
+    /** RG-O1 : déploiements des applications d'un propriétaire (aucune restriction si null). */
+    public static Specification<Deployment> ofApplicationsOwnedBy(Long ownerId) {
+        return (root, query, builder) -> ownerId == null ? null
+                : builder.equal(root.get("version").get("application").get("owner").get("id"), ownerId);
+    }
+
+    /** Portail développeur : les déploiements demandés par un utilisateur donné. */
+    public static Specification<Deployment> requestedBy(Long userId) {
+        return (root, query, builder) -> userId == null ? null
+                : builder.equal(root.get("requestedBy").get("id"), userId);
+    }
+
     public static Specification<Deployment> hasEnvironmentId(
             Long environmentId
     ) {

@@ -23,8 +23,18 @@ public record CreateDeploymentRequest(
         Boolean forceRebuild,
 
         // RG-P5 : justification d'une exception d'urgence (administrateur seulement)
-        String emergencyJustification
+        String emergencyJustification,
+
+        // Portail développeur : message joint à une demande de déploiement
+        @jakarta.validation.constraints.Size(max = 500, message = "Le message est limité à 500 caractères")
+        String requestMessage
 ) {
+        /** Compatibilité : sans message de demande. */
+        public CreateDeploymentRequest(Long versionId, Long environmentId, KubernetesApplicationRequest kubernetesConfig,
+                                       Boolean confirmRedeploy, Boolean forceRebuild, String emergencyJustification) {
+                this(versionId, environmentId, kubernetesConfig, confirmRedeploy, forceRebuild, emergencyJustification, null);
+        }
+
         public CreateDeploymentRequest(
                 Long versionId,
                 Long environmentId,

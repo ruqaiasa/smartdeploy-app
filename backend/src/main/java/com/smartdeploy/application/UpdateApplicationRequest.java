@@ -18,7 +18,12 @@ public record UpdateApplicationRequest(
         String repositoryUrl,
 
         @NotNull(message = "La technologie est obligatoire")
-        Technology technology
+        Technology technology,
 
+        // Nouveau propriétaire (administrateur ou DevOps seulement)
+        Long ownerId
 ) {
+    public UpdateApplicationRequest(String name, String description, String repositoryUrl, Technology technology) {
+        this(name, description, repositoryUrl, technology, null);
+    }
 }

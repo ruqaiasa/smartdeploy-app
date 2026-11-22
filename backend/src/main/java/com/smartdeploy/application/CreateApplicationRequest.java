@@ -18,7 +18,12 @@ public record CreateApplicationRequest(
         String repositoryUrl,
 
         @NotNull(message = "La technologie est obligatoire")
-        Technology technology
+        Technology technology,
 
+        // Propriétaire choisi par un administrateur ou un DevOps (sinon : le créateur)
+        Long ownerId
 ) {
+    public CreateApplicationRequest(String name, String description, String repositoryUrl, Technology technology) {
+        this(name, description, repositoryUrl, technology, null);
+    }
 }

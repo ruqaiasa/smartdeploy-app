@@ -37,6 +37,25 @@ public interface ApplicationRepository
             Long id
     );
 
+    /** RG-O1 : la même recherche, limitée aux applications d'un propriétaire. */
+    @Query("""
+            SELECT application
+            FROM Application application
+            WHERE application.deleted = false
+              AND application.owner.id = :ownerId
+              AND (
+                    LOWER(application.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR (application.description IS NOT NULL AND LOWER(application.description) LIKE LOWER(CONCAT('%', :search, '%')))
+                    OR LOWER(application.repositoryUrl) LIKE LOWER(CONCAT('%', :search, '%'))
+              )
+              AND (:technology IS NULL OR application.technology = :technology)
+              AND (:active IS NULL OR application.active = :active)
+            """)
+    Page<Application> searchOwnedApplications(@Param("search") String search, @Param("technology") Technology technology,
+                                              @Param("active") Boolean active, @Param("ownerId") Long ownerId, Pageable pageable);
+
+    java.util.List<Application> findAllByOwner_IdAndDeletedFalseOrderByNameAsc(Long ownerId);
+
     @Query("""
             SELECT application
             FROM Application application

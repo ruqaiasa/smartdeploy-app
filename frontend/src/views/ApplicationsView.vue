@@ -388,6 +388,7 @@ function formatDate(
               <th>Nom</th>
               <th>Technologie</th>
               <th>Repository</th>
+              <th>Propriétaire</th>
               <th>État</th>
               <th>Créée le</th>
               <th>Actions</th>
@@ -445,6 +446,13 @@ function formatDate(
                 >
                   Voir le dépôt
                 </a>
+              </td>
+
+              <!-- PROPRIÉTAIRE (RG-O1) -->
+
+              <td>
+                <span v-if="application.ownerEmail">{{ application.ownerEmail }}</span>
+                <span v-else class="owner-missing" title="Aucun propriétaire : seuls les DevOps et administrateurs la voient">Aucun</span>
               </td>
 
               <!-- STATUT -->
@@ -679,6 +687,7 @@ function formatDate(
 </template>
 
 <style scoped>
+.owner-missing { color: #b45309; font-size: 12.5px; font-weight: 600; }
 .applications-page {
   display: flex;
   flex-direction: column;

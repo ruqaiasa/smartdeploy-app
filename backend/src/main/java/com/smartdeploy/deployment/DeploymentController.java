@@ -31,7 +31,8 @@ public class DeploymentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    // RG-D1 : un développeur peut demander un déploiement ; il attend alors l'accord d'un DevOps.
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public DeploymentResponse create(
             @Valid @RequestBody CreateDeploymentRequest request,
             @AuthenticationPrincipal User currentUser
@@ -91,7 +92,13 @@ public class DeploymentController {
             Long versionId,
 
             @RequestParam(required = false)
-            Long environmentId
+            Long environmentId,
+
+            // Portail développeur : « Mes demandes », les déploiements de l'utilisateur connecté
+            @RequestParam(defaultValue = "false")
+            boolean mine,
+
+            @AuthenticationPrincipal User currentUser
     ) {
         return deploymentService.searchDeployments(
                 page,
@@ -100,7 +107,8 @@ public class DeploymentController {
                 status,
                 applicationId,
                 versionId,
-                environmentId
+                environmentId,
+                mine && currentUser != null ? currentUser.getId() : null
         );
     }
 
@@ -150,7 +158,8 @@ public class DeploymentController {
      * Jenkins (ou retrait de la file d'attente), puis statut CANCELLED.
      */
     @PostMapping("/{id}/cancel")
-    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    // RG-D3 : un développeur peut retirer sa propre demande en attente (vérifié par le service).
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public DeploymentResponse cancel(
             @PathVariable Long id,
             @AuthenticationPrincipal User currentUser

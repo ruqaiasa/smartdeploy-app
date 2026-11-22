@@ -20,7 +20,8 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/kubernetes/secrets")
-@PreAuthorize("hasAnyRole('ADMIN','DEVOPS')")
+// Le développeur peut créer le Secret de sa demande : jamais d'écrasement (409), ni de lecture des valeurs.
+@PreAuthorize("hasAnyRole('ADMIN','DEVOPS','DEVELOPER')")
 public class KubernetesSecretController {
     private final KubernetesClient kubernetes;
     private final EnvironmentRepository environments;
@@ -44,6 +45,8 @@ public class KubernetesSecretController {
     private Environment environment(Long id) {
         Environment env = environments.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Environnement introuvable"));
+        // RG-O1 : un développeur ne lit ni ne crée de Secret hors de ses propres environnements.
+        com.smartdeploy.application.ApplicationAccess.ensureCurrentUserCanAccess(env.getApplication());
         if (!env.isActive()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Environnement inactif");
         if (env.getNamespace() == null || env.getNamespace().isBlank())
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Namespace absent");

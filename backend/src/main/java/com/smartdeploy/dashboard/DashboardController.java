@@ -18,6 +18,7 @@ public class DashboardController {
     }
 
     @GetMapping
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('VIEWER', 'DEVOPS', 'ADMIN')")
     public ResponseEntity<DashboardResponse> getDashboard() {
 
         return ResponseEntity.ok(

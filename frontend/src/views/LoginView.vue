@@ -38,10 +38,12 @@ async function handleLogin() {
       password: password.value,
     })
 
+    // Un développeur arrive dans « Mon espace » ; les autres rôles, sur le tableau de bord.
+    const isDeveloper = authStore.hasRole('DEVELOPER') && !authStore.hasRole('DEVOPS', 'ADMIN')
     const redirect =
       typeof route.query.redirect === 'string'
         ? route.query.redirect
-        : '/dashboard'
+        : isDeveloper ? '/portal' : '/dashboard'
 
     await router.push(redirect)
   } catch (error) {

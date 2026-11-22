@@ -97,6 +97,7 @@ defineEmits<{
         </span>
 
         <RouterLink
+          v-if="authStore.hasRole('VIEWER', 'DEVOPS', 'ADMIN')"
           to="/dashboard"
           class="nav-link"
           title="Dashboard"
@@ -145,6 +146,29 @@ defineEmits<{
             class="nav-label"
           >
             Dashboard
+          </span>
+        </RouterLink>
+
+        <RouterLink
+          to="/portal"
+          class="nav-link"
+          title="Mon espace"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="8" r="3.5" />
+              <path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            Mon espace
           </span>
         </RouterLink>
       </div>

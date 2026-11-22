@@ -117,6 +117,11 @@ public class DeploymentService {
                         || guard.getStatus() == com.smartdeploy.guard.GuardStatus.HEALTHY_WITH_WARNINGS);
     }
 
+    /** RG-D1 : un développeur ne déploie pas directement, il demande. */
+    static boolean isDeveloperRequest(User user) {
+        return user != null && user.getRole() == com.smartdeploy.user.Role.DEVELOPER;
+    }
+
     boolean requiresApproval(Environment environment) {
         return environment != null && environment.getType() != null && approvalTypes.contains(environment.getType());
     }
@@ -144,6 +149,14 @@ public class DeploymentService {
      * ==========================================================
      */
 
+    private com.smartdeploy.application.ApplicationAccess access;
+
+    /** RG-O1 : contrôle d'accès aux applications (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(com.smartdeploy.application.ApplicationAccess access) {
+        this.access = access;
+    }
+
     public DeploymentResponse create(
             CreateDeploymentRequest request,
             User currentUser
@@ -169,6 +182,9 @@ public class DeploymentService {
                                         request.environmentId()
                                 )
                         );
+
+        // RG-O1 : un développeur ne demande un déploiement que pour ses propres applications.
+        com.smartdeploy.application.ApplicationAccess.ensureCanAccess(version.getApplication(), currentUser);
 
         validateDeployment(
                 version,
@@ -250,10 +266,14 @@ public class DeploymentService {
                         .environment(environment)
                         .requestedBy(currentUser)
                         .status(
-                                requiresApproval(environment)
+                                // RG-D1 : la demande d'un développeur attend toujours l'accord d'un DevOps,
+                                // quel que soit l'environnement ; ailleurs, seule la production l'exige.
+                                requiresApproval(environment) || isDeveloperRequest(currentUser)
                                         ? DeploymentStatus.AWAITING_APPROVAL
                                         : DeploymentStatus.PENDING
                         )
+                        .requestMessage(request.requestMessage() == null || request.requestMessage().isBlank()
+                                ? null : request.requestMessage().trim())
                         .imagesFrom(imagesSource)
                         .deleted(false)
                         .build();
@@ -322,8 +342,10 @@ public class DeploymentService {
             // RG-A1 : rien ne part avant l'accord d'une seconde personne.
             audit(AuditAction.DEPLOYMENT_APPROVAL_REQUESTED, savedDeployment,
                     currentUser == null ? null : currentUser.getEmail(),
-                    "Déploiement #" + savedDeployment.getId() + " de la version " + versionLabel(savedDeployment)
-                            + " vers " + environment.getName() + " : approbation demandée");
+                    (isDeveloperRequest(currentUser) ? "Demande de déploiement #" : "Déploiement #")
+                            + savedDeployment.getId() + " de la version " + versionLabel(savedDeployment)
+                            + " vers " + environment.getName() + " : approbation demandée"
+                            + (savedDeployment.getRequestMessage() == null ? "" : ". Message : « " + savedDeployment.getRequestMessage() + " »"));
         } else {
             eventPublisher.publishEvent(
                     new DeploymentPipelineRequestedEvent(savedDeployment.getId())
@@ -1002,6 +1024,10 @@ public class DeploymentService {
      */
     void ensureCancellableBy(Deployment deployment, User user) {
         ensureCancellable(deployment);
+        // RG-D3 : un développeur ne peut retirer que ses propres demandes encore en attente d'accord.
+        if (isDeveloperRequest(user) && deployment.getStatus() != DeploymentStatus.AWAITING_APPROVAL) {
+            throw new DeploymentStateException("Un développeur ne peut retirer que ses demandes en attente d'accord");
+        }
         User requester = deployment.getRequestedBy();
         if (deployment.getStatus() == DeploymentStatus.AWAITING_APPROVAL
                 && requester != null && requester.getId() != null
@@ -1256,6 +1282,19 @@ public class DeploymentService {
             Long versionId,
             Long environmentId
     ) {
+        return searchDeployments(page, size, search, status, applicationId, versionId, environmentId, null);
+    }
+
+    public DeploymentPageResponse searchDeployments(
+            int page,
+            int size,
+            String search,
+            DeploymentStatus status,
+            Long applicationId,
+            Long versionId,
+            Long environmentId,
+            Long requestedById
+    ) {
         int safePage = Math.max(page, 0);
 
         int safeSize = Math.min(
@@ -1292,7 +1331,10 @@ public class DeploymentService {
                         .and(
                                 DeploymentSpecifications
                                         .hasEnvironmentId(environmentId)
-                        );
+                        )
+                        .and(DeploymentSpecifications.requestedBy(requestedById))
+                        // RG-O1 : un développeur ne voit que les déploiements de ses applications.
+                        .and(DeploymentSpecifications.ofApplicationsOwnedBy(access == null ? null : access.ownerFilter()));
 
         Page<Deployment> deploymentPage =
                 deploymentRepository.findAll(
@@ -1321,11 +1363,14 @@ public class DeploymentService {
 
     private Deployment findActiveDeploymentById(Long id) {
 
-        return deploymentRepository
+        Deployment deployment = deploymentRepository
                 .findByIdAndDeletedFalse(id)
                 .orElseThrow(() ->
                         new DeploymentNotFoundException(id)
                 );
+        // RG-O1 : un développeur ne lit ni ne modifie les déploiements des applications des autres.
+        com.smartdeploy.application.ApplicationAccess.ensureCurrentUserCanAccess(deployment.getVersion().getApplication());
+        return deployment;
     }
 
     private void validateDeployment(
@@ -1500,7 +1545,8 @@ public class DeploymentService {
                 deployment.getBuiltCommit(),
                 deployment.getApprovedBy(),
                 deployment.getApprovalDecidedAt(),
-                deployment.getApprovalComment()
+                deployment.getApprovalComment(),
+                deployment.getRequestMessage()
         );
     }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
 import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.vue'
@@ -26,6 +27,15 @@ const monitoringStore = useMonitoringStore()
 const authStore = useAuthStore()
 
 const canManageDeployments = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
+/* Portail développeur : le développeur demande un déploiement, un DevOps l’examine. */
+const isDeveloper = computed(() => authStore.hasRole('DEVELOPER') && !canManageDeployments.value)
+const canCreate = computed(() => canManageDeployments.value || isDeveloper.value)
+const createLabel = computed(() => isDeveloper.value ? 'Demander un déploiement' : 'Nouveau déploiement')
+function toggleMine() {
+  deploymentsStore.mine = !deploymentsStore.mine
+  deploymentsStore.page = 0
+  void deploymentsStore.loadDeployments()
+}
 const canDeleteDeployments = computed(() => authStore.hasRole('ADMIN'))
 
 /* ---------------------------------------------------------------
@@ -38,8 +48,15 @@ function canDecide(deployment: DeploymentResponse) {
 }
 /* Une demande d’approbation n’est retirée que par son auteur ; l’approbateur la refuse, avec un motif. */
 function canCancel(deployment: DeploymentResponse) {
+  // RG-D3 : un développeur ne retire que ses propres demandes en attente d’accord.
+  if (isDeveloper.value) return deployment.status === 'AWAITING_APPROVAL' && deployment.requestedById === authStore.currentUser?.id
   if (!canManageDeployments.value || !OPEN_STATUSES.includes(deployment.status)) return false
   return deployment.status !== 'AWAITING_APPROVAL' || deployment.requestedById === authStore.currentUser?.id
+}
+/* Portail développeur : la discussion d’une demande (demandeur et équipe DevOps). */
+const discussionTarget = ref<DeploymentResponse | null>(null)
+function canDiscuss(deployment: DeploymentResponse) {
+  return canManageDeployments.value || (isDeveloper.value && deployment.requestedById === authStore.currentUser?.id)
 }
 const approvalTarget = ref<DeploymentResponse | null>(null)
 const approvalLoading = ref(false)
@@ -211,7 +228,8 @@ watch(() => deploymentsStore.deployments, () => { void loadGuards() })
 const promotions = ref<Record<number, PromotionProposal | null>>({})
 function isPromotable(deployment: DeploymentResponse) {
   const verdict = guards.value[deployment.id]?.status
-  return canManageDeployments.value && deployment.current && deployment.status === 'SUCCESS'
+  // Le développeur demande la promotion de ses déploiements ; elle passera par l’accord habituel.
+  return (canManageDeployments.value || isDeveloper.value) && deployment.current && deployment.status === 'SUCCESS'
     && (verdict === 'HEALTHY' || verdict === 'HEALTHY_WITH_WARNINGS')
 }
 async function loadPromotions() {
@@ -436,10 +454,10 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         <h1>Déploiements</h1>
         <p>Suivez le déploiement de vos versions sur chaque environnement.</p>
       </div>
-      <button v-if="canManageDeployments" type="button" class="dp-btn dp-btn-primary"
+      <button v-if="canCreate" type="button" class="dp-btn dp-btn-primary"
         :disabled="deploymentsStore.actionLoading" @click="openCreateModal">
         <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
-        Nouveau déploiement
+        {{ createLabel }}
       </button>
     </header>
 
@@ -461,6 +479,10 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         :class="{ 'is-active': deploymentsStore.status === filter.value }"
         :aria-pressed="deploymentsStore.status === filter.value" @click="setStatusFilter(filter.value)">
         {{ filter.label }}
+      </button>
+      <button type="button" class="dp-chip dp-chip-mine" :class="{ 'is-active': deploymentsStore.mine }"
+        :aria-pressed="deploymentsStore.mine" @click="toggleMine">
+        {{ isDeveloper ? 'Mes demandes' : 'Les miens' }}
       </button>
       <button v-if="hasFilters" type="button" class="dp-link" @click="clearFilters">Effacer les filtres</button>
       <span v-if="hasActiveDeployments" class="dp-live" title="La liste s’actualise toutes les 5 secondes">
@@ -484,7 +506,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         <template v-else>
           <strong>Aucun déploiement pour l’instant.</strong>
           <span>Lancez le premier déploiement d’une de vos applications.</span>
-          <button v-if="canManageDeployments" type="button" class="dp-btn dp-btn-primary" @click="openCreateModal">Nouveau déploiement</button>
+          <button v-if="canCreate" type="button" class="dp-btn dp-btn-primary" @click="openCreateModal">{{ createLabel }}</button>
         </template>
       </div>
 
@@ -555,6 +577,8 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                     @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
                   <button v-if="canDecide(deployment)" type="button" class="dp-action dp-action-approve"
                     @click="openApproval(deployment)">Examiner et décider</button>
+                  <button v-if="canDiscuss(deployment)" type="button" class="dp-action" title="Discussion entre le demandeur et l’équipe DevOps"
+                    @click="discussionTarget = deployment">Discussion</button>
                   <button v-if="canCancel(deployment)" type="button" class="dp-action dp-action-danger"
                     :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
                   <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
@@ -647,6 +671,19 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </section>
       </div>
     </Teleport>
+    <div v-if="discussionTarget" class="dp-discussion-backdrop" @click.self="discussionTarget = null">
+      <div class="dp-discussion" role="dialog" aria-modal="true" aria-label="Discussion">
+        <header>
+          <div>
+            <strong>Déploiement #{{ discussionTarget.id }} : {{ discussionTarget.applicationName }} {{ discussionTarget.version }}</strong>
+            <span>{{ discussionTarget.environmentName }} · demandé par {{ discussionTarget.requestedByEmail }}</span>
+          </div>
+          <button type="button" class="dp-discussion-close" aria-label="Fermer" @click="discussionTarget = null">×</button>
+        </header>
+        <blockquote v-if="discussionTarget.requestMessage" class="dp-discussion-request">{{ discussionTarget.requestMessage }}</blockquote>
+        <DeploymentDiscussion :deployment-id="discussionTarget.id" />
+      </div>
+    </div>
     <ApprovalDialog :open="approvalTarget !== null" :deployment="approvalTarget" :loading="approvalLoading" :error="approvalError"
       @close="approvalTarget = null" @approve="decide('approve', $event)" @reject="decide('reject', $event)" />
     <RestoreBeforeDialog :open="restoreTarget !== null" :deployment="restoreTarget"
@@ -656,6 +693,13 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
 </template>
 
 <style scoped>
+.dp-discussion-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .45); }
+.dp-discussion { display: flex; flex-direction: column; gap: 10px; width: min(620px, 100%); padding: 16px 18px; border-radius: 14px; background: #fff; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); }
+.dp-discussion header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.dp-discussion header div { display: flex; flex-direction: column; gap: 2px; }
+.dp-discussion header span { color: #6b7280; font-size: 13px; }
+.dp-discussion-close { border: 0; background: none; color: #6b7280; font-size: 22px; line-height: 1; cursor: pointer; }
+.dp-discussion-request { margin: 0; padding: 8px 12px; border-left: 4px solid #7c3aed; border-radius: 8px; background: #f5f3ff; color: #312e81; font-size: 13.5px; }
 .dp, .mon-overlay {
   --ink: var(--color-gray-900, #111827);
   --muted: var(--color-gray-500, #6b7280);

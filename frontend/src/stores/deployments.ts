@@ -76,6 +76,9 @@ export const useDeploymentsStore =
 
         environmentId:
           null as number | null,
+
+        /** « Mes demandes » : seulement les déploiements de l’utilisateur connecté. */
+        mine: false,
       }),
 
       actions: {
@@ -115,6 +118,8 @@ export const useDeploymentsStore =
                 environmentId:
                   this.environmentId
                   || undefined,
+
+                mine: this.mine || undefined,
 
                 ...params,
               })

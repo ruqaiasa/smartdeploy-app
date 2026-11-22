@@ -60,8 +60,26 @@ public record DeploymentResponse(
         // Approbation avant la production : qui a décidé, quand, et pourquoi
         String approvedBy,
         LocalDateTime approvalDecidedAt,
-        String approvalComment
+        String approvalComment,
+
+        // Portail développeur : message de la demande
+        String requestMessage
 ) {
+    /** Compatibilité : sans message de demande. */
+    public DeploymentResponse(Long id, Long applicationId, String applicationName, Long versionId, String version,
+                              Long environmentId, String environmentName, String environmentType, Long requestedById,
+                              String requestedByEmail, DeploymentStatus status, LocalDateTime startedAt,
+                              LocalDateTime finishedAt, Long durationSeconds, Integer jenkinsBuildNumber,
+                              String deploymentLogsUrl, String errorMessage, Long rollbackOfId, boolean deleted,
+                              LocalDateTime createdAt, LocalDateTime updatedAt, String deployedBackendImage,
+                              String deployedFrontendImage, boolean current, Long imagesFromId, String builtCommit,
+                              String approvedBy, LocalDateTime approvalDecidedAt, String approvalComment) {
+        this(id, applicationId, applicationName, versionId, version, environmentId, environmentName, environmentType,
+                requestedById, requestedByEmail, status, startedAt, finishedAt, durationSeconds, jenkinsBuildNumber,
+                deploymentLogsUrl, errorMessage, rollbackOfId, deleted, createdAt, updatedAt, deployedBackendImage,
+                deployedFrontendImage, current, imagesFromId, builtCommit, approvedBy, approvalDecidedAt, approvalComment, null);
+    }
+
     /** Compatibilité : sans promotion ni commit connu. */
     public DeploymentResponse(Long id, Long applicationId, String applicationName, Long versionId, String version,
                               Long environmentId, String environmentName, String environmentType, Long requestedById,

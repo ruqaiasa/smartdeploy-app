@@ -35,7 +35,8 @@ public class EnvironmentController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('DEVOPS', 'ADMIN')")
+    // RG-O2 : un développeur crée les environnements de développement et de test de ses applications.
+    @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public EnvironmentResponse create(
             @Valid @RequestBody CreateEnvironmentRequest request
     ) {

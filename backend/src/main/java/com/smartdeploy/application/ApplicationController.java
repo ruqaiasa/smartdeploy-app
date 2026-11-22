@@ -59,6 +59,9 @@ public class ApplicationController {
     @GetMapping
     @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     public ApplicationPageResponse searchApplications(
+            // « Mes applications » : seulement celles dont l'utilisateur connecté est propriétaire
+            @RequestParam(defaultValue = "false") boolean mine,
+
 
             @RequestParam(defaultValue = "0")
             int page,
@@ -75,7 +78,9 @@ public class ApplicationController {
             @RequestParam(required = false)
             Boolean active
     ) {
-        return applicationService.searchApplications(
+        return mine
+                ? applicationService.searchApplications(page, size, search, technology, active, true)
+                : applicationService.searchApplications(
                 page,
                 size,
                 search,

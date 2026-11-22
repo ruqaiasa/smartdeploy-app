@@ -33,6 +33,30 @@ public class ApplicationService {
      * ==========================================================
      */
 
+    private ApplicationAccess access;
+    private com.smartdeploy.user.UserRepository userRepository;
+
+    /** RG-O1 : contrôle d'accès (facultatif, absent des tests unitaires). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccess(ApplicationAccess access) {
+        this.access = access;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setUserRepository(com.smartdeploy.user.UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
+    /** RG-O1 : le créateur est le propriétaire ; un administrateur ou un DevOps peut en désigner un autre. */
+    private com.smartdeploy.user.User chosenOwner(Long ownerId) {
+        com.smartdeploy.user.User current = access == null ? null : access.currentUser();
+        if (ownerId != null && current != null && !ApplicationAccess.isRestricted(current) && userRepository != null) {
+            return userRepository.findByIdAndDeletedFalse(ownerId)
+                    .orElseThrow(() -> new IllegalArgumentException("Propriétaire introuvable : " + ownerId));
+        }
+        return current;
+    }
+
     public ApplicationResponse create(
             CreateApplicationRequest request
     ) {
@@ -64,6 +88,7 @@ public class ApplicationService {
                         )
                         .active(true)
                         .deleted(false)
+                        .owner(chosenOwner(request.ownerId()))
                         .build();
 
         Application savedApplication =
@@ -102,6 +127,17 @@ public class ApplicationService {
             Technology technology,
             Boolean active
     ) {
+        return searchApplications(page, size, search, technology, active, false);
+    }
+
+    public ApplicationPageResponse searchApplications(
+            int page,
+            int size,
+            String search,
+            Technology technology,
+            Boolean active,
+            boolean mineOnly
+    ) {
         int normalizedPage =
                 Math.max(page, 0);
 
@@ -128,8 +164,12 @@ public class ApplicationService {
             normalizedSearch = "";
         }
 
-        Page<Application> applicationPage =
-                applicationRepository
+        // RG-O1 : un développeur ne voit que ses applications ; « mine » limite aussi les autres rôles aux leurs.
+        com.smartdeploy.user.User current = access == null ? null : access.currentUser();
+        Long ownerId = access == null ? null : (mineOnly && current != null ? current.getId() : access.ownerFilter());
+        Page<Application> applicationPage = ownerId != null
+                ? applicationRepository.searchOwnedApplications(normalizedSearch, technology, active, ownerId, pageable)
+                : applicationRepository
                         .searchApplications(
                                 normalizedSearch,
                                 technology,
@@ -199,6 +239,11 @@ public class ApplicationService {
         application.setTechnology(
                 request.technology()
         );
+
+        // RG-O1 : seul un administrateur ou un DevOps change le propriétaire.
+        if (request.ownerId() != null && access != null && !ApplicationAccess.isRestricted(access.currentUser())) {
+            application.setOwner(chosenOwner(request.ownerId()));
+        }
 
         Application updatedApplication =
                 applicationRepository.saveAndFlush(
@@ -310,11 +355,15 @@ public class ApplicationService {
     private Application findExistingApplication(
             Long id
     ) {
-        return applicationRepository
+        Application application = applicationRepository
                 .findByIdAndDeletedFalse(id)
                 .orElseThrow(() ->
                         new ApplicationNotFoundException(id)
                 );
+        if (access != null) {
+            access.ensureCanAccess(application);
+        }
+        return application;
     }
 
     /* ==========================================================
@@ -418,7 +467,9 @@ public class ApplicationService {
                 application.isActive(),
                 application.isDeleted(),
                 application.getCreatedAt(),
-                application.getUpdatedAt()
+                application.getUpdatedAt(),
+                application.getOwner() == null ? null : application.getOwner().getId(),
+                application.getOwner() == null ? null : application.getOwner().getEmail()
         );
     }
 

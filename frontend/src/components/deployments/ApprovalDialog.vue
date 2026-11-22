@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import { computed, ref, watch } from 'vue'
 import ConfidenceScoreCard from '@/components/deployments/ConfidenceScoreCard.vue'
 import DeploymentPrecheckNotices from '@/components/deployments/DeploymentPrecheckNotices.vue'
@@ -23,14 +24,20 @@ const requestedAt = computed(() => props.deployment?.createdAt
 <template>
   <div v-if="open && deployment" class="ad-backdrop" @click.self="emit('close')">
     <div class="ad" role="dialog" aria-modal="true" aria-labelledby="ad-title">
-      <p class="ad-kicker">Approbation avant la production</p>
+      <p class="ad-kicker">{{ deployment.environmentType === 'PRODUCTION' ? 'Approbation avant la production' : 'Demande de déploiement' }}</p>
       <h2 id="ad-title">Déploiement #{{ deployment.id }} : {{ deployment.applicationName }} {{ deployment.version }}</h2>
       <p class="ad-lead">
         Demandé par <strong>{{ deployment.requestedByEmail }}</strong> le {{ requestedAt }},
         vers <strong>{{ deployment.environmentName }}</strong>. Rien n’a été lancé : le pipeline ne partira qu’après votre accord.
       </p>
 
+      <blockquote v-if="deployment.requestMessage" class="ad-message">
+        <span>Message de {{ deployment.requestedByEmail }}</span>
+        {{ deployment.requestMessage }}
+      </blockquote>
+
       <ConfidenceScoreCard :version-id="deployment.versionId" :environment-id="deployment.environmentId" />
+      <DeploymentDiscussion :deployment-id="deployment.id" />
       <DeploymentPrecheckNotices :version-id="deployment.versionId" :environment-id="deployment.environmentId" readonly />
 
       <label class="ad-label" for="ad-comment">Commentaire <span>(obligatoire pour un refus)</span></label>
@@ -60,6 +67,8 @@ const requestedAt = computed(() => props.deployment?.createdAt
 .ad-label { font-size: 13.5px; font-weight: 600; color: #334155; }
 .ad-label span { font-weight: 400; color: #64748b; }
 .ad textarea { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
+.ad-message { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 10px 14px; border-left: 4px solid #7c3aed; border-radius: 8px; background: #f5f3ff; color: #312e81; font-size: 14px; }
+.ad-message span { color: #6b7280; font-size: 12px; font-weight: 600; }
 .ad-hint { margin: -4px 0 0; color: #64748b; font-size: 12.5px; }
 .ad-error { margin: 0; padding: 9px 11px; border-radius: 8px; background: #fef2f2; color: #991b1b; font-size: 13.5px; }
 .ad-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }

@@ -29,6 +29,28 @@ public interface EnvironmentRepository
             Long id
     );
 
+    /** RG-O1 : la même recherche, limitée aux environnements des applications d'un propriétaire. */
+    @Query("""
+            SELECT environment
+            FROM Environment environment
+            JOIN environment.application application
+            WHERE environment.deleted = false
+              AND application.owner.id = :ownerId
+              AND (
+                    LOWER(environment.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(environment.namespace) LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(application.name) LIKE LOWER(CONCAT('%', :search, '%'))
+              )
+              AND (:type IS NULL OR environment.type = :type)
+              AND (:active IS NULL OR environment.active = :active)
+              AND (:applicationId IS NULL OR application.id = :applicationId)
+            """)
+    Page<Environment> searchOwnedEnvironments(@Param("search") String search, @Param("type") EnvironmentType type,
+                                              @Param("active") Boolean active, @Param("applicationId") Long applicationId,
+                                              @Param("ownerId") Long ownerId, Pageable pageable);
+
+    java.util.List<Environment> findAllByApplication_IdAndDeletedFalse(Long applicationId);
+
     @Query("""
             SELECT environment
             FROM Environment environment

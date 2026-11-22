@@ -21,6 +21,14 @@ public class MonitoringController {
         this.monitoringService = monitoringService;
     }
 
+    private com.smartdeploy.deployment.DeploymentReadAccess readAccess;
+
+    /** RG-O1 : un développeur ne lit que les déploiements de ses applications (facultatif dans les tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setReadAccess(com.smartdeploy.deployment.DeploymentReadAccess readAccess) {
+        this.readAccess = readAccess;
+    }
+
     /* ==========================================================
      *                  PROMETHEUS TARGETS
      * ==========================================================
@@ -88,6 +96,9 @@ public class MonitoringController {
     public ResponseEntity<DeploymentImpactResponse> getDeploymentImpact(
             @PathVariable Long deploymentId
     ) {
+        if (readAccess != null) {
+            readAccess.ensureCanRead(deploymentId);
+        }
 
         return ResponseEntity.ok(
                 monitoringService.getDeploymentImpact(
@@ -127,6 +138,9 @@ public class MonitoringController {
     public ResponseEntity<ApplicationMetricsResponse> getDeploymentMetrics(
             @PathVariable Long deploymentId
     ) {
+        if (readAccess != null) {
+            readAccess.ensureCanRead(deploymentId);
+        }
 
         return ResponseEntity.ok(
                 monitoringService.getDeploymentMetrics(
