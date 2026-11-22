@@ -28,6 +28,23 @@ public class UserController {
 
 
 
+    public record ApprovalRequest(Role role) {
+    }
+
+    /** RG-U1 : l'administrateur valide une inscription en choisissant le rôle. */
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("hasRole('ADMIN')")
+    public UserResponse approve(@PathVariable Long id, @RequestBody(required = false) ApprovalRequest body) {
+        return userService.approve(id, body == null ? null : body.role());
+    }
+
+    @PostMapping("/{id}/reject")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    public void reject(@PathVariable Long id) {
+        userService.reject(id);
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public UserResponse findById(@PathVariable Long id) {

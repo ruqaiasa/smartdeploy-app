@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -63,5 +65,42 @@ public class GitHubClient {
             log.debug("GitHub : dernier commit de {} indisponible ({})", branch, exception.getMessage());
         }
         return Optional.empty();
+    }
+
+    public record CommitInfo(String sha, String message, String author) {
+    }
+
+    public record Comparison(List<String> files, List<CommitInfo> commits) {
+    }
+
+    /**
+     * Analyste v2 : les fichiers et commits introduits entre deux commits (API « compare » de GitHub),
+     * ou vide si le dépôt est injoignable. Sans jeton : 60 requêtes par heure.
+     */
+    public Optional<Comparison> compare(String repositoryUrl, String base, String head) {
+        if (repositoryUrl == null || base == null || head == null || base.isBlank() || head.isBlank()) {
+            return Optional.empty();
+        }
+        Matcher m = REPOSITORY.matcher(repositoryUrl.trim());
+        if (!m.find()) {
+            return Optional.empty();
+        }
+        try {
+            String body = rest.get()
+                    .uri("/repos/{owner}/{repo}/compare/{range}", m.group(1), m.group(2), base.trim() + "..." + head.trim())
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = MAPPER.readTree(body);
+            List<String> files = new ArrayList<>();
+            root.path("files").forEach(f -> files.add(f.path("filename").asText()));
+            List<CommitInfo> commits = new ArrayList<>();
+            root.path("commits").forEach(c -> commits.add(new CommitInfo(c.path("sha").asText(),
+                    c.path("commit").path("message").asText("").lines().findFirst().orElse(""),
+                    c.path("commit").path("author").path("name").asText(""))));
+            return Optional.of(new Comparison(files, commits));
+        } catch (Exception exception) {
+            log.debug("GitHub : comparaison {}...{} indisponible ({})", base, head, exception.getMessage());
+            return Optional.empty();
+        }
     }
 }

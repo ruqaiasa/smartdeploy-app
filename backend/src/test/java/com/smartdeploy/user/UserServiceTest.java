@@ -33,7 +33,7 @@ class UserServiceTest {
     }
 
     @Test
-    void register_shouldCreateViewerWithEncodedPassword() {
+    void register_shouldCreateAPendingDeveloperAccount() {
 
         RegisterRequest request = new RegisterRequest(
                 " Ruqaia ",
@@ -70,8 +70,10 @@ class UserServiceTest {
                 "ruqaia@smartdeploy.com",
                 response.email()
         );
-        assertEquals(Role.VIEWER, response.role());
-        assertTrue(response.enabled());
+        // RG-U1 : rôle Développeur demandé, aucun accès avant la validation d'un administrateur
+        assertEquals(Role.DEVELOPER, response.role());
+        assertFalse(response.enabled());
+        assertTrue(response.pendingApproval());
         assertFalse(response.deleted());
 
         verify(passwordEncoder)
@@ -347,5 +349,20 @@ class UserServiceTest {
 
         verify(userRepository)
                 .saveAndFlush(targetUser);
+    }
+
+    @Test
+    void approve_shouldActivateThePendingAccountWithTheChosenRole() {
+        User pending = User.builder().id(9L).firstName("Sara").lastName("B").email("sara@smartdeploy.local")
+                .password("x").role(Role.DEVELOPER).enabled(false).pendingApproval(true).deleted(false).tokenVersion(0).build();
+        when(userRepository.findByIdAndDeletedFalse(9L)).thenReturn(java.util.Optional.of(pending));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.approve(9L, Role.DEVOPS);
+
+        assertTrue(response.enabled());
+        assertFalse(response.pendingApproval());
+        assertEquals(Role.DEVOPS, response.role());
+        assertThrows(IllegalStateException.class, () -> userService.approve(9L, Role.DEVELOPER), "déjà validé");
     }
 }

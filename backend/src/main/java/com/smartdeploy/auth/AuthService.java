@@ -21,6 +21,16 @@ public class AuthService {
 
     private static final long ACCESS_TOKEN_EXPIRATION_SECONDS = 3600;
 
+    /** Message transmis au gestionnaire d'erreurs pour un compte en attente de validation. */
+    public static final String PENDING_APPROVAL = "PENDING_APPROVAL";
+
+    private com.smartdeploy.user.UserRepository userRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setUserRepository(com.smartdeploy.user.UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
@@ -54,6 +64,12 @@ public class AuthService {
                     )
             );
         } catch (AuthenticationException exception) {
+            // RG-U1 : un compte en attente de validation reçoit un message précis, pas « désactivé ».
+            if (exception instanceof org.springframework.security.authentication.DisabledException && userRepository != null
+                    && userRepository.findByEmailIgnoreCaseAndDeletedFalse(normalizedEmail)
+                            .map(com.smartdeploy.user.User::isPendingApproval).orElse(false)) {
+                throw new org.springframework.security.authentication.DisabledException(PENDING_APPROVAL);
+            }
             // Tracé même si la transaction est annulée (keepOnRollback).
             eventPublisher.publishEvent(AuditEvent.securityFailure(
                     AuditAction.LOGIN_FAILURE,

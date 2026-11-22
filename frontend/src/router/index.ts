@@ -103,6 +103,7 @@ const router = createRouter({
           component: ApplicationsView,
 
           meta: {
+            roles: ['VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[],
             title: 'Applications',
           },
         },
@@ -171,6 +172,7 @@ const router = createRouter({
           component: EnvironmentsView,
 
           meta: {
+            roles: ['VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[],
             title: 'Environnements',
           },
         },
@@ -181,6 +183,7 @@ const router = createRouter({
           component: VersionsView,
 
           meta: {
+            roles: ['VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[],
             title: 'Versions',
           },
         },
@@ -205,6 +208,7 @@ const router = createRouter({
             ),
 
           meta: {
+            roles: ['VIEWER', 'DEVOPS', 'ADMIN'] satisfies UserRole[],
             title: 'Alertes',
           },
         },
@@ -227,6 +231,47 @@ const router = createRouter({
         },
 
         {
+          path: 'deployments/:id(\\d+)',
+          name: 'deployment-detail',
+          component: () => import('@/views/DeploymentDetailView.vue'),
+          meta: { title: 'Fiche de déploiement' },
+        },
+
+        {
+          path: 'claims',
+          name: 'claims',
+          component: () => import('@/views/ClaimsView.vue'),
+          meta: { title: 'Réclamations', roles: ['DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
+        },
+
+        {
+          path: 'claims/:id(\\d+)',
+          name: 'claim-detail',
+          component: () => import('@/views/ClaimDetailView.vue'),
+          meta: { title: 'Réclamation', roles: ['DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
+        },
+
+        {
+          path: 'knowledge',
+          name: 'knowledge',
+          component: () => import('@/views/KnowledgeView.vue'),
+          meta: { title: 'Aide' },
+        },
+
+        {
+          path: 'console',
+          name: 'console',
+          component: () => import('@/views/WorkQueueView.vue'),
+          meta: {
+            title: 'File de travail',
+            roles: [
+              'DEVOPS',
+              'ADMIN',
+            ] satisfies UserRole[],
+          },
+        },
+
+        {
           path: 'portal',
           name: 'portal',
 
@@ -236,6 +281,7 @@ const router = createRouter({
             ),
 
           meta: {
+            roles: ['DEVELOPER'] satisfies UserRole[],
             title: 'Mon espace',
           },
         },
@@ -250,6 +296,7 @@ const router = createRouter({
             ),
 
           meta: {
+            roles: ['VIEWER', 'DEVOPS', 'ADMIN'] satisfies UserRole[],
             title: 'Sauvegardes',
           },
         },

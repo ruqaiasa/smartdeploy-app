@@ -575,6 +575,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                   <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="dp-action dp-action-promote"
                     :title="`Même version, même image, même configuration : vers ${promotions[deployment.id]!.targetEnvironmentName}`"
                     @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
+                  <RouterLink :to="`/deployments/${deployment.id}`" class="dp-action" title="Progression, explication, journaux et discussion">Détails</RouterLink>
                   <button v-if="canDecide(deployment)" type="button" class="dp-action dp-action-approve"
                     @click="openApproval(deployment)">Examiner et décider</button>
                   <button v-if="canDiscuss(deployment)" type="button" class="dp-action" title="Discussion entre le demandeur et l’équipe DevOps"

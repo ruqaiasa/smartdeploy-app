@@ -52,8 +52,10 @@ async function handleLogin() {
       error,
     )
 
-    errorMessage.value =
-      'E-mail ou mot de passe incorrect.'
+    const response = (error as { response?: { status?: number; data?: { message?: string } } }).response
+    errorMessage.value = response?.status === 403 && response.data?.message
+      ? response.data.message
+      : 'E-mail ou mot de passe incorrect.'
   } finally {
     loading.value = false
   }

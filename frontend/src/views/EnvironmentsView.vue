@@ -16,6 +16,8 @@ import type {
 const environmentsStore = useEnvironmentsStore()
 const authStore = useAuthStore()
 
+// RG-O2 : le développeur crée les environnements de développement et de test de ses applications.
+const canCreateEnvironments = computed(() => authStore.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN'))
 const canManageEnvironments = computed(() =>
   authStore.hasRole('DEVOPS', 'ADMIN'),
 )
@@ -207,7 +209,7 @@ function formatDate(date: string) {
       </div>
 
       <button
-        v-if="canManageEnvironments"
+        v-if="canCreateEnvironments"
         type="button"
         class="primary-button"
         :disabled="

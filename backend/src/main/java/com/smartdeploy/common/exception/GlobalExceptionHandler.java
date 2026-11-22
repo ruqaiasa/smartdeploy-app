@@ -110,7 +110,9 @@ public class GlobalExceptionHandler {
                 LocalDateTime.now(),
                 HttpStatus.FORBIDDEN.value(),
                 HttpStatus.FORBIDDEN.getReasonPhrase(),
-                "Ce compte utilisateur est désactivé",
+                com.smartdeploy.auth.AuthService.PENDING_APPROVAL.equals(exception.getMessage())
+                        ? "Votre compte attend la validation d'un administrateur. Vous recevrez un courriel dès son activation."
+                        : "Ce compte utilisateur est désactivé",
                 Map.of()
         );
     }

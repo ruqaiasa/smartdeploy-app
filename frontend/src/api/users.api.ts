@@ -1,3 +1,4 @@
+import type { UserRole } from '@/types/auth'
 import httpClient from './httpClient'
 
 import type {
@@ -78,4 +79,11 @@ export async function restoreUser(
     )
 
   return response.data
+}
+/** RG-U1 : valider une inscription en choisissant le rôle, ou la refuser. */
+export async function approveUser(id: number, role: UserRole): Promise<UserResponse> {
+  return (await httpClient.post<UserResponse>(`/api/users/${id}/approve`, { role })).data
+}
+export async function rejectUser(id: number): Promise<void> {
+  await httpClient.post(`/api/users/${id}/reject`)
 }

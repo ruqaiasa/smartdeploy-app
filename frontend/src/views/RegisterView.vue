@@ -13,6 +13,7 @@ const form = reactive({
   email: '',
   password: '',
   confirmPassword: '',
+  accessRequest: '',
 })
 
 const loading = ref(false)
@@ -58,20 +59,13 @@ async function submitRegister() {
       lastName: form.lastName.trim(),
       email: form.email.trim().toLowerCase(),
       password: form.password,
+      accessRequest: form.accessRequest.trim() || undefined,
     })
 
+    // RG-U1 : le compte attend la validation d’un administrateur ; aucune redirection.
     successMessage.value =
-      'Compte créé avec succès. Redirection vers la connexion...'
-
-    setTimeout(() => {
-      router.push({
-        path: '/login',
-        query: {
-          registered: 'true',
-          email: form.email.trim().toLowerCase(),
-        },
-      })
-    }, 1200)
+      'Demande envoyée. Vous recevrez un courriel à l’activation.'
+    void router
   } catch (error) {
     if (axios.isAxiosError(error)) {
       errorMessage.value =
@@ -196,6 +190,18 @@ async function submitRegister() {
             />
           </div>
 
+          <div class="form-group">
+            <label for="accessRequest">Équipe et motif</label>
+            <textarea
+              id="accessRequest"
+              v-model="form.accessRequest"
+              rows="3"
+              maxlength="500"
+              placeholder="Équipe Commandes, déploiement de notre API"
+            />
+            <small class="form-hint">Validé par un administrateur.</small>
+          </div>
+
           <p
             v-if="errorMessage"
             class="message error-message"
@@ -236,6 +242,8 @@ async function submitRegister() {
 </template>
 
 <style scoped>
+#accessRequest { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dbe1ea; border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
+.form-hint { display: block; margin-top: 4px; color: #6b7280; font-size: 12.5px; }
 .register-page {
   display: grid;
   min-height: 100vh;

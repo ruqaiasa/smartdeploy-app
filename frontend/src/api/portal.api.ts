@@ -1,5 +1,5 @@
 import httpClient from '@/api/httpClient'
-import type { CompatibilityReport, DeploymentComment, Workspace } from '@/types/portal'
+import type { AnalysisInsight, AnalystStats, CompatibilityReport, DeploymentComment, DeploymentProgress, LogExcerpt, PodSummary, TimelineItem, WorkQueue, Workspace } from '@/types/portal'
 
 export async function checkCompatibility(repositoryUrl: string, branch: string): Promise<CompatibilityReport> {
   const response = await httpClient.post<CompatibilityReport>('/api/portal/compatibility', { repositoryUrl, branch })
@@ -19,4 +19,35 @@ export async function addComment(deploymentId: number, message: string): Promise
 export async function getWorkspace(): Promise<Workspace> {
   const response = await httpClient.get<Workspace>('/api/portal/workspace')
   return response.data
+}
+
+export async function getProgress(deploymentId: number): Promise<DeploymentProgress> {
+  return (await httpClient.get<DeploymentProgress>(`/api/deployments/${deploymentId}/progress`)).data
+}
+
+export async function getPods(deploymentId: number): Promise<PodSummary[]> {
+  const data = (await httpClient.get<PodSummary[]>(`/api/deployments/${deploymentId}/pods`)).data
+  return Array.isArray(data) ? data : []
+}
+
+export async function getLogs(deploymentId: number, pod: string, previous: boolean, errorsOnly: boolean): Promise<LogExcerpt> {
+  return (await httpClient.get<LogExcerpt>(`/api/deployments/${deploymentId}/logs`, { params: { pod, previous, errorsOnly } })).data
+}
+
+export async function getWorkQueue(): Promise<WorkQueue> {
+  return (await httpClient.get<WorkQueue>('/api/portal/queue')).data
+}
+
+export async function getInsight(deploymentId: number): Promise<AnalysisInsight> {
+  return (await httpClient.get<AnalysisInsight>(`/api/deployments/${deploymentId}/insight`)).data
+}
+export async function sendAnalysisFeedback(deploymentId: number, verdict: 'CORRECT' | 'PARTIAL' | 'WRONG', actualCause: string): Promise<void> {
+  await httpClient.post(`/api/deployments/${deploymentId}/analysis/feedback`, { verdict, actualCause })
+}
+export async function getAnalystStats(): Promise<AnalystStats> {
+  return (await httpClient.get<AnalystStats>('/api/portal/analyst-stats')).data
+}
+export async function getTimeline(deploymentId: number): Promise<TimelineItem[]> {
+  const data = (await httpClient.get<TimelineItem[]>(`/api/deployments/${deploymentId}/timeline`)).data
+  return Array.isArray(data) ? data : []
 }

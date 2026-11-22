@@ -15,10 +15,21 @@ public class ConfidenceScoreController {
         this.scoreService = scoreService;
     }
 
+    private com.smartdeploy.deployment.DeploymentReadAccess readAccess;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setReadAccess(com.smartdeploy.deployment.DeploymentReadAccess readAccess) {
+        this.readAccess = readAccess;
+    }
+
+
     /** Score de confiance d'un déploiement à venir (version sur un environnement). */
     @GetMapping("/api/confidence")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ConfidenceScore> score(@RequestParam Long versionId, @RequestParam Long environmentId) {
+        if (readAccess != null) {
+            readAccess.ensureCanReadVersion(versionId);
+        }
         return scoreService.compute(versionId, environmentId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());

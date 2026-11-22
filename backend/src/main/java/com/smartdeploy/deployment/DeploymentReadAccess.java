@@ -12,9 +12,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class DeploymentReadAccess {
 
     private final DeploymentRepository deployments;
+    private final com.smartdeploy.version.VersionRepository versions;
 
-    public DeploymentReadAccess(DeploymentRepository deployments) {
+    public DeploymentReadAccess(DeploymentRepository deployments, com.smartdeploy.version.VersionRepository versions) {
         this.deployments = deployments;
+        this.versions = versions;
+    }
+
+    /** RG-O1 : un développeur n'interroge (vérifications, score) que les versions de ses applications. */
+    @Transactional(readOnly = true)
+    public void ensureCanReadVersion(Long versionId) {
+        if (!ApplicationAccess.isRestricted(ApplicationAccess.authenticatedUser())) {
+            return;
+        }
+        versions.findById(versionId).ifPresent(v -> ApplicationAccess.ensureCurrentUserCanAccess(v.getApplication()));
     }
 
     @Transactional(readOnly = true)

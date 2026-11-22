@@ -49,28 +49,28 @@ async function create() {
         <header class="nd-head">
           <div>
             <p class="nd-kicker">Étape {{ step }} sur 2</p>
-            <h2 id="nd-title">{{ step === 1 ? 'Vérifier votre dépôt' : 'Décrire votre application' }}</h2>
+            <h2 id="nd-title">{{ step === 1 ? 'Dépôt GitHub' : 'Application' }}</h2>
           </div>
           <button type="button" class="nd-close" aria-label="Fermer" @click="emit('close')">×</button>
         </header>
 
         <template v-if="step === 1">
-          <p class="nd-muted">SmartDeploy vérifie que votre dépôt GitHub public contient ce que son pipeline attend.</p>
+          <p class="nd-muted">Dépôt public.</p>
           <form class="nd-row" @submit.prevent="check">
             <input v-model="repo.url" type="url" required placeholder="https://github.com/equipe/projet" aria-label="Adresse du dépôt" />
             <input v-model="repo.branch" type="text" class="nd-branch" placeholder="main" aria-label="Branche" />
             <button type="submit" class="nd-btn" :disabled="busy">{{ busy ? 'Analyse…' : 'Vérifier' }}</button>
           </form>
           <CompatibilityResult v-if="report" :report="report" compact />
-          <p v-if="report?.verdict === 'NOT_READY'" class="nd-muted">Corrigez les points bloquants dans votre dépôt, puis vérifiez à nouveau.</p>
+          <p v-if="report?.verdict === 'NOT_READY'" class="nd-muted">Corrigez les points bloquants.</p>
         </template>
 
         <template v-else>
-          <label class="nd-label" for="nd-name">Nom de l’application</label>
+          <label class="nd-label" for="nd-name">Nom</label>
           <input id="nd-name" v-model="form.name" type="text" maxlength="150" required />
           <label class="nd-label" for="nd-desc">Description (facultative)</label>
           <textarea id="nd-desc" v-model="form.description" rows="3" maxlength="1000" />
-          <p class="nd-muted">Dépôt : <code>{{ repo.url }}</code>. Vous en serez le propriétaire : vous seul (et l’équipe DevOps) la verrez.</p>
+          <p class="nd-muted"><code>{{ repo.url }}</code></p>
         </template>
 
         <p v-if="error" class="nd-error" role="alert">{{ error }}</p>
@@ -78,7 +78,7 @@ async function create() {
         <footer class="nd-foot">
           <button v-if="step === 2" type="button" class="nd-btn nd-btn-ghost" @click="step = 1">Retour</button>
           <button v-if="step === 1" type="button" class="nd-btn nd-btn-primary" :disabled="!canContinue" @click="step = 2">Continuer</button>
-          <button v-else type="button" class="nd-btn nd-btn-primary" :disabled="busy || !form.name.trim()" @click="create">Enregistrer l’application</button>
+          <button v-else type="button" class="nd-btn nd-btn-primary" :disabled="busy || !form.name.trim()" @click="create">Créer</button>
         </footer>
       </div>
     </div>

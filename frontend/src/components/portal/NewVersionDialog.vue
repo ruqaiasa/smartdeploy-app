@@ -26,17 +26,17 @@ async function create() {
   <Teleport to="body">
     <div v-if="open" class="nv-backdrop" @click.self="emit('close')">
       <form class="nv" role="dialog" aria-modal="true" @submit.prevent="create">
-        <h2>Nouvelle version de {{ applicationName }}</h2>
+        <h2>Nouvelle version · {{ applicationName }}</h2>
         <label for="nv-version">Numéro</label>
         <input id="nv-version" v-model="form.version" required placeholder="1.2.0" />
         <label for="nv-branch">Branche Git</label>
         <input id="nv-branch" v-model="form.branch" required />
-        <label for="nv-commit">Commit précis (facultatif)</label>
-        <input id="nv-commit" v-model="form.commit" placeholder="sinon : le dernier commit de la branche" />
+        <label for="nv-commit">Commit (facultatif)</label>
+        <input id="nv-commit" v-model="form.commit" placeholder="dernier commit par défaut" />
         <p v-if="error" class="nv-error" role="alert">{{ error }}</p>
         <footer>
           <button type="button" class="nv-btn" @click="emit('close')">Annuler</button>
-          <button type="submit" class="nv-btn nv-primary" :disabled="busy || !form.version.trim()">Créer la version</button>
+          <button type="submit" class="nv-btn nv-primary" :disabled="busy || !form.version.trim()">Créer</button>
         </footer>
       </form>
     </div>

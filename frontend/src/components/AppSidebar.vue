@@ -21,6 +21,8 @@ const isAdmin = computed(() =>
 
 /* Demandes d’approbation en attente (pour les approbateurs : DevOps et administrateurs). */
 const canApprove = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
+/* Chaque rôle a son menu : le développeur travaille depuis « Mon espace », sans les pages globales. */
+const isDeveloper = computed(() => authStore.hasRole('DEVELOPER') && !authStore.hasRole('VIEWER', 'DEVOPS', 'ADMIN'))
 const pendingApprovals = ref(0)
 let approvalsTimer: ReturnType<typeof setInterval> | null = null
 async function loadPendingApprovals() {
@@ -150,6 +152,33 @@ defineEmits<{
         </RouterLink>
 
         <RouterLink
+          v-if="authStore.hasRole('DEVOPS', 'ADMIN')"
+          to="/console"
+          class="nav-link"
+          title="File de travail"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M4 6h16" />
+              <path d="M4 12h10" />
+              <path d="M4 18h6" />
+              <path d="M17 15l2 2 3-4" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            File de travail
+          </span>
+        </RouterLink>
+
+        <RouterLink
+          v-if="isDeveloper"
           to="/portal"
           class="nav-link"
           title="Mon espace"
@@ -169,6 +198,55 @@ defineEmits<{
             class="nav-label"
           >
             Mon espace
+          </span>
+        </RouterLink>
+
+        <RouterLink
+          v-if="authStore.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN')"
+          to="/claims"
+          class="nav-link"
+          title="Réclamations"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M4 5h16v11H8l-4 4z" />
+              <path d="M12 8v4" />
+              <path d="M12 14.5v.5" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            Réclamations
+          </span>
+        </RouterLink>
+
+        <RouterLink
+          to="/knowledge"
+          class="nav-link"
+          title="Aide"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M9.6 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4" />
+              <path d="M12 16.5v.5" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            Aide
           </span>
         </RouterLink>
       </div>
@@ -325,7 +403,7 @@ defineEmits<{
             v-if="!collapsed"
             class="nav-label"
           >
-            Déploiements
+            {{ isDeveloper ? 'Mes déploiements' : 'Déploiements' }}
           </span>
 
           <span
@@ -349,6 +427,7 @@ defineEmits<{
         </span>
 
         <RouterLink
+          v-if="!isDeveloper"
           to="/alerts"
           class="nav-link alert-link"
           title="Alertes"
@@ -411,6 +490,7 @@ defineEmits<{
         </RouterLink>
 
         <RouterLink
+          v-if="!isDeveloper"
           to="/backups"
           class="nav-link"
           title="Sauvegardes"

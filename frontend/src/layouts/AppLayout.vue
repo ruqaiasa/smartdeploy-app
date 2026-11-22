@@ -14,6 +14,9 @@ import {
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
 import DeploymentToasts from '@/components/DeploymentToasts.vue'
+import DeveloperTopNav from '@/components/developer/DeveloperTopNav.vue'
+import ClaimsWidget from '@/components/developer/ClaimsWidget.vue'
+import { useAuthStore } from '@/stores/auth'
 
 import {
   useAlertsStore,
@@ -24,6 +27,11 @@ import type {
 } from '@/types/alert'
 
 const route = useRoute()
+
+/* Deux interfaces : le développeur a son espace (barre horizontale, bulle d’assistance),
+ * l’équipe DevOps et l’administrateur gardent la console (menu latéral). */
+const authForLayout = useAuthStore()
+const isDeveloper = computed(() => authForLayout.hasRole('DEVELOPER') && !authForLayout.hasRole('VIEWER', 'DEVOPS', 'ADMIN'))
 const router = useRouter()
 
 const alertsStore =
@@ -214,7 +222,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-layout">
+  <div v-if="isDeveloper" class="dev-layout">
+    <DeveloperTopNav />
+    <main class="dev-content">
+      <RouterView />
+    </main>
+    <DeploymentToasts />
+    <ClaimsWidget />
+  </div>
+
+  <div v-else class="app-layout">
     <AppSidebar
       :collapsed="sidebarCollapsed"
       @toggle="toggleSidebar"
@@ -331,6 +348,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.dev-layout { min-height: 100vh; background: linear-gradient(180deg, #faf9ff 0%, #f6f7fb 240px); }
+.dev-content { max-width: 1240px; margin: 0 auto; padding: 24px 24px 96px; }
 .app-layout {
   min-height: 100vh;
 

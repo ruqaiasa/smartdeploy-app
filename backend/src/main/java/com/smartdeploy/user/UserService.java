@@ -58,13 +58,19 @@ public class UserService {
                 .lastName(request.lastName().trim())
                 .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.password()))
-                .role(Role.VIEWER)
-                .enabled(true)
+                // RG-U1 : un nouvel inscrit demande le rôle Développeur ; il n'a aucun accès avant
+                // la validation d'un administrateur, qui peut aussi choisir un autre rôle.
+                .role(Role.DEVELOPER)
+                .enabled(false)
+                .pendingApproval(true)
+                .accessRequest(request.accessRequest() == null || request.accessRequest().isBlank()
+                        ? null : request.accessRequest().trim())
                 .deleted(false)
                 .tokenVersion(0)
                 .build();
 
         User savedUser = userRepository.saveAndFlush(user);
+        notifyAdmins(savedUser);
 
         return toResponse(savedUser);
     }
@@ -459,8 +465,85 @@ public class UserService {
                 user.isEnabled(),
                 user.isDeleted(),
                 user.getCreatedAt(),
-                user.getUpdatedAt()
+                user.getUpdatedAt(),
+                user.isPendingApproval(),
+                user.getAccessRequest()
         );
+    }
+
+    /* ---------------------------------------------------------- validation des inscriptions (RG-U1) */
+
+    private com.smartdeploy.mail.MailService mailService;
+    private String frontendUrl = "http://localhost:5173";
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMailService(com.smartdeploy.mail.MailService mailService,
+                        @org.springframework.beans.factory.annotation.Value("${smartdeploy.frontend-url:http://localhost:5173}") String frontendUrl) {
+        this.mailService = mailService;
+        this.frontendUrl = frontendUrl.replaceAll("/+$", "");
+    }
+
+    /** Valide une inscription : le compte est activé avec le rôle choisi (Développeur par défaut). */
+    @Transactional
+    public UserResponse approve(Long id, Role role) {
+        User user = userRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable : " + id));
+        if (!user.isPendingApproval()) {
+            throw new IllegalStateException("Ce compte n'attend pas de validation");
+        }
+        user.setRole(role == null ? Role.DEVELOPER : role);
+        user.setEnabled(true);
+        user.setPendingApproval(false);
+        User saved = userRepository.saveAndFlush(user);
+        mail(saved.getEmail(), "SmartDeploy : votre compte est activé",
+                "Bonjour " + saved.getFirstName() + ",\n\nVotre compte SmartDeploy est activé, avec le rôle "
+                        + roleLabel(saved.getRole()) + ".\nConnectez-vous : " + frontendUrl + "/login\n");
+        return toResponse(saved);
+    }
+
+    /** Refuse une inscription : le compte est supprimé (l'adresse redevient libre). */
+    @Transactional
+    public void reject(Long id) {
+        User user = userRepository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new IllegalArgumentException("Utilisateur introuvable : " + id));
+        if (!user.isPendingApproval()) {
+            throw new IllegalStateException("Ce compte n'attend pas de validation");
+        }
+        String email = user.getEmail();
+        userRepository.delete(user);
+        mail(email, "SmartDeploy : votre demande de compte",
+                "Bonjour,\n\nVotre demande de compte SmartDeploy n'a pas été acceptée. Contactez l'équipe DevOps pour en savoir plus.\n");
+    }
+
+    private void notifyAdmins(User registered) {
+        userRepository.findAllByDeletedFalse().stream()
+                .filter(User::isEnabled)
+                .filter(u -> u.getRole() == Role.ADMIN)
+                .forEach(admin -> mail(admin.getEmail(), "SmartDeploy : un compte attend votre validation",
+                        "Bonjour,\n\n" + registered.getFirstName() + " " + registered.getLastName() + " (" + registered.getEmail()
+                                + ") demande un compte."
+                                + (registered.getAccessRequest() == null ? "" : "\nSa demande : « " + registered.getAccessRequest() + " »")
+                                + "\n\nValider ou refuser : " + frontendUrl + "/users\n"));
+    }
+
+    private void mail(String to, String subject, String text) {
+        if (mailService == null) {
+            return;
+        }
+        try {
+            mailService.send(to, subject, text);
+        } catch (RuntimeException exception) {
+            // Le courriel est une aide : son échec n'empêche pas l'inscription ni la validation.
+        }
+    }
+
+    static String roleLabel(Role role) {
+        return switch (role) {
+            case ADMIN -> "Administrateur";
+            case DEVOPS -> "DevOps";
+            case VIEWER -> "Lecteur";
+            default -> "Développeur";
+        };
     }
 
     @Transactional(readOnly = true)

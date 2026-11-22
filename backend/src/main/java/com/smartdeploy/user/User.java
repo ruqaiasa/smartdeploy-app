@@ -52,6 +52,15 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    /** Inscription : le compte attend la validation d'un administrateur (aucun accès en attendant). */
+    @Builder.Default
+    @Column(name = "pending_approval", nullable = false, columnDefinition = "boolean not null default false")
+    private boolean pendingApproval = false;
+
+    /** Inscription : l'équipe et la raison données par le demandeur. */
+    @Column(name = "access_request", length = 500)
+    private String accessRequest;
+
     @Builder.Default
     @Column(nullable = false)
     private boolean deleted = false;

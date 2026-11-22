@@ -14,10 +14,21 @@ public class DeploymentPrecheckController {
         this.precheckService = precheckService;
     }
 
+    private DeploymentReadAccess readAccess;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setReadAccess(DeploymentReadAccess readAccess) {
+        this.readAccess = readAccess;
+    }
+
+
     /** Ce qu'il faut savoir avant de déployer cette version sur cet environnement. */
     @GetMapping("/api/deployments/precheck")
     @PreAuthorize("isAuthenticated()")
     public DeploymentPrecheck precheck(@RequestParam Long versionId, @RequestParam Long environmentId) {
+        if (readAccess != null) {
+            readAccess.ensureCanReadVersion(versionId);
+        }
         return precheckService.check(versionId, environmentId);
     }
 }

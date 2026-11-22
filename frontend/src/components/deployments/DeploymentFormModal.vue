@@ -687,10 +687,10 @@ async function submitForm() {
             </p>
             <section v-if="isDeveloperRequest" class="dfm-request" aria-label="Demande de déploiement">
               <strong>Demande de déploiement</strong>
-              <p>Votre demande sera examinée par un DevOps ou un administrateur, qui sera prévenu. Rien ne sera déployé avant son accord.</p>
-              <label for="dfm-request-message">Message pour l’équipe (facultatif)</label>
+              <p>Un DevOps validera avant le déploiement.</p>
+              <label for="dfm-request-message">Message (facultatif)</label>
               <textarea id="dfm-request-message" v-model="requestMessage" rows="3" maxlength="500"
-                placeholder="Par exemple : première mise en ligne de notre API de commandes, à valider avant la démonstration de vendredi." />
+                placeholder="Contexte pour l’équipe" />
               <small>{{ requestMessage.length }} / 500</small>
             </section>
             <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />

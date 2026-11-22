@@ -22,7 +22,13 @@ public record RegisterRequest(
 
         @NotBlank(message = "Le mot de passe est obligatoire")
         @Size(min = 8, max = 100)
-        String password
+        String password,
 
+        // L'équipe et la raison de la demande, lues par l'administrateur avant validation
+        @jakarta.validation.constraints.Size(max = 500)
+        String accessRequest
 ) {
+    public RegisterRequest(String firstName, String lastName, String email, String password) {
+        this(firstName, lastName, email, password, null);
+    }
 }

@@ -48,7 +48,7 @@ async function create() {
   <Teleport to="body">
     <div v-if="open" class="ne-backdrop" @click.self="emit('close')">
       <form class="ne" role="dialog" aria-modal="true" @submit.prevent="create">
-        <h2>Ajouter un environnement à {{ applicationName }}</h2>
+        <h2>Nouvel environnement · {{ applicationName }}</h2>
         <template v-if="available.length">
           <label for="ne-type">Type</label>
           <select id="ne-type" v-model="form.type">
@@ -58,13 +58,13 @@ async function create() {
           <input id="ne-name" v-model="form.name" required maxlength="100" />
           <label for="ne-desc">Description (facultative)</label>
           <input id="ne-desc" v-model="form.description" maxlength="500" />
-          <p class="ne-muted">L’espace de noms Kubernetes est créé automatiquement. La préproduction et la production sont créées par l’équipe DevOps.</p>
+          <p class="ne-muted">Production : demandée à l’équipe DevOps.</p>
         </template>
-        <p v-else class="ne-muted">Votre application a déjà ses environnements de développement et de test. Pour la production, adressez-vous à l’équipe DevOps.</p>
+        <p v-else class="ne-muted">Développement et test existent déjà.</p>
         <p v-if="error" class="ne-error" role="alert">{{ error }}</p>
         <footer>
           <button type="button" class="ne-btn" @click="emit('close')">{{ available.length ? 'Annuler' : 'Fermer' }}</button>
-          <button v-if="available.length" type="submit" class="ne-btn ne-primary" :disabled="busy || !form.name.trim()">Créer l’environnement</button>
+          <button v-if="available.length" type="submit" class="ne-btn ne-primary" :disabled="busy || !form.name.trim()">Créer</button>
         </footer>
       </form>
     </div>

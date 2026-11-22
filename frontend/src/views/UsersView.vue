@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { approveUser, rejectUser } from '@/api/users.api'
 import {
   computed,
   onMounted,
@@ -23,6 +24,19 @@ import type {
 } from '@/types/auth'
 
 const users = ref<UserResponse[]>([])
+
+/* RG-U1 : inscriptions en attente de validation */
+const pending = computed(() => users.value.filter(u => u.pendingApproval))
+const approvalRoles = ref<Record<number, UserRole>>({})
+async function approve(u: UserResponse) {
+  try { await approveUser(u.id, approvalRoles.value[u.id] ?? 'DEVELOPER'); await loadUsers() }
+  catch { errorMessage.value = 'Le compte n’a pas pu être validé.' }
+}
+async function reject(u: UserResponse) {
+  if (!window.confirm(`Refuser la demande de ${u.email} ?`)) return
+  try { await rejectUser(u.id); await loadUsers() }
+  catch { errorMessage.value = 'La demande n’a pas pu être refusée.' }
+}
 
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -321,6 +335,26 @@ onMounted(loadUsers)
     >
       {{ errorMessage }}
     </div>
+
+    <section v-if="pending.length" class="panel pending-panel">
+      <h2>Comptes à valider ({{ pending.length }})</h2>
+      <article v-for="u in pending" :key="u.id" class="pending-item">
+        <div>
+          <strong>{{ u.firstName }} {{ u.lastName }}</strong> · {{ u.email }}
+          <p v-if="u.accessRequest" class="pending-request">« {{ u.accessRequest }} »</p>
+        </div>
+        <div class="pending-actions">
+          <select v-model="approvalRoles[u.id]" aria-label="Rôle attribué">
+            <option :value="undefined">Développeur</option>
+            <option value="DEVOPS">DevOps</option>
+            <option value="VIEWER">Lecteur</option>
+            <option value="ADMIN">Administrateur</option>
+          </select>
+          <button type="button" class="primary-button" @click="approve(u)">Valider</button>
+          <button type="button" class="pending-reject" @click="reject(u)">Refuser</button>
+        </div>
+      </article>
+    </section>
 
     <section
       v-if="showCreateForm"
@@ -690,6 +724,13 @@ onMounted(loadUsers)
 </template>
 
 <style scoped>
+.pending-panel { border: 1px solid #ddd6fe; border-left: 5px solid #7c3aed; background: #f5f3ff; }
+.pending-panel h2 { margin: 0 0 8px; font-size: 16px; color: #4c1d95; }
+.pending-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid #ddd6fe; }
+.pending-request { margin: 4px 0 0; color: #4b5563; font-size: 13.5px; }
+.pending-actions { display: flex; align-items: center; gap: 8px; }
+.pending-actions select { padding: 7px 9px; border: 1px solid #ddd6fe; border-radius: 8px; font: inherit; }
+.pending-reject { padding: 8px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; font: inherit; font-weight: 600; cursor: pointer; }
 .users-page {
   display: flex;
   flex-direction: column;

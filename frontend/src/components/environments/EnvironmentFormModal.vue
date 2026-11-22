@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 
 import type {
   ApplicationResponse,
@@ -28,12 +29,11 @@ const emit = defineEmits<{
   ]
 }>()
 
-const environmentTypes: EnvironmentType[] = [
-  'DEVELOPMENT',
-  'TEST',
-  'STAGING',
-  'PRODUCTION',
-]
+// RG-O2 : un développeur ne crée que des environnements de développement ou de test.
+const environmentTypes = computed<EnvironmentType[]>(() =>
+  useAuthStore().hasRole('DEVOPS', 'ADMIN')
+    ? ['DEVELOPMENT', 'TEST', 'STAGING', 'PRODUCTION']
+    : ['DEVELOPMENT', 'TEST'])
 
 const form = reactive({
   name: '',

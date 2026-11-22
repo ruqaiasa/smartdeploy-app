@@ -82,7 +82,18 @@ public class DeploymentCommentService {
             return true;
         }
         User requester = deployment.getRequestedBy();
-        return requester != null && Objects.equals(requester.getId(), user.getId());
+        if (requester != null && Objects.equals(requester.getId(), user.getId())) {
+            return true;
+        }
+        // Le propriétaire de l'application participe aussi, même s'il n'a pas fait la demande.
+        User owner = owner(deployment);
+        return owner != null && Objects.equals(owner.getId(), user.getId());
+    }
+
+    /** Propriétaire de l'application déployée, ou null. */
+    static User owner(Deployment deployment) {
+        return deployment.getVersion() == null || deployment.getVersion().getApplication() == null
+                ? null : deployment.getVersion().getApplication().getOwner();
     }
 
     private void ensureParticipant(Deployment deployment, User user) {
@@ -102,7 +113,17 @@ public class DeploymentCommentService {
                     .filter(u -> !Objects.equals(u.getId(), author.getId()))
                     .toList();
         }
-        return requester == null || Objects.equals(requester.getId(), author.getId()) ? List.of() : List.of(requester);
+        // L'équipe écrit : le demandeur et le propriétaire sont prévenus (jamais l'auteur, jamais deux fois).
+        java.util.List<User> to = new java.util.ArrayList<>();
+        if (requester != null && !Objects.equals(requester.getId(), author.getId())) {
+            to.add(requester);
+        }
+        User owner = owner(deployment);
+        if (owner != null && !Objects.equals(owner.getId(), author.getId())
+                && (requester == null || !Objects.equals(owner.getId(), requester.getId()))) {
+            to.add(owner);
+        }
+        return to;
     }
 
     private void notifyOthers(Deployment deployment, User author, String text) {

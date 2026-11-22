@@ -26,6 +26,8 @@ export interface RegisterRequest {
   lastName: string
   email: string
   password: string
+  /** L’équipe et la raison de la demande, lues par l’administrateur. */
+  accessRequest?: string
 }
 
 export interface RegisterResponse {

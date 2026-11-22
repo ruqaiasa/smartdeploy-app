@@ -10,6 +10,9 @@ export interface UserResponse {
   deleted: boolean
   createdAt: string
   updatedAt: string
+  /** RG-U1 : inscription en attente de validation. */
+  pendingApproval?: boolean
+  accessRequest?: string | null
 }
 
 export interface UserPageResponse {
