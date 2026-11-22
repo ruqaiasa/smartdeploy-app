@@ -1,0 +1,13 @@
+/* SmartDeploy V5: limited shared refinements; no V3 broad overrides. */
+:root { --color-primary:#3b82f6; --color-primary-hover:#2563eb; --color-primary-light:#eff6ff; }
+html,body,#app { background:#f8fafc; }
+:where(a,button,input,select,textarea):focus-visible { outline:2px solid #60a5fa;outline-offset:2px; }
+.dev-layout .dev-content { max-width:1370px; width:100%; margin:0 auto; padding:26px 26px 44px; min-width:0; }
+.dev-layout .dn { background:#fff; border-bottom:1px solid #e4e9f1; box-shadow:none; }
+.dev-layout .dn-inner {max-width:1430px; padding:12px 26px; gap:18px; }
+.dev-layout .dn-logo { background:#2563eb; box-shadow:none; border-radius:9px; }
+.dev-layout .dn-badge {background:#eff6ff;color:#1d4ed8;}
+.dev-layout .dn-link {font-size:13px; border-radius:7px;}
+.dev-layout .dn-link:hover,.dev-layout .dn-link.is-active {background:#eff6ff;color:#1d4ed8;}
+.dev-layout .dn-avatar {background:#e0edff;color:#1d4ed8;}
+@media(max-width:640px){.dev-layout .dev-content{padding:16px}.dev-layout .dn-inner{padding:12px 16px}}

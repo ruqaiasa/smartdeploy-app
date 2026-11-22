@@ -1,0 +1,56 @@
+/* SmartDeploy V8 — concentration sur la tâche, sans écraser la logique Vue */
+.dp .sd7-deployments .sd7-primary-row td{padding:15px 17px!important;vertical-align:middle}
+.dp .sd7-expanded-row>td{padding:0!important;background:#fff!important}
+.dp .sd8-detail{padding:16px 20px 18px;background:#fff;display:grid;gap:14px;border-top:1px solid #e6ebf2}
+.dp .sd8-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.dp .sd8-button,.dp .sd8-danger-menu>summary{display:inline-flex;align-items:center;justify-content:center;min-height:35px;padding:7px 12px;border:1px solid #dce4ef;border-radius:8px;background:#fff;color:#263b5e;text-decoration:none;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
+.dp .sd8-button:hover,.dp .sd8-danger-menu>summary:hover{background:#f4f7fc;border-color:#b9cbe7}
+.dp .sd8-button.is-primary{background:#eff5ff;border-color:#bfd4ff;color:#1d4ed8}
+.dp .sd8-danger-menu{position:relative}
+.dp .sd8-danger-menu>summary{list-style:none}
+.dp .sd8-danger-menu>summary::-webkit-details-marker{display:none}
+.dp .sd8-danger-options{position:absolute;z-index:12;right:0;top:40px;width:245px;padding:6px;background:white;border:1px solid #dfe6f0;border-radius:10px;box-shadow:0 12px 28px #0f172a1a;display:grid;gap:3px}
+.dp .sd8-danger-options button{background:transparent;border:0;text-align:left;padding:10px 11px;border-radius:7px;color:#263b5e;font-size:12px;cursor:pointer}
+.dp .sd8-danger-options button:hover{background:#f1f5f9}
+.dp .sd8-danger-options button.is-danger{color:#b91c1c}
+.dp .sd8-alert{padding:11px 13px;border-left:3px solid #dc2626;background:#fff7f7;border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#991b1b;font-size:12px}
+.dp .sd8-alert strong{font-size:12px}
+.dp .sd8-alert p{margin:0;flex:1;min-width:180px;overflow-wrap:anywhere;line-height:1.45}
+.dp .sd8-alert button{border:0;background:transparent;text-decoration:underline;font-weight:700;color:inherit}
+.dp .sd8-metadata{border-top:1px solid #edf1f6;padding-top:12px;color:#596c86;font-size:12px}
+.dp .sd8-metadata>summary{cursor:pointer;width:fit-content;color:#41608b;font-weight:700;list-style:none}
+.dp .sd8-metadata>summary::before{content:'+';margin-right:8px;font-weight:700;font-size:15px}
+.dp .sd8-metadata[open]>summary::before{content:'−'}
+.dp .sd8-metadata>dl{margin:14px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 20px}
+.dp .sd8-metadata dt{font-size:10px;text-transform:uppercase;color:#8190a6;font-weight:750;letter-spacing:.04em}
+.dp .sd8-metadata dd{margin:4px 0 0;color:#25344d;overflow-wrap:anywhere}
+.dp .sd8-verdicts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+/* Assistant : conserver la sécurité et la validation des quatre étapes, réduire leur coût visuel. */
+.dfm-overlay .dfm{width:min(760px,calc(100vw - 32px))!important;max-height:min(90vh,900px)!important;box-shadow:0 26px 70px #0f172a33!important}
+.dfm-overlay .dfm-header{padding:17px 24px!important}
+.dfm-overlay .dfm-header h2{font-size:21px!important}
+.dfm-overlay .dfm-header p{font-size:12px!important;margin-top:3px!important;color:#718198!important}
+.dfm-overlay .dfm-steps{padding:8px 22px!important;gap:8px!important}
+.dfm-overlay .dfm-step{min-width:0!important}
+.dfm-overlay .dfm-step-label{font-size:12px!important}
+.dfm-overlay .dfm-body{padding:0!important}
+.dfm-overlay .dfm-section{margin:0!important;padding:16px 24px!important}
+.dfm-overlay .dfm-section h3{font-size:16px!important;margin-bottom:14px!important}
+.dfm-overlay .dfm-section h4{font-size:13px!important;margin-top:13px!important}
+.dfm-overlay .dfm-grid{gap:12px!important}
+.dfm-overlay .dfm-field label{font-size:12px!important;font-weight:700!important}
+.dfm-overlay .dfm-field input,.dfm-overlay .dfm-field select,.dfm-overlay .dfm-field textarea{min-height:39px!important;font-size:13px!important}
+.dfm-overlay .dfm-choices{display:grid;gap:9px!important}
+.dfm-overlay .dfm-choice{padding:11px 13px!important;min-height:auto!important}
+.dfm-overlay .dfm-choice strong{font-size:13px!important}
+.dfm-overlay .dfm-choice span{font-size:11px!important;line-height:1.4!important}
+.dfm-overlay .dfm-facts{display:none!important} /* données déjà visibles à l'étape de vérification */
+.dfm-overlay .dfm-advanced>.dfm-help{display:none!important}
+.dfm-overlay .dfm-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px!important}
+.dfm-overlay .dfm-summary>div{padding:10px 12px!important;border:1px solid #e7edf5!important;border-radius:8px!important;background:#fbfcff!important;min-width:0}
+.dfm-overlay .dfm-summary dt{font-size:10px!important}
+.dfm-overlay .dfm-summary dd{font-size:12px!important;overflow-wrap:anywhere}
+.dfm-overlay .dfm-footer{padding:13px 24px!important}
+.dfm-overlay .dfm-btn{min-height:38px!important}
+@media(max-width:760px){.dp .sd8-metadata>dl{grid-template-columns:1fr 1fr}.dfm-overlay .dfm-summary{grid-template-columns:1fr!important}}
+@media(max-width:520px){.dp .sd8-metadata>dl{grid-template-columns:1fr}.dp .sd8-action-bar>*{flex:1}.dfm-overlay .dfm-section{padding:14px 15px!important}.dfm-overlay .dfm-header{padding:14px 15px!important}}

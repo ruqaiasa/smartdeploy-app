@@ -1,0 +1,95 @@
+/* SmartDeploy V7 — interface unifiée et tableau de déploiements compact.
+   Ciblage limité : aucun changement de logique métier ni d'autorisations. */
+:root {
+  --sd7-blue:#2855d7;--sd7-blue-dark:#2045b2;--sd7-navy:#101e37;
+  --sd7-bg:#f3f6fb;--sd7-panel:#ffffff;--sd7-line:#e0e7f1;
+  --sd7-text:#192945;--sd7-muted:#697a93;--sd7-radius:13px;
+  --sd7-shadow:0 6px 24px rgba(19,39,77,.045),0 1px 3px rgba(19,39,77,.025);
+}
+body,.app-layout,.dev-layout{background:var(--sd7-bg)!important;color:var(--sd7-text)}
+.app-layout .page-content{padding:29px clamp(19px,2.5vw,39px)!important}
+.dev-layout .dev-content{max-width:1490px!important;padding:30px 32px 88px!important}
+:where(button,a,input,select,textarea):focus-visible{outline:3px solid #8aa9fb!important;outline-offset:2px}
+/* Page headers: same layout and typography for administration, operations and development */
+.dp .dp-header,.db .db-header,.applications-page .page-header,.versions-page .page-header,.environments-page .page-header{align-items:center!important;gap:18px!important;margin:0 0 5px!important}
+.dp .dp-header h1,.db .db-header h1,.applications-page .page-header h2,.versions-page .page-header h2,.environments-page .page-header h2{font-size:25px!important;font-weight:770!important;letter-spacing:-.035em!important;color:var(--sd7-navy)!important;line-height:1.2!important}
+.dp .dp-header p,.db .db-sub,.applications-page .page-header p,.versions-page .page-header p,.environments-page .page-header p{font-size:12.5px!important;color:var(--sd7-muted)!important;margin-top:7px!important;line-height:1.55!important}
+/* One family of buttons, forms, surfaces and badges */
+.dp .dp-btn,.db .db-btn,.applications-page .primary-button,.applications-page .secondary-button,.versions-page .primary-button,.versions-page .secondary-button,.environments-page .primary-button,.environments-page .secondary-button{border-radius:9px!important;min-height:40px!important;font-size:12.5px!important;font-weight:700!important}
+.dp .dp-btn-primary,.db .db-btn-primary,.applications-page .primary-button,.versions-page .primary-button,.environments-page .primary-button{background:var(--sd7-blue)!important;border-color:var(--sd7-blue)!important;color:#fff!important;box-shadow:0 5px 13px rgba(40,85,215,.14)!important}
+.dp .dp-btn-primary:hover,.db .db-btn-primary:hover,.applications-page .primary-button:hover,.versions-page .primary-button:hover,.environments-page .primary-button:hover{background:var(--sd7-blue-dark)!important}
+.dp .dp-card,.db .db-card,.applications-page .table-card,.versions-page .table-card,.environments-page .table-card{background:#fff!important;border:1px solid var(--sd7-line)!important;border-radius:var(--sd7-radius)!important;box-shadow:var(--sd7-shadow)!important;overflow:hidden}
+.dp .dp-toolbar{background:#fff!important;border:1px solid var(--sd7-line)!important;border-radius:12px!important;box-shadow:var(--sd7-shadow)!important;padding:12px!important;gap:12px!important}
+.dp .dp-search,.dp .dp-select,.applications-page input,.versions-page input,.versions-page select,.environments-page input{border-radius:9px!important;border-color:#dce4ef!important;background:#fff!important;min-height:43px!important}
+.dp .dp-filters{gap:7px!important;flex-wrap:wrap!important;padding:1px 0!important}
+.dp .dp-chip{border:1px solid #dde5f0!important;border-radius:8px!important;background:#fff!important;color:#52627d!important;font-size:12px!important;min-height:34px!important;padding:6px 12px!important;font-weight:650!important}
+.dp .dp-chip.is-active{background:#e9f0ff!important;border-color:#a9beff!important;color:#2049ad!important}
+.dp .dp-live{margin-left:auto!important;font-size:11px!important;color:#53735e!important}
+.dp .dp-pagination{padding:15px 17px!important;border:1px solid var(--sd7-line)!important;border-radius:12px!important;background:#fff!important}
+/* Compact deploy list */
+.sd7-table-scroll{width:100%;overflow-x:auto}
+.dp .sd7-deployments{width:100%!important;table-layout:auto!important;border-collapse:collapse!important;min-width:690px!important}
+.dp .sd7-deployments thead th{background:#f8fafd!important;border-bottom:1px solid var(--sd7-line)!important;color:#718098!important;font-size:10px!important;letter-spacing:.065em!important;font-weight:800!important;padding:14px 19px!important;text-transform:uppercase!important;white-space:nowrap!important}
+.dp .sd7-deployments tbody .sd7-primary-row td{padding:17px 19px!important;vertical-align:middle!important;border-bottom:1px solid #edf1f6!important;min-height:0!important;background:#fff}
+.dp .sd7-deployments tbody .sd7-primary-row:hover td{background:#f9fbff!important}
+.dp .sd7-deployments tbody .sd7-primary-row.sd7-row-expanded td{background:#f6f9ff!important;border-bottom-color:#cfdbf5!important}
+.sd7-app-name{font-size:13.5px;font-weight:760;letter-spacing:-.013em;color:#14243c;overflow-wrap:anywhere}
+.sd7-app-meta{display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.sd7-version{padding:3px 7px;background:#f1f5fa;border:1px solid #e5eaf2;border-radius:6px;color:#3f5679;font:650 11px ui-monospace,SFMono-Regular,Consolas,monospace}
+.sd7-id,.sd7-muted{color:#8794a7;font-size:11px}
+.sd7-env-name{font-size:13px;font-weight:680;color:#20324e}
+.sd7-muted{display:block;margin-top:5px;line-height:1.5}
+.sd7-date{font-size:12.5px;font-weight:650;color:#334967;white-space:nowrap}
+.sd7-person{max-width:160px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sd7-status-group{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sd7-issue-label{display:block;font-size:11px;color:#b42335;margin-top:7px;font-weight:700}
+.sd7-under-status{font-weight:600}
+.sd7-primary-actions{white-space:nowrap;text-align:right!important}
+.sd7-actions-head{text-align:right!important}
+.sd7-action-primary,.sd7-expand-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 10px;font-size:11.5px;font-weight:740;text-decoration:none;white-space:nowrap;border-radius:8px;cursor:pointer}
+.sd7-action-primary{background:#eaf0ff;color:#244fc3;border:1px solid #d1ddff}
+.sd7-action-primary:hover{background:#dfe9ff}
+.sd7-expand-button{margin-left:6px;color:#415774;background:#fff;border:1px solid #dfe6f0}
+.sd7-expand-button:hover{background:#f4f7fb}
+.sd7-expand-button[aria-expanded="true"] svg{transform:rotate(180deg)}
+.sd7-expand-button svg{transition:transform .2s ease}
+.dp .sd7-expanded-row>td{padding:0!important;background:#f7f9fd!important;border-bottom:1px solid #d9e4f2!important}
+.sd7-detail-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(230px,300px);gap:23px;padding:22px 25px 25px}
+.sd7-detail-main,.sd7-detail-operations{min-width:0}
+.sd7-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:17px}
+.sd7-detail-layout h3{margin:0!important;font-size:13px!important;font-weight:800!important;color:#20324e!important}
+.sd7-detail-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px 20px;margin:0}
+.sd7-detail-facts div{min-width:0}
+.sd7-detail-facts dt{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8190a6;margin-bottom:4px}
+.sd7-detail-facts dd{margin:0;font-size:12px;color:#2b3f5b;overflow-wrap:anywhere}
+.sd7-detail-facts a{color:#2d57c7;text-decoration:none;font-weight:700}
+.sd7-detail-error{padding:12px 14px;background:#fff5f5;border:1px solid #fbd5d5;border-left:3px solid #e25959;border-radius:9px;margin-bottom:18px;color:#8d2330}
+.sd7-detail-error strong{font-size:12px;font-weight:800}.sd7-detail-error p{font-size:12px;line-height:1.6;margin:7px 0 0!important;white-space:normal;overflow-wrap:anywhere}
+.sd7-detail-error button{margin-top:10px;color:#a72d3b;background:#fff;border:1px solid #f2c4c9;padding:7px 10px;border-radius:7px;font-size:11px;font-weight:700}
+.sd7-inline-evidence{display:flex;gap:8px;flex-wrap:wrap;margin-top:17px;align-items:center}
+.sd7-detail-operations{border-left:1px solid #dde6f2;padding-left:22px}
+.sd7-detail-operations>p{font-size:11px;color:#7888a1;margin:5px 0 14px!important}
+.sd7-operation-list{display:grid;grid-template-columns:1fr;gap:7px}
+.dp .sd7-operation-list .dp-action{display:flex!important;align-items:center;justify-content:flex-start;text-align:left!important;margin:0!important;min-height:34px!important;border:1px solid #dde6f2!important;background:#fff!important;color:#334d75!important;border-radius:8px!important;padding:8px 11px!important;font-size:11.5px!important;font-weight:670!important;white-space:normal!important}
+.dp .sd7-operation-list .dp-action:hover{border-color:#adc2ed!important;background:#eef4ff!important}
+.dp .sd7-operation-list .dp-action-danger{color:#ad3543!important}
+.dp .sd7-operation-list .dp-action:disabled{opacity:.45!important;cursor:not-allowed!important}
+/* Dashboard and functional pages: compact, readable density */
+.db .db-kpi{padding:19px 21px!important;min-height:147px!important;border-radius:13px!important;box-shadow:var(--sd7-shadow)!important}
+.db .db-kpi-value{font-size:30px!important;letter-spacing:-.055em!important}
+.db .db-card-head{border-bottom:1px solid #edf1f6!important;padding:18px 20px!important}
+.db .db-card-head h2{font-size:15px!important}
+.db .db-table th,.applications-page th,.versions-page th,.environments-page th{background:#f7f9fc!important;color:#738198!important;font-size:10.5px!important;letter-spacing:.045em!important}
+.db .db-table td,.applications-page td,.versions-page td,.environments-page td{border-bottom:1px solid #edf1f6!important}
+.db .db-table tbody tr:hover,.applications-page tbody tr:hover,.versions-page tbody tr:hover,.environments-page tbody tr:hover{background:#f8faff!important}
+/* Developer: unified restrained accent */
+.dev-layout .dn-inner{max-width:1580px!important}
+.dev-layout .dn-logo{background:linear-gradient(145deg,#1a3977,#3268dc)!important}
+.dev-layout .sddev{max-width:none!important}
+.dev-layout .sddev-stat{border-color:var(--sd7-line)!important;border-radius:13px!important;box-shadow:var(--sd7-shadow)!important;transition:transform .15s ease,box-shadow .15s ease!important}
+.dev-layout .sddev-stat:hover{transform:translateY(-2px);box-shadow:0 8px 22px #1d335211!important}
+.dev-layout .sddev-panel,.dev-layout .sddev-steps{border-color:var(--sd7-line)!important;border-radius:13px!important;box-shadow:var(--sd7-shadow)!important}
+.dev-layout .sddev-panel-head{background:#fff!important}
+@media(max-width:950px){.sd7-detail-layout{grid-template-columns:1fr}.sd7-detail-operations{padding-left:0;border-left:none;border-top:1px solid #dde6f2;padding-top:17px}.sd7-operation-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.app-layout .page-content{padding:20px 13px!important}.dev-layout .dev-content{padding:20px 14px 80px!important}.sd7-detail-layout{padding:18px 14px}.sd7-operation-list{grid-template-columns:1fr}.dp .dp-toolbar{flex-direction:column!important}.dp .dp-header{flex-wrap:wrap!important}}
+@media(prefers-reduced-motion:reduce){.sd7-expand-button svg,.dev-layout .sddev-stat{transition:none!important;transform:none!important}}

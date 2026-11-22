@@ -103,7 +103,6 @@ function canRollback(deployment: DeploymentResponse) {
     && guards.value[deployment.id]?.status !== 'DEGRADED'
     && !sameImage
 }
-
 const modalOpen = ref(false)
 const monitoringOpen = ref(false)
 const monitoredDeployment = ref<DeploymentResponse | null>(null)
@@ -510,95 +509,63 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </template>
       </div>
 
-      <table v-else class="dp-table" :class="{ 'is-refreshing': deploymentsStore.loading }">
-        <thead>
-          <tr>
-            <th scope="col">Application</th>
-            <th scope="col">Environnement</th>
-            <th scope="col">Statut</th>
-            <th scope="col">Lancé</th>
-            <th scope="col">Durée</th>
-            <th scope="col">Build</th>
-            <th scope="col"><span class="dp-sr">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
-            <tr :class="{ 'has-error': hasReason(deployment) }">
+            <div v-else class="sd9-scroll">
+        <table class="dp-table sd9-table" :class="{ 'is-refreshing': deploymentsStore.loading }">
+          <thead>
+            <tr>
+              <th scope="col">Application</th>
+              <th scope="col">Environnement</th>
+              <th scope="col">État</th>
+              <th scope="col">Date</th>
+              <th scope="col">Actions disponibles</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
               <td data-label="Application">
-                <div class="dp-app">
-                  <strong>{{ deployment.applicationName }}</strong>
-                  <span class="dp-version">{{ deployment.version }}</span>
-                </div>
-                <small v-if="deployment.rollbackOfId" class="dp-muted">Retour au déploiement #{{ deployment.rollbackOfId }}</small>
-                <small v-else-if="deployment.imagesFromId" class="dp-muted" title="Même image, à l’octet près : construite une fois, déployée partout">Image réutilisée du déploiement #{{ deployment.imagesFromId }}</small>
+                <RouterLink class="sd9-app" :to="`/deployments/${deployment.id}`">{{ deployment.applicationName }}</RouterLink>
+                <div class="sd9-meta">{{ deployment.version }} <span class="sd9-separator">·</span> #{{ deployment.id }}</div>
               </td>
               <td data-label="Environnement">
-                <span>{{ deployment.environmentName }}</span>
-                <small class="dp-muted dp-block">{{ deployment.environmentType }}</small>
+                <span class="sd9-env">{{ deployment.environmentName }}</span>
+                <small class="sd9-meta sd9-type">{{ deployment.environmentType }}</small>
               </td>
-              <td data-label="Statut">
+              <td data-label="État">
                 <span class="dp-status" :class="`is-${deployment.status.toLowerCase()}`">
                   <span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}
                 </span>
-                <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
-                <small v-if="deployment.status === 'AWAITING_APPROVAL'" class="dp-approval is-waiting">
-                  {{ deployment.requestedById === authStore.currentUser?.id ? 'En attente de l’accord d’une seconde personne' : 'Votre décision est attendue' }}
-                </small>
-                <small v-else-if="deployment.approvedBy && deployment.status !== 'REJECTED'" class="dp-approval is-approved"
-                  :title="deployment.approvalComment ?? ''">Approuvé par {{ deployment.approvedBy }}</small>
-                <small v-else-if="deployment.status === 'REJECTED'" class="dp-approval is-rejected">
-                  {{ deployment.approvedBy ? `Refusé par ${deployment.approvedBy}` : 'Refusé' }}<template v-if="deployment.approvalComment"> : {{ deployment.approvalComment }}</template>
-                </small>
-                <DeploymentGuardBadge v-if="guards[deployment.id]" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
-                <small v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)"
-                  :title="restorePointTitle(restorePoints[deployment.id]!)"><svg class="dp-rp-icon" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M4 3.5h9.5L16.5 6.5V16a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>{{ restorePointLabel(restorePoints[deployment.id]!) }}</small>
+                <small v-if="deployment.current" class="sd9-service">En service</small>
+                <small v-else-if="hasReason(deployment)" class="sd9-failure" :title="deployment.errorMessage ?? ''">Incident</small>
               </td>
-              <td data-label="Lancé">
-                <span :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
-                <small class="dp-muted dp-block" :title="deployment.requestedByEmail">par {{ requesterName(deployment.requestedByEmail) }}</small>
+              <td data-label="Date">
+                <time class="sd9-date" :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</time>
               </td>
-              <td data-label="Durée">{{ formatDuration(deployment.durationSeconds) }}</td>
-              <td data-label="Build">
-                <a v-if="deployment.deploymentLogsUrl" :href="deployment.deploymentLogsUrl" target="_blank" rel="noopener noreferrer" class="dp-build" title="Ouvrir les logs Jenkins">
-                  #{{ deployment.jenkinsBuildNumber ?? '?' }}
-                  <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M8 4h8v8M16 4l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                </a>
-                <span v-else class="dp-muted">—</span>
-                <small v-if="deployment.deployedBackendImage" class="dp-muted dp-block dp-digest"
-                  :title="imageTooltip(deployment)">{{ shortDigest(deployment.deployedBackendImage) }}</small>
-              </td>
-              <td class="dp-actions-cell">
-                <div class="dp-actions">
-                  <button v-if="hasIncident(deployment)" type="button" class="dp-action dp-action-analysis" @click="analysisDeployment = deployment">Analyse</button>
-                  <button v-if="deployment.status === 'SUCCESS'" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
-                  <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="dp-action dp-action-promote"
-                    :title="`Même version, même image, même configuration : vers ${promotions[deployment.id]!.targetEnvironmentName}`"
-                    @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
-                  <RouterLink :to="`/deployments/${deployment.id}`" class="dp-action" title="Progression, explication, journaux et discussion">Détails</RouterLink>
-                  <button v-if="canDecide(deployment)" type="button" class="dp-action dp-action-approve"
-                    @click="openApproval(deployment)">Examiner et décider</button>
-                  <button v-if="canDiscuss(deployment)" type="button" class="dp-action" title="Discussion entre le demandeur et l’équipe DevOps"
-                    @click="discussionTarget = deployment">Discussion</button>
-                  <button v-if="canCancel(deployment)" type="button" class="dp-action dp-action-danger"
-                    :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
-                  <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
-                    :disabled="deploymentsStore.actionLoading" title="Redéployer exactement ces images" @click="rollback(deployment)">Revenir ici</button>
-                  <button v-if="canRestoreBefore(deployment)" type="button" class="dp-action dp-action-danger"
-                    title="Remettre l’application et ses données dans leur état d’avant ce déploiement" @click="restoreTarget = deployment">Restaurer l’état d’avant</button>
-                  <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
-                    :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)"
-                    :title="OPEN_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours ou en attente' : 'Supprimer de l’historique'"
-                    @click="removeDeployment(deployment)">Supprimer</button>
+              <td data-label="Actions disponibles" class="sd9-action-cell">
+                <div class="sd9-action-groups">
+                  <div class="sd9-action-line" aria-label="Consulter et échanger">
+                    <RouterLink :to="`/deployments/${deployment.id}`" class="sd9-action sd9-primary">Détails</RouterLink>
+                    <button v-if="hasIncident(deployment)" type="button" class="sd9-action" @click="analysisDeployment = deployment">Analyse</button>
+                    <button v-if="deployment.status === 'SUCCESS'" type="button" class="sd9-action" @click="openMonitoring(deployment)">Monitoring</button>
+                    <button v-if="canDiscuss(deployment)" type="button" class="sd9-action" @click="discussionTarget = deployment">Discussion</button>
+                    <button v-if="guards[deployment.id]" type="button" class="sd9-action" @click="openGuard(deployment)">Contrôle</button>
+                    <a v-if="deployment.deploymentLogsUrl" :href="deployment.deploymentLogsUrl" target="_blank" rel="noopener noreferrer" class="sd9-action">Logs</a>
+                  </div>
+                  <div v-if="canDecide(deployment) || (isPromotable(deployment) && promotions[deployment.id]) || canCancel(deployment) || (ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)) || canRestoreBefore(deployment) || canDeleteDeployments" class="sd9-action-line sd9-operations" aria-label="Opérations">
+                    <button v-if="canDecide(deployment)" type="button" class="sd9-action sd9-emphasis" @click="openApproval(deployment)">Approuver / refuser</button>
+                    <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="sd9-action sd9-emphasis" :title="`Vers ${promotions[deployment.id]!.targetEnvironmentName}`" @click="promote(deployment)">Promouvoir</button>
+                    <button v-if="canCancel(deployment)" type="button" class="sd9-action" :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
+                    <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="sd9-action" :disabled="deploymentsStore.actionLoading" @click="rollback(deployment)">Rollback</button>
+                    <button v-if="canRestoreBefore(deployment)" type="button" class="sd9-action sd9-danger" @click="restoreTarget = deployment">Restaurer</button>
+                    <button v-if="canDeleteDeployments" type="button" class="sd9-action sd9-danger" :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)" @click="removeDeployment(deployment)">Supprimer</button>
+                  </div>
                 </div>
               </td>
             </tr>
-            <tr v-if="hasReason(deployment)" class="dp-error-row">
-              <td colspan="7"><span class="dp-error-text" :class="{ 'is-neutral': deployment.status === 'CANCELLED' }">{{ deployment.errorMessage }}</span></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+
+
     </section>
 
     <footer v-if="deploymentsStore.totalElements" class="dp-pagination">

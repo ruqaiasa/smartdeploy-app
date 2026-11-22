@@ -56,7 +56,7 @@ const DEFAULTS = {
   storageGi: 5,
 } as const
 
-const wizardSteps = ['Application', 'Architecture', 'Base de données', 'Vérification'] as const
+const wizardSteps = ['Choix', 'Architecture', 'Base', 'Vérification'] as const
 const currentStep = ref(1)
 const showAdvanced = ref(false)
 
@@ -573,7 +573,7 @@ async function submitForm() {
         <header class="dfm-header">
           <div>
             <h2 id="dfm-title">Nouveau déploiement</h2>
-            <p>Les noms, les images et le namespace sont calculés automatiquement.</p>
+            <p>Configurez votre déploiement.</p>
           </div>
           <button type="button" class="dfm-close" :disabled="loading || creatingSecret" aria-label="Fermer" @click="closeModal">
             <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
@@ -596,7 +596,7 @@ async function submitForm() {
 
           <!-- Étape 1 -->
           <section v-if="currentStep === 1" class="dfm-section">
-            <h3>Quoi déployer, et où ?</h3>
+            <h3>Choisir la cible</h3>
             <div class="dfm-grid">
               <div class="dfm-field dfm-wide"><label for="sd-app">Application</label>
                 <select id="sd-app" v-model.number="form.applicationId" :disabled="loading">
@@ -635,17 +635,17 @@ async function submitForm() {
               <label class="dfm-choice" :class="{ 'is-selected': form.architecture === 'BACKEND' }">
                 <input v-model="form.architecture" type="radio" value="BACKEND" />
                 <strong>Backend seul</strong>
-                <span>Une API reliée à une base PostgreSQL existante.</span>
+                <span>API et base existante.</span>
               </label>
               <label class="dfm-choice" :class="{ 'is-selected': form.architecture === 'FULLSTACK_EXTERNAL' }">
                 <input v-model="form.architecture" type="radio" value="FULLSTACK_EXTERNAL" />
                 <strong>Frontend et backend</strong>
-                <span>Les deux applications, reliées à une base PostgreSQL existante.</span>
+                <span>Frontend, backend et base existante.</span>
               </label>
               <label class="dfm-choice" :class="{ 'is-selected': form.architecture === 'FULLSTACK_MANAGED' }">
                 <input v-model="form.architecture" type="radio" value="FULLSTACK_MANAGED" />
                 <strong>Frontend, backend et base</strong>
-                <span>PostgreSQL est créé dans le cluster, avec un volume persistant.</span>
+                <span>PostgreSQL dans le cluster.</span>
               </label>
             </fieldset>
             <h4>Nombre d’instances</h4>
@@ -659,7 +659,7 @@ async function submitForm() {
           <!-- Étape 3 -->
           <section v-if="currentStep === 3" class="dfm-section">
             <h3>Base de données</h3>
-            <p class="dfm-lead">{{ isManaged ? 'SmartDeploy crée PostgreSQL 16 dans le cluster. Choisissez les identifiants de la nouvelle base.' : 'Indiquez comment joindre votre serveur PostgreSQL existant.' }}</p>
+            <p class="dfm-lead">{{ isManaged ? 'PostgreSQL sera créé dans le cluster.' : 'Connexion à PostgreSQL existant.' }}</p>
             <div class="dfm-grid">
               <template v-if="!isManaged">
                 <div class="dfm-field"><label for="sd-host">Adresse du serveur</label><input id="sd-host" v-model.trim="form.externalHost" placeholder="192.168.1.20 ou db.exemple.com" /></div>
@@ -687,7 +687,7 @@ async function submitForm() {
             </p>
             <section v-if="isDeveloperRequest" class="dfm-request" aria-label="Demande de déploiement">
               <strong>Demande de déploiement</strong>
-              <p>Un DevOps validera avant le déploiement.</p>
+              <p>Validation DevOps requise.</p>
               <label for="dfm-request-message">Message (facultatif)</label>
               <textarea id="dfm-request-message" v-model="requestMessage" rows="3" maxlength="500"
                 placeholder="Contexte pour l’équipe" />
@@ -702,7 +702,7 @@ async function submitForm() {
                 <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" :class="{ 'is-open': showAdvanced }"><path d="M7 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
                 Options avancées
               </button>
-              <p class="dfm-help">Réglages techniques transmis à Jenkins et à Kubernetes. Les valeurs proposées conviennent à la plupart des projets : ne les modifiez que si votre projet est organisé différemment.</p>
+              <p class="dfm-help">À modifier uniquement si nécessaire.</p>
 
               <div v-if="showAdvanced" class="dfm-advanced-body">
                 <div class="dfm-group">
@@ -776,7 +776,7 @@ async function submitForm() {
 
             <section class="dfm-section">
               <h3>Vérification</h3>
-              <p class="dfm-lead">Relisez ce que SmartDeploy va déployer, puis lancez le déploiement.</p>
+              <p class="dfm-lead">Vérifiez les paramètres avant confirmation.</p>
               <dl class="dfm-summary">
                 <div><dt>Application</dt><dd>{{ selectedApplication.name }}, version {{ selectedVersion?.version }}</dd></div>
                 <div><dt>Environnement</dt><dd>{{ selectedEnvironment.name }} <code>{{ namespace }}</code></dd></div>

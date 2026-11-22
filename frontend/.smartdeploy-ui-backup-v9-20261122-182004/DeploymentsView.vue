@@ -1,0 +1,869 @@
+<script setup lang="ts">
+import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
+import DeploymentGuardBadge from '@/components/deployments/DeploymentGuardBadge.vue'
+import DeploymentGuardPanel from '@/components/deployments/DeploymentGuardPanel.vue'
+import IncidentAnalysisPanel from '@/components/deployments/IncidentAnalysisPanel.vue'
+import RestoreBeforeDialog from '@/components/deployments/RestoreBeforeDialog.vue'
+import ApprovalDialog from '@/components/deployments/ApprovalDialog.vue'
+import { approveDeployment, getPromotion, rejectDeployment } from '@/api/deployments.api'
+import type { PromotionProposal } from '@/types/deployment'
+import { getRestorePoints, restoreBackup } from '@/api/backups.api'
+import type { BackupInfo } from '@/types/backup'
+import { getDeploymentGuards } from '@/api/guard.api'
+import type { DeploymentGuard } from '@/types/guard'
+import { useApplicationsStore } from '@/stores/applications'
+import { useDeploymentsStore } from '@/stores/deployments'
+import { useEnvironmentsStore } from '@/stores/environments'
+import { useMonitoringStore } from '@/stores/monitoring'
+import { useAuthStore } from '@/stores/auth'
+import type { CreateDeploymentRequest, DeploymentResponse, DeploymentStatus } from '@/types/deployment'
+
+const deploymentsStore = useDeploymentsStore()
+const applicationsStore = useApplicationsStore()
+const environmentsStore = useEnvironmentsStore()
+const monitoringStore = useMonitoringStore()
+const authStore = useAuthStore()
+
+const canManageDeployments = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
+/* Portail développeur : le développeur demande un déploiement, un DevOps l’examine. */
+const isDeveloper = computed(() => authStore.hasRole('DEVELOPER') && !canManageDeployments.value)
+const canCreate = computed(() => canManageDeployments.value || isDeveloper.value)
+const createLabel = computed(() => isDeveloper.value ? 'Demander un déploiement' : 'Nouveau déploiement')
+function toggleMine() {
+  deploymentsStore.mine = !deploymentsStore.mine
+  deploymentsStore.page = 0
+  void deploymentsStore.loadDeployments()
+}
+const canDeleteDeployments = computed(() => authStore.hasRole('ADMIN'))
+
+/* ---------------------------------------------------------------
+ * Approbation avant la production (principe des quatre yeux)
+ * --------------------------------------------------------------- */
+function canDecide(deployment: DeploymentResponse) {
+  // RG-A2 : jamais le demandeur (le serveur le refuse aussi).
+  return canManageDeployments.value && deployment.status === 'AWAITING_APPROVAL'
+    && deployment.requestedById !== authStore.currentUser?.id
+}
+/* Une demande d’approbation n’est retirée que par son auteur ; l’approbateur la refuse, avec un motif. */
+function canCancel(deployment: DeploymentResponse) {
+  // RG-D3 : un développeur ne retire que ses propres demandes en attente d’accord.
+  if (isDeveloper.value) return deployment.status === 'AWAITING_APPROVAL' && deployment.requestedById === authStore.currentUser?.id
+  if (!canManageDeployments.value || !OPEN_STATUSES.includes(deployment.status)) return false
+  return deployment.status !== 'AWAITING_APPROVAL' || deployment.requestedById === authStore.currentUser?.id
+}
+/* Portail développeur : la discussion d’une demande (demandeur et équipe DevOps). */
+const discussionTarget = ref<DeploymentResponse | null>(null)
+function canDiscuss(deployment: DeploymentResponse) {
+  return canManageDeployments.value || (isDeveloper.value && deployment.requestedById === authStore.currentUser?.id)
+}
+const approvalTarget = ref<DeploymentResponse | null>(null)
+const approvalLoading = ref(false)
+const approvalError = ref('')
+function openApproval(deployment: DeploymentResponse) {
+  approvalError.value = ''
+  approvalTarget.value = deployment
+}
+async function decide(kind: 'approve' | 'reject', comment: string) {
+  const deployment = approvalTarget.value
+  if (!deployment) return
+  approvalLoading.value = true
+  approvalError.value = ''
+  try {
+    await (kind === 'approve' ? approveDeployment(deployment.id, comment) : rejectDeployment(deployment.id, comment))
+    approvalTarget.value = null
+    await deploymentsStore.loadDeployments()
+  } catch (exception: unknown) {
+    const response = (exception as { response?: { data?: { message?: string } } }).response
+    approvalError.value = response?.data?.message ?? 'La décision n’a pas pu être enregistrée.'
+  } finally {
+    approvalLoading.value = false
+  }
+}
+
+/*
+ * Rollback : redéploie les images exactes (par empreinte) d'un déploiement
+ * réussi, sans reconstruction. Proposé uniquement quand l'empreinte est connue.
+ */
+const ROLLBACK_AVAILABLE = true
+function canRollback(deployment: DeploymentResponse) {
+  // Jamais vers le déploiement déjà en service ; possible vers un déploiement
+  // réussi plus ancien ou vers un déploiement remplacé (retour « en avant »).
+  // Jamais vers un déploiement jugé dégradé par le gardien : un retour arrière ramène
+  // à un état connu comme sain (le serveur le refuse aussi).
+  // Ni vers l'image exacte déjà en service : y revenir ne changerait rien (le serveur le refuse aussi).
+  const running = deploymentsStore.deployments.find(d => d.current && d.environmentId === deployment.environmentId)
+  const sameImage = !!running
+    && running.deployedBackendImage === deployment.deployedBackendImage
+    && (running.deployedFrontendImage ?? null) === (deployment.deployedFrontendImage ?? null)
+  return !deployment.current
+    && (deployment.status === 'SUCCESS' || deployment.status === 'ROLLED_BACK')
+    && !!deployment.deployedBackendImage?.includes('@sha256:')
+    && guards.value[deployment.id]?.status !== 'DEGRADED'
+    && !sameImage
+}
+
+const expandedDeploymentId = ref<number | null>(null)
+const modalOpen = ref(false)
+const monitoringOpen = ref(false)
+const monitoredDeployment = ref<DeploymentResponse | null>(null)
+
+/* ---------------------------------------------------------------
+ * Statuts : libellés compréhensibles et filtres rapides
+ * --------------------------------------------------------------- */
+const STATUS_LABELS: Record<DeploymentStatus, string> = {
+  PENDING: 'En attente',
+  RUNNING: 'En cours',
+  SUCCESS: 'Réussi',
+  FAILED: 'Échoué',
+  CANCELLED: 'Annulé',
+  ROLLED_BACK: 'Remplacé',
+  AWAITING_APPROVAL: 'À approuver',
+  REJECTED: 'Refusé',
+}
+const statusFilters: { value: DeploymentStatus | null; label: string }[] = [
+  { value: null, label: 'Tous' },
+  { value: 'RUNNING', label: 'En cours' },
+  { value: 'AWAITING_APPROVAL', label: 'À approuver' },
+  { value: 'PENDING', label: 'En attente' },
+  { value: 'SUCCESS', label: 'Réussis' },
+  { value: 'FAILED', label: 'Échoués' },
+  { value: 'CANCELLED', label: 'Annulés' },
+]
+const ACTIVE_STATUSES: DeploymentStatus[] = ['PENDING', 'RUNNING']
+/* En attente d’approbation : annulable et non supprimable, mais sans rafraîchissement rapide. */
+const OPEN_STATUSES: DeploymentStatus[] = ['PENDING', 'RUNNING', 'AWAITING_APPROVAL']
+
+/* ---------------------------------------------------------------
+ * Recherche en direct (anti-rebond de 300 ms)
+ * --------------------------------------------------------------- */
+const searchInput = ref(deploymentsStore.search)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchInput, value => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    const term = value.trim()
+    if (term === deploymentsStore.search) return
+    deploymentsStore.search = term
+    void reload()
+  }, 300)
+})
+
+const hasFilters = computed(() =>
+  !!deploymentsStore.search || !!deploymentsStore.status || !!deploymentsStore.applicationId,
+)
+
+async function reload() {
+  deploymentsStore.page = 0
+  await deploymentsStore.loadDeployments()
+}
+async function setStatusFilter(status: DeploymentStatus | null) {
+  if (deploymentsStore.status === status) return
+  deploymentsStore.status = status
+  await reload()
+}
+async function clearFilters() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchInput.value = ''
+  deploymentsStore.search = ''
+  deploymentsStore.status = null
+  deploymentsStore.applicationId = null
+  await reload()
+}
+
+/* ---------------------------------------------------------------
+ * Actualisation automatique tant qu'un déploiement est en cours
+ * --------------------------------------------------------------- */
+const POLL_INTERVAL_MS = 5000
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const hasActiveDeployments = computed(() =>
+  deploymentsStore.deployments.some(d => ACTIVE_STATUSES.includes(d.status)),
+)
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible' || deploymentsStore.loading) return
+    void deploymentsStore.loadDeployments({}, { silent: true })
+  }, POLL_INTERVAL_MS)
+}
+watch(hasActiveDeployments, active => (active ? startPolling() : stopPolling()), { immediate: true })
+
+onMounted(async () => {
+  await Promise.all([
+    deploymentsStore.loadDeployments(),
+    applicationsStore.loadApplications({ page: 0, size: 100, active: true }),
+    environmentsStore.loadEnvironments({ page: 0, size: 100, active: true }),
+  ])
+})
+/* ---------------------------------------------------------------
+ * Gardien de déploiement : verdict et preuves après la mise en service
+ * --------------------------------------------------------------- */
+const guards = ref<Record<number, DeploymentGuard>>({})
+const guardDeployment = ref<DeploymentResponse | null>(null)
+let guardTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadGuards() {
+  const ids = deploymentsStore.deployments
+    .filter(d => d.status === 'SUCCESS' || d.status === 'ROLLED_BACK')
+    .map(d => d.id)
+  try {
+    const list = await getDeploymentGuards(ids)
+    guards.value = Object.fromEntries(list.map(g => [g.deploymentId, g]))
+  } catch {
+    // Le gardien est un complément : son indisponibilité ne bloque pas la page.
+  }
+}
+const hasWatchingGuards = computed(() => Object.values(guards.value).some(g => g.status === 'WATCHING'))
+watch(() => deploymentsStore.deployments, () => { void loadGuards() })
+
+/* ---------------------------------------------------------------
+ * Promotion guidée (RG-P3) : un déploiement en service, validé par le gardien,
+ * propose de monter vers l’environnement suivant de son application.
+ * --------------------------------------------------------------- */
+const promotions = ref<Record<number, PromotionProposal | null>>({})
+function isPromotable(deployment: DeploymentResponse) {
+  const verdict = guards.value[deployment.id]?.status
+  // Le développeur demande la promotion de ses déploiements ; elle passera par l’accord habituel.
+  return (canManageDeployments.value || isDeveloper.value) && deployment.current && deployment.status === 'SUCCESS'
+    && (verdict === 'HEALTHY' || verdict === 'HEALTHY_WITH_WARNINGS')
+}
+async function loadPromotions() {
+  for (const deployment of deploymentsStore.deployments.filter(isPromotable)) {
+    if (deployment.id in promotions.value) continue
+    try {
+      promotions.value = { ...promotions.value, [deployment.id]: await getPromotion(deployment.id) }
+    } catch {
+      // Pas d’environnement suivant (ou dernier environnement) : pas de bouton.
+      promotions.value = { ...promotions.value, [deployment.id]: null }
+    }
+  }
+}
+watch(guards, () => { void loadPromotions() })
+
+const modalPreset = ref<PromotionProposal | null>(null)
+function promote(deployment: DeploymentResponse) {
+  const proposal = promotions.value[deployment.id]
+  if (!proposal) return
+  modalPreset.value = proposal
+  modalOpen.value = true
+}
+watch(hasWatchingGuards, watching => {
+  if (watching && !guardTimer) {
+    guardTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadGuards()
+    }, 15_000)
+  } else if (!watching && guardTimer) {
+    clearInterval(guardTimer)
+    guardTimer = null
+  }
+})
+function openGuard(deployment: DeploymentResponse) { guardDeployment.value = deployment }
+
+/* ---------------------------------------------------------------
+ * Points de restauration (Velero) : l'état d'avant chaque déploiement
+ * --------------------------------------------------------------- */
+const restorePoints = ref<Record<number, BackupInfo>>({})
+let restorePointsLoadedAt = 0
+async function loadRestorePoints(force = false) {
+  if (!force && Date.now() - restorePointsLoadedAt < 15_000) return
+  restorePointsLoadedAt = Date.now()
+  try {
+    const list = await getRestorePoints()
+    const byDeployment: Record<number, BackupInfo> = {}
+    for (const point of list) {
+      const id = point.deploymentId
+      if (id === null) continue
+      const known = byDeployment[id]
+      if (!known || (point.startedAt ?? '') > (known.startedAt ?? '')) byDeployment[id] = point
+    }
+    restorePoints.value = byDeployment
+  } catch {
+    // Les sauvegardes sont un complément : leur indisponibilité ne bloque pas la page.
+  }
+}
+watch(() => deploymentsStore.deployments, () => { void loadRestorePoints() })
+
+function restorePointLabel(point: BackupInfo) {
+  if (point.phase === 'Completed') return `État d’avant sauvegardé${point.protectedVersion ? ` (${point.protectedVersion})` : ''}`
+  if (['New', 'InProgress', 'WaitingForPluginOperations'].includes(point.phase)) return 'Sauvegarde de l’état d’avant…'
+  return 'Point de restauration en échec'
+}
+function restorePointTone(point: BackupInfo) {
+  if (point.phase === 'Completed') return 'is-ok'
+  if (['New', 'InProgress', 'WaitingForPluginOperations'].includes(point.phase)) return 'is-pending'
+  return 'is-ko'
+}
+function restorePointTitle(point: BackupInfo) {
+  return point.phase === 'Completed'
+    ? `Sauvegarde Velero « ${point.name} » : l’application et ses données, telles qu’elles étaient juste avant ce déploiement.`
+    : `Sauvegarde Velero « ${point.name} » : ${point.phase}`
+}
+function canRestoreBefore(deployment: DeploymentResponse) {
+  return canDeleteDeployments.value && deployment.current === true && deployment.status === 'SUCCESS'
+    && restorePoints.value[deployment.id]?.phase === 'Completed'
+}
+
+const restoreTarget = ref<DeploymentResponse | null>(null)
+const restoreLoading = ref(false)
+const restoreInfo = ref('')
+async function confirmRestoreBefore() {
+  const deployment = restoreTarget.value
+  const point = deployment ? restorePoints.value[deployment.id] : undefined
+  if (!deployment || !point) return
+  restoreLoading.value = true
+  try {
+    await restoreBackup(deployment.environmentId, point.name, 'replace')
+    restoreInfo.value = `Restauration lancée : ${deployment.environmentName} revient à son état d’avant le déploiement #${deployment.id}`
+      + `${point.protectedVersion ? ` (version ${point.protectedVersion}, avec ses données)` : ''}. Suivi dans la page Sauvegardes ; la liste se mettra à jour à la fin.`
+    restoreTarget.value = null
+  } catch {
+    restoreInfo.value = 'La restauration n’a pas pu être lancée. Vérifiez la page Sauvegardes et les droits du compte de service.'
+  } finally {
+    restoreLoading.value = false
+  }
+}
+
+/* Analyse d'incident : échecs de pipeline et dégradations détectées par le gardien */
+const analysisDeployment = ref<DeploymentResponse | null>(null)
+function hasIncident(deployment: DeploymentResponse) {
+  return deployment.status === 'FAILED' || guards.value[deployment.id]?.status === 'DEGRADED'
+}
+async function rollbackToTarget(targetId: number) {
+  try {
+    await deploymentsStore.rollback(targetId)
+    guardDeployment.value = null
+  } catch { /* store */ }
+}
+
+onBeforeUnmount(() => {
+  if (guardTimer) clearInterval(guardTimer)
+  stopPolling()
+  if (searchTimer) clearTimeout(searchTimer)
+})
+
+/* ---------------------------------------------------------------
+ * Actions
+ * --------------------------------------------------------------- */
+function openCreateModal() { modalPreset.value = null; modalOpen.value = true }
+function closeModal() { if (!deploymentsStore.actionLoading) modalOpen.value = false }
+
+async function submitDeployment(request: CreateDeploymentRequest) {
+  try {
+    await deploymentsStore.create(request)
+    closeModal()
+  } catch {
+    // Le message d'erreur est affiché par le store.
+  }
+}
+async function cancelDeployment(deployment: DeploymentResponse) {
+  const where = deployment.status === 'RUNNING'
+    ? 'Le build Jenkins en cours sera arrêté. Si la mise à jour Kubernetes a déjà commencé, les ressources déjà appliquées restent en place.'
+    : 'Le build sera retiré de la file d’attente Jenkins.'
+  if (!window.confirm(`Annuler le déploiement de ${deployment.applicationName} ${deployment.version} sur ${deployment.environmentName} ?\n\n${where}`)) return
+  try { await deploymentsStore.cancel(deployment.id) } catch { /* store */ }
+}
+async function rollback(deployment: DeploymentResponse) {
+  const message = `Redéployer exactement ce déploiement (#${deployment.id}, version ${deployment.version}) sur ${deployment.environmentName} ?\n\n`
+    + 'Les images déjà construites sont réutilisées, sans reconstruction. Le déploiement actuel sera marqué « Remplacé » une fois le retour réussi.'
+  if (!window.confirm(message)) return
+  try { await deploymentsStore.rollback(deployment.id) } catch { /* store */ }
+}
+async function removeDeployment(deployment: DeploymentResponse) {
+  if (!window.confirm(`Supprimer le déploiement #${deployment.id} de l’historique ?`)) return
+  try { await deploymentsStore.remove(deployment.id) } catch { /* store */ }
+}
+async function openMonitoring(deployment: DeploymentResponse) {
+  monitoredDeployment.value = deployment
+  monitoringOpen.value = true
+  await monitoringStore.loadDeploymentMetrics(deployment.id)
+}
+function closeMonitoring() {
+  monitoringOpen.value = false
+  monitoredDeployment.value = null
+  monitoringStore.clear()
+}
+
+async function goToPage(page: number) {
+  if (page < 0 || page >= deploymentsStore.totalPages || deploymentsStore.loading) return
+  deploymentsStore.page = page
+  await deploymentsStore.loadDeployments()
+}
+const rangeLabel = computed(() => {
+  const total = deploymentsStore.totalElements
+  if (!total) return '0 déploiement'
+  const start = deploymentsStore.page * deploymentsStore.size + 1
+  const end = Math.min(start + deploymentsStore.deployments.length - 1, total)
+  return `${start}–${end} sur ${total}`
+})
+
+/* ---------------------------------------------------------------
+ * Mise en forme
+ * --------------------------------------------------------------- */
+const relativeFormatter = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' })
+function formatRelative(value: string | null) {
+  if (!value) return '—'
+  const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000)
+  const abs = Math.abs(seconds)
+  if (abs < 60) return 'à l’instant'
+  if (abs < 3600) return relativeFormatter.format(Math.round(seconds / 60), 'minute')
+  if (abs < 86400) return relativeFormatter.format(Math.round(seconds / 3600), 'hour')
+  if (abs < 86400 * 7) return relativeFormatter.format(Math.round(seconds / 86400), 'day')
+  return formatDate(value)
+}
+function formatDate(value: string | null) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+function formatDuration(seconds: number | null) {
+  if (seconds === null || seconds === undefined) return '—'
+  if (seconds < 60) return `${seconds} s`
+  return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`
+}
+function formatMetric(value: number | null | undefined, unit = '') {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `${value.toFixed(1)}${unit}`
+}
+const HEALTH_LABELS: Record<string, string> = { HEALTHY: 'Sain', WARNING: 'À surveiller', CRITICAL: 'Critique' }
+/** « …@sha256:3f9a0c7e1b2d… » → « sha256:3f9a0c7 » ; un tag reste lisible tel quel. */
+function shortDigest(image: string) {
+  const at = image.indexOf('@sha256:')
+  return at >= 0 ? `sha256:${image.slice(at + 8, at + 15)}` : image.slice(image.lastIndexOf('/') + 1)
+}
+function imageTooltip(deployment: DeploymentResponse) {
+  return [deployment.deployedBackendImage, deployment.deployedFrontendImage]
+    .filter(Boolean)
+    .join('\n')
+}
+function hasReason(deployment: DeploymentResponse) {
+  return !!deployment.errorMessage && (deployment.status === 'FAILED' || deployment.status === 'CANCELLED')
+}
+function requesterName(email: string) { return email?.split('@')[0] || email }
+</script>
+
+<template>
+  <section class="dp">
+    <header class="dp-header">
+      <div>
+        <h1>Déploiements</h1>
+        <p>Suivez le déploiement de vos versions sur chaque environnement.</p>
+      </div>
+      <button v-if="canCreate" type="button" class="dp-btn dp-btn-primary"
+        :disabled="deploymentsStore.actionLoading" @click="openCreateModal">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        {{ createLabel }}
+      </button>
+    </header>
+
+    <div class="dp-toolbar">
+      <label class="dp-search">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M13.2 13.2L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+        <span class="dp-sr">Rechercher</span>
+        <input v-model="searchInput" type="search" placeholder="Rechercher une application, une version, un environnement" autocomplete="off" />
+        <span v-if="deploymentsStore.loading && searchInput" class="dp-spinner" aria-hidden="true" />
+      </label>
+      <select v-model="deploymentsStore.applicationId" class="dp-select" aria-label="Filtrer par application" @change="reload">
+        <option :value="null">Toutes les applications</option>
+        <option v-for="application in applicationsStore.applications" :key="application.id" :value="application.id">{{ application.name }}</option>
+      </select>
+    </div>
+
+    <div class="dp-filters" role="group" aria-label="Filtrer par statut">
+      <button v-for="filter in statusFilters" :key="filter.label" type="button" class="dp-chip"
+        :class="{ 'is-active': deploymentsStore.status === filter.value }"
+        :aria-pressed="deploymentsStore.status === filter.value" @click="setStatusFilter(filter.value)">
+        {{ filter.label }}
+      </button>
+      <button type="button" class="dp-chip dp-chip-mine" :class="{ 'is-active': deploymentsStore.mine }"
+        :aria-pressed="deploymentsStore.mine" @click="toggleMine">
+        {{ isDeveloper ? 'Mes demandes' : 'Les miens' }}
+      </button>
+      <button v-if="hasFilters" type="button" class="dp-link" @click="clearFilters">Effacer les filtres</button>
+      <span v-if="hasActiveDeployments" class="dp-live" title="La liste s’actualise toutes les 5 secondes">
+        <span class="dp-live-dot" aria-hidden="true" /> Actualisation automatique
+      </span>
+    </div>
+
+    <p v-if="deploymentsStore.errorMessage" class="dp-alert" role="alert">{{ deploymentsStore.errorMessage }}</p>
+    <p v-if="restoreInfo" class="dp-info" role="status">{{ restoreInfo }} <button type="button" class="dp-info-close" aria-label="Fermer" @click="restoreInfo = ''">×</button></p>
+
+    <section class="dp-card">
+      <div v-if="deploymentsStore.loading && !deploymentsStore.deployments.length" class="dp-empty">
+        <span class="dp-spinner" aria-hidden="true" /> Chargement des déploiements…
+      </div>
+
+      <div v-else-if="!deploymentsStore.deployments.length" class="dp-empty">
+        <template v-if="hasFilters">
+          <strong>Aucun déploiement ne correspond à ces critères.</strong>
+          <button type="button" class="dp-btn dp-btn-ghost" @click="clearFilters">Effacer les filtres</button>
+        </template>
+        <template v-else>
+          <strong>Aucun déploiement pour l’instant.</strong>
+          <span>Lancez le premier déploiement d’une de vos applications.</span>
+          <button v-if="canCreate" type="button" class="dp-btn dp-btn-primary" @click="openCreateModal">{{ createLabel }}</button>
+        </template>
+      </div>
+
+      <div v-else class="sd7-table-scroll">
+        <table class="dp-table sd7-deployments" :class="{ 'is-refreshing': deploymentsStore.loading }">
+          <thead>
+            <tr>
+              <th scope="col">Application</th>
+              <th scope="col">Environnement</th>
+              <th scope="col">Statut</th>
+              <th scope="col">Créé</th>
+              <th scope="col" class="sd7-actions-head">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
+              <tr class="sd7-primary-row" :class="{ 'sd7-row-expanded': expandedDeploymentId === deployment.id, 'has-error': hasReason(deployment) }">
+                <td data-label="Application">
+                  <div class="sd7-app-name">{{ deployment.applicationName }}</div>
+                  <div class="sd7-app-meta"><span class="sd7-version">{{ deployment.version }}</span><span class="sd7-id">#{{ deployment.id }}</span></div>
+                </td>
+                <td data-label="Environnement">
+                  <div class="sd7-env-name">{{ deployment.environmentName }}</div>
+                  <small class="sd7-muted">{{ deployment.environmentType }}</small>
+                </td>
+                <td data-label="Statut">
+                  <div class="sd7-status-group">
+                    <span class="dp-status" :class="`is-${deployment.status.toLowerCase()}`"><span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}</span>
+                    <span v-if="deployment.current" class="dp-live-badge">En service</span>
+                  </div>
+                  <span v-if="hasReason(deployment)" class="sd7-issue-label">Incident à consulter</span>
+                  <span v-else-if="deployment.status === 'AWAITING_APPROVAL'" class="sd7-muted sd7-under-status">Accord requis</span>
+                </td>
+                <td data-label="Créé">
+                  <span class="sd7-date" :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
+                  <small class="sd7-muted sd7-person">{{ requesterName(deployment.requestedByEmail) }}</small>
+                </td>
+                <td data-label="Actions" class="sd7-primary-actions">
+                  <RouterLink class="sd7-action-primary" :to="`/deployments/${deployment.id}`">Suivi</RouterLink>
+                  <button type="button" class="sd7-expand-button" :aria-expanded="expandedDeploymentId === deployment.id"
+                    :aria-controls="`sd7-detail-${deployment.id}`" @click="expandedDeploymentId = expandedDeploymentId === deployment.id ? null : deployment.id">
+                    {{ expandedDeploymentId === deployment.id ? 'Fermer' : 'Actions' }}
+                    <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="m5 8 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="expandedDeploymentId === deployment.id" :id="`sd7-detail-${deployment.id}`" class="sd7-expanded-row">
+                <td colspan="5">
+                  <div class="sd8-detail">
+                    <div v-if="hasReason(deployment)" class="sd8-alert" role="status">
+                      <strong>{{ deployment.status === 'FAILED' ? 'Déploiement en échec' : 'Opération interrompue' }}</strong>
+                      <p>{{ deployment.errorMessage }}</p>
+                      <button v-if="hasIncident(deployment)" type="button" @click="analysisDeployment = deployment">Analyser</button>
+                    </div>
+                    <div class="sd8-action-bar" aria-label="Actions du déploiement">
+                      <button v-if="canDecide(deployment)" type="button" class="sd8-button is-primary" @click="openApproval(deployment)">Examiner</button>
+                      <button v-if="hasIncident(deployment)" type="button" class="sd8-button" @click="analysisDeployment = deployment">Analyse</button>
+                      <button v-if="deployment.status === 'SUCCESS'" type="button" class="sd8-button" @click="openMonitoring(deployment)">Monitoring</button>
+                      <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="sd8-button is-primary" @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
+                      <button v-if="canDiscuss(deployment)" type="button" class="sd8-button" @click="discussionTarget = deployment">Discussion</button>
+                      <button v-if="canCancel(deployment)" type="button" class="sd8-button" :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
+                      <details v-if="(ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)) || canRestoreBefore(deployment) || canDeleteDeployments" class="sd8-danger-menu">
+                        <summary>Autres actions</summary>
+                        <div class="sd8-danger-options">
+                          <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" :disabled="deploymentsStore.actionLoading" @click="rollback(deployment)">Revenir à cette version</button>
+                          <button v-if="canRestoreBefore(deployment)" type="button" @click="restoreTarget = deployment">Restaurer l'état précédent</button>
+                          <button v-if="canDeleteDeployments" type="button" class="is-danger" :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)" @click="removeDeployment(deployment)">Supprimer de l'historique</button>
+                        </div>
+                      </details>
+                    </div>
+                    <details class="sd8-metadata">
+                      <summary>Informations techniques</summary>
+                      <dl>
+                        <div><dt>Demandeur</dt><dd>{{ deployment.requestedByEmail || '—' }}</dd></div>
+                        <div><dt>Durée</dt><dd>{{ formatDuration(deployment.durationSeconds) }}</dd></div>
+                        <div v-if="deployment.deploymentLogsUrl"><dt>Jenkins</dt><dd><a :href="deployment.deploymentLogsUrl" target="_blank" rel="noopener noreferrer">Build #{{ deployment.jenkinsBuildNumber ?? '?' }} · Logs</a></dd></div>
+                        <div v-if="deployment.deployedBackendImage"><dt>Image</dt><dd :title="imageTooltip(deployment)">{{ shortDigest(deployment.deployedBackendImage) }}</dd></div>
+                        <div v-if="deployment.imagesFromId"><dt>Image réutilisée</dt><dd>#{{ deployment.imagesFromId }}</dd></div>
+                        <div v-if="deployment.rollbackOfId"><dt>Retour</dt><dd>#{{ deployment.rollbackOfId }}</dd></div>
+                        <div v-if="deployment.approvedBy"><dt>Décision</dt><dd>{{ deployment.approvedBy }}</dd></div>
+                        <div v-if="deployment.approvalComment"><dt>Motif</dt><dd>{{ deployment.approvalComment }}</dd></div>
+                      </dl>
+                      <div class="sd8-verdicts">
+                        <DeploymentGuardBadge v-if="guards[deployment.id]" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
+                        <span v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)" :title="restorePointTitle(restorePoints[deployment.id]!)">{{ restorePointLabel(restorePoints[deployment.id]!) }}</span>
+                      </div>
+                    </details>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <footer v-if="deploymentsStore.totalElements" class="dp-pagination">
+      <span class="dp-muted">{{ rangeLabel }}</span>
+      <div class="dp-pages">
+        <button type="button" class="dp-btn dp-btn-ghost" :disabled="deploymentsStore.page === 0 || deploymentsStore.loading" @click="goToPage(deploymentsStore.page - 1)">Précédent</button>
+        <span class="dp-muted">Page {{ deploymentsStore.page + 1 }} sur {{ Math.max(deploymentsStore.totalPages, 1) }}</span>
+        <button type="button" class="dp-btn dp-btn-ghost" :disabled="deploymentsStore.page + 1 >= deploymentsStore.totalPages || deploymentsStore.loading" @click="goToPage(deploymentsStore.page + 1)">Suivant</button>
+      </div>
+    </footer>
+
+    <DeploymentFormModal :open="modalOpen" :applications="applicationsStore.applications"
+      :environments="environmentsStore.environments" :loading="deploymentsStore.actionLoading" :preset="modalPreset"
+      @close="closeModal" @submit="submitDeployment" />
+
+    <!-- Garde de déploiement : verdict, chronologie et preuves -->
+    <DeploymentGuardPanel
+      v-if="guardDeployment && guards[guardDeployment.id]"
+      :guard="guards[guardDeployment.id]!"
+      :deployment="guardDeployment"
+      :can-rollback="ROLLBACK_AVAILABLE && canManageDeployments"
+      :busy="deploymentsStore.actionLoading"
+      @close="guardDeployment = null"
+      @rollback="rollbackToTarget"
+    />
+
+    <!-- Analyse d'un incident -->
+    <IncidentAnalysisPanel
+      v-if="analysisDeployment"
+      :deployment="analysisDeployment"
+      :can-rerun="canManageDeployments"
+      @close="analysisDeployment = null"
+    />
+
+    <!-- Monitoring d'un déploiement -->
+    <Teleport to="body">
+      <div v-if="monitoringOpen" class="mon-overlay" @click.self="closeMonitoring">
+        <section class="mon" role="dialog" aria-modal="true" aria-labelledby="mon-title">
+          <header class="mon-header">
+            <div>
+              <h2 id="mon-title">Monitoring</h2>
+              <p v-if="monitoredDeployment">{{ monitoredDeployment.applicationName }}, version {{ monitoredDeployment.version }} sur {{ monitoredDeployment.environmentName }}</p>
+            </div>
+            <button type="button" class="mon-close" aria-label="Fermer" @click="closeMonitoring">
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+            </button>
+          </header>
+
+          <div v-if="monitoringStore.loading && !monitoringStore.metrics" class="mon-state"><span class="dp-spinner" aria-hidden="true" /> Interrogation de Prometheus…</div>
+          <p v-else-if="monitoringStore.errorMessage" class="dp-alert mon-alert" role="alert">{{ monitoringStore.errorMessage }}</p>
+          <template v-else-if="monitoringStore.metrics">
+            <div class="mon-health" :class="`is-${monitoringStore.metrics.healthStatus.toLowerCase()}`">
+              <span class="dp-status-dot" aria-hidden="true" />
+              <strong>{{ HEALTH_LABELS[monitoringStore.metrics.healthStatus] ?? monitoringStore.metrics.healthStatus }}</strong>
+              <span class="dp-muted">état opérationnel</span>
+            </div>
+            <dl class="mon-metrics">
+              <div><dt>Pods disponibles</dt><dd>{{ monitoringStore.metrics.runningPods < 0 ? 'pas de mesure' : monitoringStore.metrics.runningPods }}<span v-if="monitoringStore.metrics.runningPods >= 0" class="dp-muted"> / {{ monitoringStore.metrics.desiredPods }}</span></dd></div>
+              <div><dt>Processeur</dt><dd>{{ formatMetric(monitoringStore.metrics.cpuUsagePercent, ' %') }}</dd></div>
+              <div><dt>Mémoire</dt><dd>{{ formatMetric(monitoringStore.metrics.memoryUsageMb, ' Mo') }}</dd></div>
+              <div><dt>Redémarrages (15 dernières min)</dt><dd>{{ monitoringStore.metrics.restartCount }}</dd></div>
+            </dl>
+          </template>
+
+          <footer class="mon-footer">
+            <span class="dp-muted">Données issues de Prometheus</span>
+            <button type="button" class="dp-btn dp-btn-ghost" :disabled="monitoringStore.loading" @click="monitoringStore.refresh">
+              {{ monitoringStore.loading ? 'Actualisation…' : 'Actualiser' }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+    <div v-if="discussionTarget" class="dp-discussion-backdrop" @click.self="discussionTarget = null">
+      <div class="dp-discussion" role="dialog" aria-modal="true" aria-label="Discussion">
+        <header>
+          <div>
+            <strong>Déploiement #{{ discussionTarget.id }} : {{ discussionTarget.applicationName }} {{ discussionTarget.version }}</strong>
+            <span>{{ discussionTarget.environmentName }} · demandé par {{ discussionTarget.requestedByEmail }}</span>
+          </div>
+          <button type="button" class="dp-discussion-close" aria-label="Fermer" @click="discussionTarget = null">×</button>
+        </header>
+        <blockquote v-if="discussionTarget.requestMessage" class="dp-discussion-request">{{ discussionTarget.requestMessage }}</blockquote>
+        <DeploymentDiscussion :deployment-id="discussionTarget.id" />
+      </div>
+    </div>
+    <ApprovalDialog :open="approvalTarget !== null" :deployment="approvalTarget" :loading="approvalLoading" :error="approvalError"
+      @close="approvalTarget = null" @approve="decide('approve', $event)" @reject="decide('reject', $event)" />
+    <RestoreBeforeDialog :open="restoreTarget !== null" :deployment="restoreTarget"
+      :restore-point="restoreTarget ? restorePoints[restoreTarget.id] ?? null : null" :loading="restoreLoading"
+      @close="restoreTarget = null" @confirm="confirmRestoreBefore" />
+  </section>
+</template>
+
+<style scoped>
+.dp-discussion-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .45); }
+.dp-discussion { display: flex; flex-direction: column; gap: 10px; width: min(620px, 100%); padding: 16px 18px; border-radius: 14px; background: #fff; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); }
+.dp-discussion header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.dp-discussion header div { display: flex; flex-direction: column; gap: 2px; }
+.dp-discussion header span { color: #6b7280; font-size: 13px; }
+.dp-discussion-close { border: 0; background: none; color: #6b7280; font-size: 22px; line-height: 1; cursor: pointer; }
+.dp-discussion-request { margin: 0; padding: 8px 12px; border-left: 4px solid #7c3aed; border-radius: 8px; background: #f5f3ff; color: #312e81; font-size: 13.5px; }
+.dp, .mon-overlay {
+  --ink: var(--color-gray-900, #111827);
+  --muted: var(--color-gray-500, #6b7280);
+  --line: var(--color-gray-200, #e5e7eb);
+  --soft: var(--color-gray-50, #f9fafb);
+  --accent: var(--color-primary-hover, #2563eb);
+  --accent-soft: var(--color-primary-light, #f0f6ff);
+}
+.dp { display: flex; flex-direction: column; gap: 16px; color: var(--ink); font-size: 14px; }
+
+/* En-tête */
+.dp-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.dp-header h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.015em; }
+.dp-header p { margin: 4px 0 0; color: var(--muted); }
+
+/* Boutons */
+.dp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; padding: 0 16px; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.dp-btn-primary { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.dp-btn-primary:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; }
+.dp-btn-ghost { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.dp-btn-ghost:hover:not(:disabled) { background: var(--soft); }
+.dp-btn:disabled { opacity: .5; cursor: not-allowed; }
+.dp-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.dp-link:hover { text-decoration: underline; }
+
+/* Barre d'outils */
+.dp-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 12px; }
+.dp-search { position: relative; display: flex; align-items: center; }
+.dp-search > svg { position: absolute; left: 12px; color: var(--muted); pointer-events: none; }
+.dp-search input { width: 100%; height: 40px; padding: 0 38px 0 38px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.dp-search .dp-spinner { position: absolute; right: 12px; }
+.dp-select { height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.dp-search input:focus, .dp-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+
+/* Filtres de statut */
+.dp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dp-chip { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.dp-chip:hover { border-color: var(--color-gray-300, #d1d5db); }
+.dp-chip.is-active { border-color: var(--ink); background: var(--ink); color: #fff; }
+.dp-live { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--muted); font-size: 12px; }
+.dp-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: dp-pulse 1.6s ease-in-out infinite; }
+
+.dp-restore-point { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 12px; font-weight: 500; }
+.dp-rp-icon { flex: none; }
+.dp-restore-point.is-ok { color: #0f766e; }
+.dp-restore-point.is-pending { color: #b45309; }
+.dp-restore-point.is-ko { color: #b91c1c; }
+.dp-info { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 0; padding: 12px 14px; border: 1px solid #99f6e4; border-radius: 8px; background: #f0fdfa; color: #134e4a; font-size: 13px; }
+.dp-info-close { border: 0; background: none; font-size: 18px; line-height: 1; color: inherit; cursor: pointer; }
+.dp-alert { margin: 0; padding: 12px 14px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 13px; }
+
+/* Liste */
+.dp-card { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.dp-table { width: 100%; border-collapse: collapse; transition: opacity .15s ease; }
+.dp-table.is-refreshing { opacity: .6; }
+.dp-table th { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--soft); color: var(--muted); font-size: 12px; font-weight: 500; text-align: left; white-space: nowrap; }
+.dp-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.dp-table tbody tr:last-child td { border-bottom: 0; }
+.dp-table tbody tr:not(.dp-error-row):hover td { background: #fcfcfd; }
+.dp-table tr.has-error td { border-bottom: 0; }
+
+.dp-app { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dp-app strong { font-weight: 600; }
+.dp-version { padding: 2px 8px; border-radius: 6px; background: var(--soft); border: 1px solid var(--line); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.dp-muted { color: var(--muted); }
+.dp-block { display: block; margin-top: 2px; font-size: 12px; }
+small.dp-muted { font-size: 12px; }
+
+.dp-status { display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 8px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.dp-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.dp-status.is-success { background: #ecfdf5; color: #047857; }
+.dp-status.is-failed { background: #fef2f2; color: #b91c1c; }
+.dp-status.is-running { background: var(--accent-soft); color: var(--accent); }
+.dp-status.is-running .dp-status-dot { animation: dp-pulse 1.6s ease-in-out infinite; }
+.dp-status.is-pending { background: #fffbeb; color: #b45309; }
+.dp-status.is-cancelled, .dp-status.is-rolled_back, .dp-status.is-rejected { background: var(--soft); color: var(--muted); }
+.dp-status.is-awaiting_approval { background: #eef2ff; color: #4338ca; }
+.dp-approval { display: block; margin-top: 4px; font-size: 12px; font-weight: 500; }
+.dp-approval.is-waiting { color: #4338ca; }
+.dp-approval.is-approved { color: #0f766e; }
+.dp-approval.is-rejected { color: #6b7280; }
+.dp-action-promote { border-color: #0e9f8e; color: #0f766e; font-weight: 700; }
+.dp-action-approve { border-color: #4338ca; color: #4338ca; font-weight: 700; }
+
+.dp-live-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border: 1px solid #a7f3d0; border-radius: 999px; color: #047857; font-size: 11px; font-weight: 600; vertical-align: middle; }
+.dp-build { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-variant-numeric: tabular-nums; text-decoration: none; }
+.dp-build:hover { text-decoration: underline; }
+.dp-digest { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; cursor: help; }
+
+.dp-actions-cell { width: 1%; }
+.dp-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.dp-action-analysis { color: #b45309; font-weight: 600; }
+.dp-action { height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.dp-action:hover:not(:disabled) { background: var(--soft); }
+.dp-action-danger { color: #b91c1c; }
+.dp-action-danger:hover:not(:disabled) { background: #fef2f2; }
+.dp-action:disabled { opacity: .4; cursor: not-allowed; }
+
+.dp-error-row td { padding: 0 16px 14px; }
+.dp-error-text.is-neutral { border-left-color: var(--color-gray-300, #d1d5db); background: var(--soft); color: var(--muted); }
+.dp-error-text { display: block; padding: 8px 12px; border-left: 3px solid #f87171; border-radius: 4px; background: #fef2f2; color: #991b1b; font-size: 13px; }
+
+.dp-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 24px; color: var(--muted); text-align: center; }
+.dp-empty strong { color: var(--ink); font-weight: 600; }
+.dp-empty .dp-btn { margin-top: 8px; }
+
+.dp-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.dp-pages { display: flex; align-items: center; gap: 12px; }
+
+.dp-spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: dp-spin .7s linear infinite; display: inline-block; }
+.dp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.dp-btn:focus-visible, .dp-chip:focus-visible, .dp-action:focus-visible, .dp-link:focus-visible, .dp-build:focus-visible, .mon-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@keyframes dp-spin { to { transform: rotate(360deg); } }
+@keyframes dp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* Monitoring */
+.mon-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px 16px; background: rgba(17, 24, 39, .45); }
+.mon { width: min(100%, 520px); border-radius: 14px; background: #fff; color: var(--ink); font-size: 14px; box-shadow: 0 24px 64px rgba(17, 24, 39, .22); }
+.mon-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 0; }
+.mon-header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.mon-header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.mon-close { display: grid; place-items: center; width: 32px; height: 32px; margin: -4px -8px 0 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+.mon-close:hover { background: var(--soft); color: var(--ink); }
+.mon-state { display: flex; align-items: center; gap: 8px; padding: 32px 24px; color: var(--muted); }
+.mon-alert { margin: 20px 24px 0; }
+.mon-health { display: flex; align-items: center; gap: 8px; margin: 20px 24px 0; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+.mon-health.is-healthy { background: #ecfdf5; color: #047857; }
+.mon-health.is-warning { background: #fffbeb; color: #b45309; }
+.mon-health.is-critical { background: #fef2f2; color: #b91c1c; }
+.mon-health .dp-muted { font-size: 13px; }
+.mon-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 16px 24px 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
+.mon-metrics div { padding: 14px 16px; background: #fff; }
+.mon-metrics dt { color: var(--muted); font-size: 12px; }
+.mon-metrics dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mon-metrics dd .dp-muted { font-size: 14px; font-weight: 400; }
+.mon-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 14px 24px; border-top: 1px solid var(--line); font-size: 13px; }
+
+/* Mobile : chaque déploiement devient une carte */
+@media (max-width: 900px) {
+  .dp-header { flex-direction: column; align-items: stretch; }
+  .dp-toolbar { grid-template-columns: 1fr; }
+  .dp-live { margin-left: 0; width: 100%; }
+  .dp-table thead { display: none; }
+  .dp-table, .dp-table tbody, .dp-table tr, .dp-table td { display: block; width: 100%; }
+  .dp-table tbody tr:not(.dp-error-row) { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 16px; border-top: 1px solid var(--line); }
+  .dp-table tbody tr:first-child { border-top: 0; }
+  .dp-table td { padding: 0; border: 0; }
+  .dp-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; }
+  .dp-table td[data-label="Application"] { grid-column: 1 / -1; }
+  .dp-table td[data-label="Application"]::before { display: none; }
+  .dp-actions-cell { grid-column: 1 / -1; width: auto; }
+  .dp-actions { justify-content: flex-start; margin-left: -10px; }
+  .dp-error-row td { padding: 0 16px 16px; }
+  .dp-pagination { flex-direction: column; align-items: stretch; }
+  .dp-pages { justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dp *, .mon * { animation: none !important; transition: none !important; }
+}
+</style>
