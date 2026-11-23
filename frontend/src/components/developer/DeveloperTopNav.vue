@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import DiscussionBell from '@/components/discussion/DiscussionBell.vue'
 
 /* Interface du développeur : une barre horizontale, claire, distincte de la console DevOps. */
 const auth = useAuthStore()
@@ -36,6 +37,7 @@ async function logout() {
         <RouterLink v-for="l in LINKS" :key="l.to" :to="l.to" class="dn-link" active-class="is-active">{{ l.label }}</RouterLink>
       </nav>
       <div class="dn-user">
+        <DiscussionBell />
         <span class="dn-avatar" :title="auth.fullName">{{ initials }}</span>
         <button type="button" class="dn-logout" @click="logout">Déconnexion</button>
       </div>

@@ -63,8 +63,12 @@ public class ConfidenceScoreService {
         List<Long> versionIds = versionHistory.stream()
                 .filter(d -> d.getRollbackOf() == null).map(Deployment::getId).toList();
 
-        boolean degraded = !versionIds.isEmpty() && guardRepository.findByDeploymentIdIn(versionIds).stream()
-                .anyMatch(guard -> guard.getStatus() == GuardStatus.DEGRADED);
+        // Mises en service de cette version jugées dégradées par le gardien (une par déploiement)
+        Set<Long> degradedIds = versionIds.isEmpty() ? Set.of() : guardRepository.findByDeploymentIdIn(versionIds).stream()
+                .filter(guard -> guard.getStatus() == GuardStatus.DEGRADED)
+                .map(guard -> guard.getDeploymentId())
+                .collect(java.util.stream.Collectors.toSet());
+        boolean degraded = !degradedIds.isEmpty();
         // Seuls les échecs dus au code de la version la pénalisent (diagnostic de l'analyste).
         Set<Long> codeFailureIds = versionHistory.stream()
                 .filter(d -> d.getStatus() == DeploymentStatus.FAILED)
@@ -75,9 +79,12 @@ public class ConfidenceScoreService {
                 .map(Deployment::getId)
                 .collect(java.util.stream.Collectors.toSet());
         int versionFailures = codeFailureIds.size();
+        // Validée : réussie en développement ou en test, SANS dégradation constatée par le gardien
+        // (une version retirée par un retour arrière automatique n'est pas validée).
         boolean validated = versionHistory.stream()
                 .anyMatch(d -> (d.getStatus() == DeploymentStatus.SUCCESS || d.getStatus() == DeploymentStatus.ROLLED_BACK)
-                        && VALIDATION_ENVIRONMENTS.contains(d.getEnvironment().getType()));
+                        && VALIDATION_ENVIRONMENTS.contains(d.getEnvironment().getType())
+                        && !degradedIds.contains(d.getId()));
         // Incidents : les mises en service dégradées. Les échecs du pipeline sont déjà comptés
         // ci-dessus : un même échec ne doit pas être pénalisé deux fois.
         // Les dégradations de cette version sont déjà comptées par « version déjà jugée dégradée ».
@@ -98,7 +105,8 @@ public class ConfidenceScoreService {
                 incidents,
                 validated,
                 environment.get().getType(),
-                version.get().getGitBranch()
+                version.get().getGitBranch(),
+                degradedIds.size()
         )));
     }
 }

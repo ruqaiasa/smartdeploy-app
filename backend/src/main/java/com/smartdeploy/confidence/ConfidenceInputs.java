@@ -20,6 +20,14 @@ public record ConfidenceInputs(
         int recentIncidents,
         boolean validatedInDevelopment,
         EnvironmentType environmentType,
-        String gitBranch
+        String gitBranch,
+        // Nombre de mises en service de cette version jugées dégradées par le gardien
+        int versionDegradations
 ) {
+    public ConfidenceInputs(int recentFinished, int recentFailed, int versionFailures, boolean versionDegraded,
+                            int recentIncidents, boolean validatedInDevelopment, EnvironmentType environmentType,
+                            String gitBranch) {
+        this(recentFinished, recentFailed, versionFailures, versionDegraded, recentIncidents, validatedInDevelopment,
+                environmentType, gitBranch, versionDegraded ? 1 : 0);
+    }
 }

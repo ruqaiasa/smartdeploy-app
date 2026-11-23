@@ -57,6 +57,11 @@ public class User implements UserDetails {
     @Column(name = "pending_approval", nullable = false, columnDefinition = "boolean not null default false")
     private boolean pendingApproval = false;
 
+    /** Inscription : l'adresse a été confirmée par le lien envoyé (vrai pour les comptes existants). */
+    @Builder.Default
+    @Column(name = "email_verified", nullable = false, columnDefinition = "boolean not null default true")
+    private boolean emailVerified = true;
+
     /** Inscription : l'équipe et la raison données par le demandeur. */
     @Column(name = "access_request", length = 500)
     private String accessRequest;

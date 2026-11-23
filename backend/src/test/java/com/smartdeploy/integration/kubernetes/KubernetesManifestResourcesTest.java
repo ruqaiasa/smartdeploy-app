@@ -53,4 +53,21 @@ class KubernetesManifestResourcesTest {
         assertNotNull(backend.getReadinessProbe());
         assertNotNull(backend.getLivenessProbe());
     }
+
+    @Test
+    void theFrontendIsToldTheRealAddressOfItsBackend() {
+        // Cas réel : application nommée autrement que « fullstack-demo » ; l'image de l'interface portait une
+        // adresse figée (fullstack-demo-backend-service) et Nginx s'arrêtait sur « host not found in upstream ».
+        Map<String, String> manifests = generator.generateApplication(new KubernetesApplicationRequest(
+                "sd-dev-fullstack-app-deploy-render",
+                new KubernetesComponentRequest("fullstack-app-deploy-render-frontend", "registry/frontend@sha256:aaa", 2, 8080),
+                new KubernetesComponentRequest("fullstack-app-deploy-render-backend", "registry/backend@sha256:bbb", 2, 8080),
+                null,
+                null
+        )).manifests();
+
+        Container frontend = container(manifests.get("frontend-deployment.yaml"));
+        assertTrue(frontend.getEnv().stream().anyMatch(e -> "BACKEND_URL".equals(e.getName())
+                && "http://fullstack-app-deploy-render-backend-service:8080".equals(e.getValue())));
+    }
 }

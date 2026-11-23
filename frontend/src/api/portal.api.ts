@@ -1,5 +1,5 @@
 import httpClient from '@/api/httpClient'
-import type { AnalysisInsight, AnalystStats, CompatibilityReport, DeploymentComment, DeploymentProgress, LogExcerpt, PodSummary, TimelineItem, WorkQueue, Workspace } from '@/types/portal'
+import type { Scorecard, ScorecardSummary, AnalysisInsight, AnalystStats, CompatibilityReport, DeploymentComment, DeploymentProgress, LogExcerpt, PodSummary, TimelineItem, WorkQueue, Workspace } from '@/types/portal'
 
 export async function checkCompatibility(repositoryUrl: string, branch: string): Promise<CompatibilityReport> {
   const response = await httpClient.post<CompatibilityReport>('/api/portal/compatibility', { repositoryUrl, branch })
@@ -49,5 +49,28 @@ export async function getAnalystStats(): Promise<AnalystStats> {
 }
 export async function getTimeline(deploymentId: number): Promise<TimelineItem[]> {
   const data = (await httpClient.get<TimelineItem[]>(`/api/deployments/${deploymentId}/timeline`)).data
+  return Array.isArray(data) ? data : []
+}
+
+/** Messages non lus des discussions de déploiement. */
+export interface UnreadThread { deploymentId: number; applicationName: string; version: string; environmentName: string; unread: number; lastMessage: string; lastAuthor: string; lastAt: string }
+export async function getUnreadDiscussions(): Promise<{ total: number; threads: UnreadThread[] }> {
+  return (await httpClient.get<{ total: number; threads: UnreadThread[] }>('/api/discussions/unread')).data
+}
+export async function markDiscussionRead(deploymentId: number): Promise<void> {
+  await httpClient.post(`/api/deployments/${deploymentId}/comments/read`)
+}
+
+/** Toutes les conversations récentes (lues ou non), pour la messagerie de l’équipe. */
+export async function getRecentDiscussions(): Promise<UnreadThread[]> {
+  const data = (await httpClient.get<UnreadThread[]>('/api/discussions/recent')).data
+  return Array.isArray(data) ? data : []
+}
+
+export async function getScorecard(applicationId: number): Promise<Scorecard> {
+  return (await httpClient.get<Scorecard>(`/api/portal/applications/${applicationId}/scorecard`)).data
+}
+export async function getScorecards(): Promise<ScorecardSummary[]> {
+  const data = (await httpClient.get<ScorecardSummary[]>('/api/portal/scorecards')).data
   return Array.isArray(data) ? data : []
 }

@@ -3,10 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { approveDeployment, cancelDeployment, getDeploymentById, rejectDeployment } from '@/api/deployments.api'
 import { getIncidentAnalysis } from '@/api/incident.api'
+import { getDeploymentMetrics } from '@/api/monitoring.api'
+import type { ApplicationMetrics } from '@/types/monitoring'
 import { getInsight, getLogs, getPods, getProgress, sendAnalysisFeedback } from '@/api/portal.api'
 import { useAuthStore } from '@/stores/auth'
 import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import ApprovalDialog from '@/components/deployments/ApprovalDialog.vue'
+import EnvironmentCharts from '@/components/charts/EnvironmentCharts.vue'
 import { openClaimsWidget } from '@/components/developer/claimsWidget'
 import type { DeploymentResponse } from '@/types/deployment'
 import type { IncidentAnalysis } from '@/types/incident'
@@ -25,6 +28,7 @@ const progress = ref<DeploymentProgress | null>(null)
 const analysis = ref<IncidentAnalysis | null>(null)
 const insight = ref<AnalysisInsight | null>(null)
 const pods = ref<PodSummary[]>([])
+const metrics = ref<ApplicationMetrics | null>(null)
 const error = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -42,6 +46,7 @@ async function load() {
       insight.value = await getInsight(id.value).catch(() => null)
     }
     if (d.status === 'SUCCESS' || d.status === 'FAILED') pods.value = await getPods(id.value).catch(() => [])
+    if (d.status === 'SUCCESS') metrics.value = await getDeploymentMetrics(id.value).catch(() => null)
   } catch (exception) {
     const status = (exception as { response?: { status?: number } }).response?.status
     error.value = status === 403 ? 'Ce déploiement concerne une application qui ne vous appartient pas.' : 'Ce déploiement n’a pas pu être chargé.'
@@ -120,9 +125,11 @@ const progressLine = computed(() => {
   if (p.status === 'SUCCESS') return `Terminé en ${minutes(p.elapsedSeconds)}`
   if (p.status === 'FAILED') return p.currentStage ? `Arrêté à l’étape ${p.currentStageIndex + 1} : ${p.currentStage}` : 'Arrêté'
   if (p.status === 'AWAITING_APPROVAL') return 'En attente de validation'
+  if (p.status === 'PENDING') return p.pendingReason ?? 'En file d’attente'
   return ''
 })
 const CONFIDENCE: Record<string, string> = { HIGH: 'élevée', MEDIUM: 'moyenne', LOW: 'faible' }
+const HEALTH: Record<string, string> = { HEALTHY: 'Saine', WARNING: 'À surveiller', CRITICAL: 'Critique', UNKNOWN: 'Inconnue' }
 
 /* Analyste v2 : retour de l’équipe sur la justesse de l’analyse */
 const isTeam = computed(() => auth.hasRole('DEVOPS', 'ADMIN'))
@@ -181,7 +188,8 @@ const reportLink = computed(() => deployment.value
       <section v-if="deployment.status === 'FAILED'" class="fd-card fd-failure">
         <h2>Cause</h2>
         <template v-if="analysis">
-          <p class="fd-cause"><strong>{{ analysis.title }}</strong> <span class="fd-muted">· confiance {{ CONFIDENCE[analysis.confidence] ?? analysis.confidence }}</span></p>
+          <p class="fd-cause"><strong>{{ analysis.title }}</strong> <span class="fd-muted">· confiance {{ CONFIDENCE[insight?.learning?.calibratedConfidence ?? analysis.confidence] ?? analysis.confidence }}</span></p>
+          <p v-if="insight?.learning && insight.learning.reviews" class="fd-learning">{{ insight.learning.note }}</p>
           <p>{{ analysis.explanation }}</p>
           <h3>À faire</h3>
           <p>{{ analysis.action }}</p>
@@ -193,6 +201,14 @@ const reportLink = computed(() => deployment.value
             <ul v-if="insight.commits.length" class="fd-commits">
               <li v-for="c in insight.commits" :key="c.sha"><code>{{ c.sha.slice(0, 7) }}</code> {{ c.message }} <span class="fd-muted">· {{ c.author }}</span></li>
             </ul>
+          </div>
+          <div v-if="insight?.knownFix" class="fd-fix">
+            <h3>Ce qui a marché la dernière fois</h3>
+            <p>{{ insight.knownFix.resolution }}</p>
+            <p class="fd-muted">
+              Incident #{{ insight.knownFix.deploymentId }} ({{ insight.knownFix.version }}, {{ insight.knownFix.environmentName }}), similaire à {{ insight.knownFix.similarity }} %
+              <template v-if="insight.knownFix.confirmed"> · cause confirmée par l’équipe</template>
+            </p>
           </div>
           <div v-if="insight?.suggestions.length" class="fd-kb">
             <h3>Solutions connues</h3>
@@ -220,6 +236,13 @@ const reportLink = computed(() => deployment.value
       <!-- Accès et santé -->
       <section v-if="deployment.status === 'SUCCESS' || pods.length" class="fd-card">
         <h2>Application</h2>
+        <div v-if="metrics" class="fd-health">
+          <div :class="`is-${(metrics.healthStatus ?? '').toLowerCase()}`"><span>Santé</span><strong>{{ HEALTH[metrics.healthStatus] ?? metrics.healthStatus }}</strong></div>
+          <div><span>Pods prêts</span><strong>{{ metrics.runningPods < 0 ? '—' : metrics.runningPods }} / {{ metrics.desiredPods }}</strong></div>
+          <div><span>Processeur</span><strong>{{ metrics.cpuUsagePercent.toFixed(1) }} %</strong></div>
+          <div><span>Mémoire</span><strong>{{ Math.round(metrics.memoryUsageMb) }} Mo</strong></div>
+          <div><span>Redémarrages</span><strong>{{ metrics.restartCount }}</strong></div>
+        </div>
         <p v-if="progress?.applicationUrl">Adresse : <a :href="progress.applicationUrl" target="_blank" rel="noopener">{{ progress.applicationUrl }}</a></p>
         <p v-else class="fd-muted">Pas d’adresse publique.</p>
         <table v-if="pods.length" class="fd-table">
@@ -233,6 +256,12 @@ const reportLink = computed(() => deployment.value
           </tbody>
         </table>
         <p v-if="deployment.builtCommit" class="fd-muted">Commit construit : <code>{{ deployment.builtCommit.slice(0, 12) }}</code></p>
+      </section>
+
+      <!-- Courbes de l'environnement -->
+      <section v-if="deployment.status === 'SUCCESS' && deployment.environmentId" class="fd-card">
+        <h2>Courbes</h2>
+        <EnvironmentCharts :environment-id="deployment.environmentId" compact />
       </section>
 
       <!-- Journaux -->
@@ -252,7 +281,7 @@ const reportLink = computed(() => deployment.value
       </section>
 
       <!-- Fil de la demande -->
-      <DeploymentDiscussion :deployment-id="deployment.id" />
+      <div id="discussion"><DeploymentDiscussion :deployment-id="deployment.id" /></div>
 
       <ApprovalDialog :open="decisionOpen" :deployment="deployment" :loading="deciding" :error="decisionError"
         @close="decisionOpen = false" @approve="decide('approve', $event)" @reject="decide('reject', $event)" />
@@ -306,6 +335,16 @@ const reportLink = computed(() => deployment.value
 .fd-logbar select { padding: 7px 9px; border: 1px solid #e5e7eb; border-radius: 8px; font: inherit; font-size: 13.5px; }
 @media (max-width: 760px) { .fd-phases { grid-template-columns: 1fr; } }
 a.fd-btn { text-decoration: none; }
+.fd-learning { padding: 6px 10px; border-radius: 8px; background: #f5f3ff; color: #5b21b6; font-size: 13px !important; }
+.fd-fix { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-left: 4px solid #16a34a; border-radius: 10px; background: #f0fdf4; }
+.fd-health { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.fd-health div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: #f9fafb; }
+.fd-health span { color: #6b7280; font-size: 12px; }
+.fd-health strong { font-size: 16px; }
+.fd-health .is-healthy { background: #f0fdf4; color: #166534; }
+.fd-health .is-warning { background: #fffbeb; color: #92400e; }
+.fd-health .is-critical { background: #fef2f2; color: #991b1b; }
+@media (max-width: 760px) { .fd-health { grid-template-columns: 1fr 1fr; } }
 .fd-insight { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: #f8fafc; border-left: 4px solid #94a3b8; }
 .fd-insight.is-code { background: #fef2f2; border-left-color: #dc2626; }
 .fd-insight.is-environment { background: #fffbeb; border-left-color: #d97706; }

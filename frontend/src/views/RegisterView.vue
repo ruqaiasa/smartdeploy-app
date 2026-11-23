@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from 'axios'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { register } from '@/api/auth.api'
@@ -19,6 +19,18 @@ const form = reactive({
 const loading = ref(false)
 const errorMessage = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
+
+/* RG-U2 : règles du mot de passe, vérifiées pendant la saisie (et par le serveur). */
+const rules = computed(() => [
+  { label: '8 caractères au moins', ok: form.password.length >= 8 },
+  { label: 'Une majuscule', ok: /[A-Z]/.test(form.password) },
+  { label: 'Une minuscule', ok: /[a-z]/.test(form.password) },
+  { label: 'Un chiffre', ok: /\d/.test(form.password) },
+  { label: 'Un caractère spécial', ok: /[^A-Za-z0-9]/.test(form.password) },
+  { label: 'Confirmation identique', ok: form.password.length > 0 && form.password === form.confirmPassword },
+])
+const passwordValid = computed(() => rules.value.every(r => r.ok))
+const emailValid = computed(() => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(form.email.trim()))
 
 async function submitRegister() {
   errorMessage.value = null
@@ -44,9 +56,9 @@ async function submitRegister() {
     return
   }
 
-  if (form.password.length < 8) {
+  if (!passwordValid.value) {
     errorMessage.value =
-      'Le mot de passe doit contenir au moins 8 caractères.'
+      'Le mot de passe ne respecte pas toutes les règles.'
 
     return
   }
@@ -64,7 +76,7 @@ async function submitRegister() {
 
     // RG-U1 : le compte attend la validation d’un administrateur ; aucune redirection.
     successMessage.value =
-      'Demande envoyée. Vous recevrez un courriel à l’activation.'
+      'Vérifiez votre boîte : un lien de confirmation vient de vous être envoyé.'
     void router
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -176,6 +188,10 @@ async function submitRegister() {
             />
           </div>
 
+          <ul class="pw-rules" aria-live="polite">
+            <li v-for="r in rules" :key="r.label" :class="{ 'is-ok': r.ok }">{{ r.ok ? '✓' : '○' }} {{ r.label }}</li>
+          </ul>
+
           <div class="form-group">
             <label for="confirmPassword">
               Confirmation du mot de passe
@@ -219,7 +235,7 @@ async function submitRegister() {
           <button
             type="submit"
             class="register-button"
-            :disabled="loading"
+            :disabled="loading || !passwordValid || !emailValid"
           >
             {{
               loading
@@ -242,6 +258,8 @@ async function submitRegister() {
 </template>
 
 <style scoped>
+.pw-rules { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin: -4px 0 10px; padding: 0; list-style: none; font-size: 12.5px; color: #6b7280; }
+.pw-rules li.is-ok { color: #15803d; font-weight: 600; }
 #accessRequest { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dbe1ea; border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
 .form-hint { display: block; margin-top: 4px; color: #6b7280; font-size: 12.5px; }
 .register-page {

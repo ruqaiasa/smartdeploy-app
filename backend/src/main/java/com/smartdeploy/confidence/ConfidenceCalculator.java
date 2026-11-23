@@ -16,7 +16,10 @@ import java.util.Set;
  */
 public final class ConfidenceCalculator {
 
-    static final int VERSION_DEGRADED = 30;
+    /** Une version déjà dégradée est un signal fort : −50, puis −15 par dégradation supplémentaire (au plus −80). */
+    static final int VERSION_DEGRADED = 50;
+    static final int VERSION_DEGRADED_AGAIN = 15;
+    static final int VERSION_DEGRADED_MAX = 80;
     static final int VERSION_FAILED = 25;
     static final int RECENT_FAILURE_MAX = 30;
     static final int RECENT_INCIDENTS = 10;
@@ -45,9 +48,13 @@ public final class ConfidenceCalculator {
     public static ConfidenceScore compute(ConfidenceInputs in) {
         List<ConfidenceFactor> factors = new ArrayList<>();
 
-        if (in.versionDegraded()) {
-            factors.add(new ConfidenceFactor("Version déjà jugée dégradée", -VERSION_DEGRADED,
-                    "Le gardien a déjà détecté une dégradation après la mise en service de cette version."));
+        int degradations = Math.max(in.versionDegradations(), in.versionDegraded() ? 1 : 0);
+        if (degradations > 0) {
+            int penalty = Math.min(VERSION_DEGRADED_MAX, VERSION_DEGRADED + VERSION_DEGRADED_AGAIN * (degradations - 1));
+            factors.add(new ConfidenceFactor("Version déjà jugée dégradée", -penalty,
+                    degradations == 1
+                            ? "Le gardien a déjà détecté une dégradation après la mise en service de cette version."
+                            : "Le gardien a détecté " + degradations + " dégradations après les mises en service de cette version."));
         }
         if (in.versionFailures() > 0) {
             factors.add(new ConfidenceFactor("Version déjà en échec", -VERSION_FAILED,

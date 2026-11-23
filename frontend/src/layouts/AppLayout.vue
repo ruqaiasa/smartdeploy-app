@@ -16,7 +16,10 @@ import AppTopbar from '@/components/AppTopbar.vue'
 import DeploymentToasts from '@/components/DeploymentToasts.vue'
 import DeveloperTopNav from '@/components/developer/DeveloperTopNav.vue'
 import ClaimsWidget from '@/components/developer/ClaimsWidget.vue'
+import DiscussionWidget from '@/components/discussion/DiscussionWidget.vue'
 import { useAuthStore } from '@/stores/auth'
+import { pendingAccounts, startPendingAccountsWatch, stopPendingAccountsWatch } from '@/components/admin/pendingAccounts'
+import { discussions, startDiscussionsWatch, stopDiscussionsWatch } from '@/components/discussion/discussions'
 
 import {
   useAlertsStore,
@@ -32,6 +35,18 @@ const route = useRoute()
  * l’équipe DevOps et l’administrateur gardent la console (menu latéral). */
 const authForLayout = useAuthStore()
 const isDeveloper = computed(() => authForLayout.hasRole('DEVELOPER') && !authForLayout.hasRole('VIEWER', 'DEVOPS', 'ADMIN'))
+const isAdmin = computed(() => authForLayout.hasRole('ADMIN'))
+onMounted(() => {
+  if (isAdmin.value) startPendingAccountsWatch()
+  if (authForLayout.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN')) startDiscussionsWatch()
+})
+onUnmounted(() => { stopPendingAccountsWatch(); stopDiscussionsWatch() })
+function openDiscussion() {
+  const t = discussions.toast
+  discussions.toast = null
+  if (t) void router.push(`/deployments/${t.deploymentId}#discussion`)
+}
+function openUsers() { pendingAccounts.toast = null; void router.push('/users') }
 const router = useRouter()
 
 const alertsStore =
@@ -229,6 +244,19 @@ onUnmounted(() => {
     </main>
     <DeploymentToasts />
     <ClaimsWidget />
+    <Transition name="alert-toast">
+      <article v-if="discussions.toast" class="message-toast" role="status">
+        <span class="message-toast-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z" fill="none" stroke="#4f46e5" stroke-width="1.9" stroke-linejoin="round" /></svg></span>
+        <div>
+          <strong>Nouveau message · {{ discussions.toast.lastAuthor }}</strong>
+          <p>#{{ discussions.toast.deploymentId }} {{ discussions.toast.applicationName }} {{ discussions.toast.version }} : {{ discussions.toast.lastMessage }}</p>
+        </div>
+        <div class="account-toast-actions">
+          <button type="button" class="account-toast-open" @click="openDiscussion">Voir</button>
+          <button type="button" class="account-toast-close" aria-label="Fermer" @click="discussions.toast = null">×</button>
+        </div>
+      </article>
+    </Transition>
   </div>
 
   <div v-else class="app-layout">
@@ -255,6 +283,38 @@ onUnmounted(() => {
       <!-- Notifications de fin de déploiement, sur toutes les pages -->
       <DeploymentToasts />
     </section>
+
+    <!-- Messagerie de l'équipe, en bas à droite -->
+    <DiscussionWidget />
+
+    <!-- Nouveau message dans une discussion -->
+    <Transition name="alert-toast">
+      <article v-if="discussions.toast" class="message-toast" role="status">
+        <span class="message-toast-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z" fill="none" stroke="#4f46e5" stroke-width="1.9" stroke-linejoin="round" /></svg></span>
+        <div>
+          <strong>Nouveau message · {{ discussions.toast.lastAuthor }}</strong>
+          <p>#{{ discussions.toast.deploymentId }} {{ discussions.toast.applicationName }} {{ discussions.toast.version }} : {{ discussions.toast.lastMessage }}</p>
+        </div>
+        <div class="account-toast-actions">
+          <button type="button" class="account-toast-open" @click="openDiscussion">Voir</button>
+          <button type="button" class="account-toast-close" aria-label="Fermer" @click="discussions.toast = null">×</button>
+        </div>
+      </article>
+    </Transition>
+
+    <!-- Nouveau compte à valider (administrateur) -->
+    <Transition name="alert-toast">
+      <article v-if="pendingAccounts.toast" class="account-toast" role="status">
+        <div>
+          <strong>Nouveau compte à valider</strong>
+          <p>{{ pendingAccounts.toast.name }} · {{ pendingAccounts.toast.email }}</p>
+        </div>
+        <div class="account-toast-actions">
+          <button type="button" class="account-toast-open" @click="openUsers">Voir</button>
+          <button type="button" class="account-toast-close" aria-label="Fermer" @click="pendingAccounts.toast = null">×</button>
+        </div>
+      </article>
+    </Transition>
 
     <!-- =====================================================
          GLOBAL ALERT TOAST
@@ -348,8 +408,28 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.message-toast { position: fixed; left: 50%; top: 18px; z-index: 95; display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100vw - 32px)); padding: 12px 14px; border: 1px solid #c7d2fe; border-left: 5px solid #4f46e5; border-radius: 14px; background: #fff; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); transform: translateX(-50%); }
+.message-toast strong { color: #312e81; }
+.message-toast p { margin: 2px 0 0; overflow: hidden; color: #4b5563; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
+.message-toast-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eef2ff; }
+.account-toast { position: fixed; right: 96px; bottom: 26px; z-index: 90; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #ddd6fe; border-left: 5px solid #7c3aed; border-radius: 14px; background: #fff; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
+.account-toast strong { color: #4c1d95; }
+.account-toast p { margin: 2px 0 0; color: #4b5563; font-size: 13.5px; }
+.account-toast-actions { display: flex; align-items: center; gap: 6px; }
+.account-toast-open { padding: 7px 12px; border: 0; border-radius: 8px; background: #7c3aed; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.account-toast-close { border: 0; background: none; color: #6b7280; font-size: 20px; cursor: pointer; }
 .dev-layout { min-height: 100vh; background: linear-gradient(180deg, #faf9ff 0%, #f6f7fb 240px); }
 .dev-content { max-width: 1240px; margin: 0 auto; padding: 24px 24px 96px; }
+/* Les pages partagées prennent les couleurs de l’espace développeur. */
+.dev-layout :deep(.primary-button),
+.dev-layout :deep(.dp-btn-primary) { border-color: transparent; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff; }
+.dev-layout :deep(.primary-button:hover),
+.dev-layout :deep(.dp-btn-primary:hover) { filter: brightness(1.06); }
+.dev-layout :deep(.panel),
+.dev-layout :deep(.table-card),
+.dev-layout :deep(.dp-card) { border-color: #ede9fe; border-radius: 14px; }
+.dev-layout :deep(.page-title),
+.dev-layout :deep(h1) { color: #1f1147; }
 .app-layout {
   min-height: 100vh;
 

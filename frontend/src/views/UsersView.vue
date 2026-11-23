@@ -341,6 +341,7 @@ onMounted(loadUsers)
       <article v-for="u in pending" :key="u.id" class="pending-item">
         <div>
           <strong>{{ u.firstName }} {{ u.lastName }}</strong> · {{ u.email }}
+          <span class="pending-mail" :class="u.emailVerified ? 'is-ok' : 'is-no'">{{ u.emailVerified ? 'Adresse confirmée' : 'Adresse non confirmée' }}</span>
           <p v-if="u.accessRequest" class="pending-request">« {{ u.accessRequest }} »</p>
         </div>
         <div class="pending-actions">
@@ -350,7 +351,7 @@ onMounted(loadUsers)
             <option value="VIEWER">Lecteur</option>
             <option value="ADMIN">Administrateur</option>
           </select>
-          <button type="button" class="primary-button" @click="approve(u)">Valider</button>
+          <button type="button" class="primary-button" :disabled="!u.emailVerified" :title="u.emailVerified ? '' : 'En attente de la confirmation de l’adresse'" @click="approve(u)">Valider</button>
           <button type="button" class="pending-reject" @click="reject(u)">Refuser</button>
         </div>
       </article>
@@ -730,6 +731,9 @@ onMounted(loadUsers)
 .pending-request { margin: 4px 0 0; color: #4b5563; font-size: 13.5px; }
 .pending-actions { display: flex; align-items: center; gap: 8px; }
 .pending-actions select { padding: 7px 9px; border: 1px solid #ddd6fe; border-radius: 8px; font: inherit; }
+.pending-mail { margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.pending-mail.is-ok { background: #dcfce7; color: #166534; }
+.pending-mail.is-no { background: #fef3c7; color: #92400e; }
 .pending-reject { padding: 8px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b91c1c; font: inherit; font-weight: 600; cursor: pointer; }
 .users-page {
   display: flex;

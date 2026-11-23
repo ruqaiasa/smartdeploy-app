@@ -63,6 +63,7 @@ public class UserService {
                 .role(Role.DEVELOPER)
                 .enabled(false)
                 .pendingApproval(true)
+                .emailVerified(false)
                 .accessRequest(request.accessRequest() == null || request.accessRequest().isBlank()
                         ? null : request.accessRequest().trim())
                 .deleted(false)
@@ -70,6 +71,9 @@ public class UserService {
                 .build();
 
         User savedUser = userRepository.saveAndFlush(user);
+        if (emailVerification != null) {
+            emailVerification.issue(savedUser);
+        }
         notifyAdmins(savedUser);
 
         return toResponse(savedUser);
@@ -248,6 +252,11 @@ public class UserService {
             UpdateStatusRequest request
     ) {
         User user = findActiveUserById(id);
+
+        // RG-U1 : activer un compte en attente, c'est le valider (adresse confirmée, courriel d'activation).
+        if (request.enabled() && user.isPendingApproval()) {
+            return approve(id, user.getRole());
+        }
 
         boolean disablingUser =
                 user.isEnabled() && !request.enabled();
@@ -467,13 +476,32 @@ public class UserService {
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
                 user.isPendingApproval(),
-                user.getAccessRequest()
+                user.getAccessRequest(),
+                user.isEmailVerified()
         );
     }
 
     /* ---------------------------------------------------------- validation des inscriptions (RG-U1) */
 
     private com.smartdeploy.mail.MailService mailService;
+    private com.smartdeploy.mail.AccountMailService accountMail;
+    private EmailVerificationService emailVerification;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccountMail(com.smartdeploy.mail.AccountMailService accountMail, EmailVerificationService emailVerification) {
+        this.accountMail = accountMail;
+        this.emailVerification = emailVerification;
+    }
+
+    /** RG-U1 : les comptes en attente, pour la notification de l'administrateur. */
+    @Transactional(readOnly = true)
+    public java.util.List<UserResponse> pendingAccounts() {
+        return userRepository.findAllByDeletedFalse().stream()
+                .filter(User::isPendingApproval)
+                .sorted(java.util.Comparator.comparing(User::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .map(this::toResponse)
+                .toList();
+    }
     private String frontendUrl = "http://localhost:5173";
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -491,11 +519,14 @@ public class UserService {
         if (!user.isPendingApproval()) {
             throw new IllegalStateException("Ce compte n'attend pas de validation");
         }
+        if (!user.isEmailVerified()) {
+            throw new IllegalStateException("L'adresse de ce compte n'est pas encore confirmée");
+        }
         user.setRole(role == null ? Role.DEVELOPER : role);
         user.setEnabled(true);
         user.setPendingApproval(false);
         User saved = userRepository.saveAndFlush(user);
-        mail(saved.getEmail(), "SmartDeploy : votre compte est activé",
+        accountMail(saved.getEmail(), "SmartDeploy : votre compte est activé",
                 "Bonjour " + saved.getFirstName() + ",\n\nVotre compte SmartDeploy est activé, avec le rôle "
                         + roleLabel(saved.getRole()) + ".\nConnectez-vous : " + frontendUrl + "/login\n");
         return toResponse(saved);
@@ -511,7 +542,7 @@ public class UserService {
         }
         String email = user.getEmail();
         userRepository.delete(user);
-        mail(email, "SmartDeploy : votre demande de compte",
+        accountMail(email, "SmartDeploy : votre demande de compte",
                 "Bonjour,\n\nVotre demande de compte SmartDeploy n'a pas été acceptée. Contactez l'équipe DevOps pour en savoir plus.\n");
     }
 
@@ -524,6 +555,15 @@ public class UserService {
                                 + ") demande un compte."
                                 + (registered.getAccessRequest() == null ? "" : "\nSa demande : « " + registered.getAccessRequest() + " »")
                                 + "\n\nValider ou refuser : " + frontendUrl + "/users\n"));
+    }
+
+    /** Courriel au demandeur : vrai serveur SMTP s'il est configuré, sinon serveur interne. */
+    private void accountMail(String to, String subject, String text) {
+        if (accountMail != null) {
+            accountMail.send(to, subject, text);
+        } else {
+            mail(to, subject, text);
+        }
     }
 
     private void mail(String to, String subject, String text) {

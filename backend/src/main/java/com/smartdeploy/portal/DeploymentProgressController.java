@@ -64,7 +64,7 @@ public class DeploymentProgressController {
 
     public record Progress(Long deploymentId, String status, String currentStage, int currentStageIndex, int totalStages,
                            List<PhaseState> phases, Long elapsedSeconds, Long estimatedRemainingSeconds, Long medianSeconds,
-                           String applicationUrl, String errorMessage, String source) {
+                           String applicationUrl, String errorMessage, String source, String pendingReason) {
     }
 
     public record PodSummary(String name, String component, boolean ready, int restarts, String phase, String lastTermination) {
@@ -120,7 +120,8 @@ public class DeploymentProgressController {
         Long median = medianSeconds(d);
         Long remaining = status == DeploymentStatus.RUNNING && median != null && elapsed != null ? Math.max(0, median - elapsed) : null;
         return new Progress(d.getId(), status.name(), index >= 0 ? STAGES.get(index) : null, index, STAGES.size(), phases,
-                elapsed, remaining, median, applicationUrl(d.getId()), d.getErrorMessage(), source);
+                elapsed, remaining, median, applicationUrl(d.getId()), d.getErrorMessage(), source,
+                status == DeploymentStatus.PENDING ? pendingReason(d) : null);
     }
 
     @GetMapping("/api/deployments/{id}/pods")
@@ -170,6 +171,36 @@ public class DeploymentProgressController {
         readAccess.ensureCanRead(id);
         return deployments.findById(id).filter(d -> !d.isDeleted())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Déploiement introuvable : " + id));
+    }
+
+    static final Pattern QUEUE_ID = Pattern.compile("/queue/item/(\\d+)");
+
+    /**
+     * Pourquoi un déploiement accepté n'a pas encore démarré : le point de restauration est en cours,
+     * ou Jenkins le garde dans sa file (avec la raison donnée par Jenkins lui-même).
+     */
+    String pendingReason(Deployment d) {
+        if (d.getJenkinsQueueUrl() == null || d.getJenkinsQueueUrl().isBlank()) {
+            return "Sauvegarde de la version en service avant le déploiement";
+        }
+        Matcher m = QUEUE_ID.matcher(d.getJenkinsQueueUrl());
+        if (!m.find()) {
+            return "En file d'attente de Jenkins";
+        }
+        try {
+            String json = jenkins.getQueueItemJson(Long.parseLong(m.group(1)));
+            if (json == null) {
+                return "Jenkins a pris le build en charge : démarrage en cours";
+            }
+            JsonNode item = MAPPER.readTree(json);
+            if (item.path("cancelled").asBoolean(false)) {
+                return "Jenkins a annulé le build en file d'attente";
+            }
+            String why = item.path("why").asText("");
+            return why.isBlank() ? "Transmis à Jenkins, démarrage imminent" : "Jenkins : " + why;
+        } catch (Exception exception) {
+            return "En file d'attente de Jenkins";
+        }
     }
 
     /** L'étape la plus avancée atteinte, d'après les marqueurs de la console. */

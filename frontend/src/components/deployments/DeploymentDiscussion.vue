@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { addComment, getTimeline } from '@/api/portal.api'
+import { markRead } from '@/components/discussion/discussions'
 import type { TimelineItem } from '@/types/portal'
 
 /*
@@ -17,7 +18,16 @@ const error = ref('')
 const list = ref<HTMLElement | null>(null)
 const ROLES: Record<string, string> = { ADMIN: 'Administrateur', DEVOPS: 'DevOps', DEVELOPER: 'Développeur', VIEWER: 'Lecteur' }
 
-async function load() {
+async function load(silent = false) {
+  if (silent) {
+    const fresh = await getTimeline(props.deploymentId).catch(() => null)
+    if (fresh && fresh.length !== items.value.length) {
+      items.value = fresh
+      await nextTick()
+      list.value?.scrollTo({ top: list.value.scrollHeight, behavior: 'smooth' })
+    }
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -40,8 +50,27 @@ async function send() {
 function when(iso: string | null) {
   return iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : ''
 }
-onMounted(load)
-watch(() => props.deploymentId, load)
+let refresh: ReturnType<typeof setInterval> | null = null
+onMounted(async () => {
+  await load()
+  void markRead(props.deploymentId)
+  refresh = setInterval(async () => { await load(true); void markRead(props.deploymentId) }, 10000)
+})
+onBeforeUnmount(() => { if (refresh) clearInterval(refresh) })
+watch(() => props.deploymentId, async () => { await load(); void markRead(props.deploymentId) })
+
+function initials(name: string) {
+  return name.split(/[\s.@]+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('')
+}
+function dayOf(iso: string | null) {
+  return iso ? new Date(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : ''
+}
+function newDay(i: number) {
+  return i === 0 || dayOf(items.value[i]!.at) !== dayOf(items.value[i - 1]!.at)
+}
+function onKey(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() }
+}
 </script>
 
 <template>
@@ -53,10 +82,13 @@ watch(() => props.deploymentId, load)
     <div ref="list" class="dd-list">
       <p v-if="loading && !items.length" class="dd-empty">Chargement…</p>
       <template v-for="(it, i) in items" :key="i">
+        <p v-if="newDay(i)" class="dd-day"><span>{{ dayOf(it.at) }}</span></p>
         <p v-if="it.kind === 'EVENT'" class="dd-event" :class="`is-${it.tone ?? 'neutral'}`">
           <span class="dd-event-dot" /> {{ it.text }} <time>{{ when(it.at) }}</time>
         </p>
-        <article v-else class="dd-msg" :class="{ 'is-mine': it.mine }">
+        <div v-else class="dd-row" :class="{ 'is-mine': it.mine }">
+        <span class="dd-avatar" :title="it.author">{{ initials(it.author) }}</span>
+        <article class="dd-msg" :class="{ 'is-mine': it.mine }">
           <div class="dd-meta">
             <strong>{{ it.mine ? 'Vous' : it.author }}</strong>
             <span v-if="it.authorRole && !it.mine" class="dd-role">{{ ROLES[it.authorRole] ?? it.authorRole }}</span>
@@ -64,10 +96,11 @@ watch(() => props.deploymentId, load)
           </div>
           <p>{{ it.text }}</p>
         </article>
+        </div>
       </template>
     </div>
     <form class="dd-form" @submit.prevent="send">
-      <textarea v-model="message" rows="2" maxlength="1000" placeholder="Écrire un message…" :disabled="sending" @keydown.enter.ctrl.prevent="send" />
+      <textarea v-model="message" rows="2" maxlength="1000" placeholder="Écrire un message… (Entrée pour envoyer)" :disabled="sending" @keydown="onKey" />
       <button type="submit" class="dd-btn" :disabled="sending || !message.trim()">{{ sending ? 'Envoi…' : 'Envoyer' }}</button>
     </form>
     <p v-if="error" class="dd-error" role="alert">{{ error }}</p>
@@ -86,6 +119,12 @@ watch(() => props.deploymentId, load)
 .dd-event.is-ok .dd-event-dot { background: #16a34a; }
 .dd-event.is-critical .dd-event-dot { background: #dc2626; }
 .dd-event.is-analysis .dd-event-dot { background: #7c3aed; }
+.dd-day { display: flex; align-items: center; gap: 10px; margin: 4px 0; color: #9ca3af; font-size: 11.5px; text-transform: capitalize; }
+.dd-day::before, .dd-day::after { content: ""; flex: 1; height: 1px; background: #eef0f3; }
+.dd-row { display: flex; align-items: flex-end; gap: 8px; }
+.dd-row.is-mine { flex-direction: row-reverse; }
+.dd-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 800; }
+.dd-row.is-mine .dd-avatar { background: #1e3a8a; color: #fff; }
 .dd-msg { align-self: flex-start; max-width: 85%; padding: 8px 12px; border-radius: 12px 12px 12px 4px; background: #f3f4f6; }
 .dd-msg.is-mine { align-self: flex-end; border-radius: 12px 12px 4px 12px; background: #e0e7ff; }
 .dd-msg p { margin: 2px 0 0; font-size: 14px; white-space: pre-wrap; word-break: break-word; }

@@ -77,6 +77,8 @@ export interface DeploymentProgress {
   applicationUrl: string | null
   errorMessage: string | null
   source: 'none' | 'final' | 'jenkins' | 'unavailable'
+  /** Pourquoi un déploiement accepté n’a pas encore démarré. */
+  pendingReason: string | null
 }
 export interface PodSummary { name: string; component: string; ready: boolean; restarts: number; phase: string | null; lastTermination: string | null }
 export interface LogExcerpt { pod: string; previous: boolean; lines: string[]; totalLines: number }
@@ -144,8 +146,28 @@ export interface AnalysisInsight {
   sameVersionSucceeded: boolean
   feedback: 'CORRECT' | 'PARTIAL' | 'WRONG' | null
   suggestions: KnowledgeArticle[]
+  /** Analyste apprenant : confiance recalibrée par les avis de l’équipe. */
+  learning: { code: string; reviews: number; confirmed: number; partial: number; refuted: number; precision: number | null; baseConfidence: string; calibratedConfidence: string; note: string } | null
+  /** La solution qui a marché sur l’incident passé le plus proche. */
+  knownFix: { deploymentId: number; version: string; environmentName: string; similarity: number; resolution: string; resolutionMinutes: number | null; confirmed: boolean } | null
 }
 export interface AnalystStats { total: number; correct: number; partial: number; wrong: number; precision: number | null; byCode: { code: string; total: number; correct: number; partial: number; wrong: number }[] }
 
 /** Fil d’un déploiement : messages et événements. */
 export interface TimelineItem { kind: 'MESSAGE' | 'EVENT'; at: string | null; text: string; author: string; authorRole: string | null; mine: boolean; tone: string | null }
+
+/** Fiche d’excellence d’une application. */
+export interface ScorecardCriterion { axis: string; label: string; passed: boolean | null; points: number; detail: string; recommendation: string | null }
+export interface Scorecard {
+  applicationId: number
+  applicationName: string
+  score: number | null
+  grade: string
+  previousScore: number | null
+  axes: { key: string; label: string; score: number | null }[]
+  criteria: ScorecardCriterion[]
+  recommendations: ScorecardCriterion[]
+  history: number[]
+  computedAt: string
+}
+export interface ScorecardSummary { applicationId: number; applicationName: string; score: number | null; grade: string }

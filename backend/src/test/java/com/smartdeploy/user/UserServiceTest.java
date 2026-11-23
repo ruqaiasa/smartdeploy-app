@@ -365,4 +365,16 @@ class UserServiceTest {
         assertEquals(Role.DEVOPS, response.role());
         assertThrows(IllegalStateException.class, () -> userService.approve(9L, Role.DEVELOPER), "déjà validé");
     }
+
+    @Test
+    void approve_shouldRefuseAnAccountWhoseAddressIsNotConfirmed() {
+        User unverified = User.builder().id(10L).firstName("Nadia").lastName("K").email("nadia@exemple.com")
+                .password("x").role(Role.DEVELOPER).enabled(false).pendingApproval(true).emailVerified(false)
+                .deleted(false).tokenVersion(0).build();
+        when(userRepository.findByIdAndDeletedFalse(10L)).thenReturn(java.util.Optional.of(unverified));
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> userService.approve(10L, Role.DEVELOPER));
+        assertTrue(refused.getMessage().contains("confirmée"));
+        assertFalse(unverified.isEnabled());
+    }
 }

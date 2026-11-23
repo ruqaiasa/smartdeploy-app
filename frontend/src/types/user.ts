@@ -13,6 +13,8 @@ export interface UserResponse {
   /** RG-U1 : inscription en attente de validation. */
   pendingApproval?: boolean
   accessRequest?: string | null
+  /** RG-U3 : adresse confirmée par le lien reçu. */
+  emailVerified?: boolean
 }
 
 export interface UserPageResponse {

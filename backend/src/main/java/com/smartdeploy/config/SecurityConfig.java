@@ -123,6 +123,9 @@ public class SecurityConfig {
                                 "/api/auth/reset-password/validate",
 
                                 "/api/users/register",
+                                // RG-U3 : confirmation de l'adresse et renvoi du lien, sans connexion
+                                "/api/users/verify-email",
+                                "/api/users/resend-verification",
 
                                 // Dispatch d'erreur interne de Spring Boot :
                                 // sans cette règle, toute exception non gérée

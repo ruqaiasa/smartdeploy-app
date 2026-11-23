@@ -13,10 +13,17 @@ public record UserResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         boolean pendingApproval,
-        String accessRequest
+        String accessRequest,
+        boolean emailVerified
 ) {
     public UserResponse(Long id, String firstName, String lastName, String email, Role role, boolean enabled,
+                        boolean deleted, LocalDateTime createdAt, LocalDateTime updatedAt,
+                        boolean pendingApproval, String accessRequest) {
+        this(id, firstName, lastName, email, role, enabled, deleted, createdAt, updatedAt, pendingApproval, accessRequest, true);
+    }
+
+    public UserResponse(Long id, String firstName, String lastName, String email, Role role, boolean enabled,
                         boolean deleted, LocalDateTime createdAt, LocalDateTime updatedAt) {
-        this(id, firstName, lastName, email, role, enabled, deleted, createdAt, updatedAt, false, null);
+        this(id, firstName, lastName, email, role, enabled, deleted, createdAt, updatedAt, false, null, true);
     }
 }

@@ -20,7 +20,8 @@ class ConfidenceCalculatorTest {
     void shouldWarnStronglyAboutAVersionAlreadyJudgedDegraded() {
         ConfidenceScore score = ConfidenceCalculator.compute(
                 new ConfidenceInputs(10, 2, 0, true, 1, false, EnvironmentType.DEVELOPMENT, "panne/plantage-differe"));
-        assertEquals(49, score.score());
+        // 100 − 50 (dégradée) − 6 (2 échecs sur 10) − 10 (incident) − 5 (branche de travail)
+        assertEquals(29, score.score());
         assertEquals("LOW", score.level());
         assertEquals("Version déjà jugée dégradée", score.factors().get(0).label());
     }
@@ -58,5 +59,16 @@ class ConfidenceCalculatorTest {
         assertFalse(ConfidenceCalculator.isVersionCause("REGISTRY_UNAVAILABLE"), "panne extérieure");
         assertFalse(ConfidenceCalculator.isVersionCause("DEPENDENCY_DOWNLOAD"), "téléchargement impossible");
         assertFalse(ConfidenceCalculator.isVersionCause(null), "cause non identifiée");
+    }
+
+    @Test
+    void aVersionThatAlreadyCrashedTwiceIsAHighRisk() {
+        // Cas réel : 1.1.1-plantage, deux mises en service dégradées et retirées par le gardien.
+        // Avant la correction : 100 − 30 − 5 = 65, « Prudence ».
+        ConfidenceScore score = ConfidenceCalculator.compute(
+                new ConfidenceInputs(10, 0, 0, true, 0, false, EnvironmentType.DEVELOPMENT, "panne/plantage-differe", 2));
+        assertEquals(30, score.score(), "100 − 50 − 15 − 5");
+        assertEquals("LOW", score.level());
+        assertTrue(score.factors().get(0).explanation().contains("2 dégradations"));
     }
 }

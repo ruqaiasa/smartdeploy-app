@@ -33,7 +33,13 @@ public class AnalysisInsightController {
 
     public record Insight(String kind, String verdict, String baseVersion, String baseCommit, String headCommit,
                           List<String> changedFiles, List<String> suspectFiles, List<GitHubClient.CommitInfo> commits,
-                          boolean sameVersionSucceeded, String feedback, List<KnowledgeService.ArticleResponse> suggestions) {
+                          boolean sameVersionSucceeded, String feedback, List<KnowledgeService.ArticleResponse> suggestions,
+                          AnalystLearning.Learning learning, KnownFix knownFix) {
+    }
+
+    /** La solution qui a marché sur l'incident passé le plus proche (de préférence confirmé par l'équipe). */
+    public record KnownFix(Long deploymentId, String version, String environmentName, int similarity,
+                           String resolution, Long resolutionMinutes, boolean confirmed) {
     }
 
     public record FeedbackRequest(AnalysisFeedback.Verdict verdict, String actualCause) {
@@ -51,10 +57,15 @@ public class AnalysisInsightController {
     private final GitHubClient github;
     private final KnowledgeService knowledge;
     private final DeploymentReadAccess readAccess;
+    private final AnalystLearning learning;
+    private final com.smartdeploy.incident.IncidentMemory memory;
 
     public AnalysisInsightController(DeploymentRepository deployments, IncidentAnalysisRepository analyses,
                                      AnalysisFeedbackRepository feedback, GitHubClient github, KnowledgeService knowledge,
-                                     DeploymentReadAccess readAccess) {
+                                     DeploymentReadAccess readAccess, AnalystLearning learning,
+                                     com.smartdeploy.incident.IncidentMemory memory) {
+        this.learning = learning;
+        this.memory = memory;
         this.deployments = deployments;
         this.analyses = analyses;
         this.feedback = feedback;
@@ -117,7 +128,9 @@ public class AnalysisInsightController {
         return new Insight(kind, verdict, base.map(x -> x.getVersion().getVersion()).orElse(null), baseCommit, head,
                 changed.size() > 30 ? changed.subList(0, 30) : changed, suspects,
                 commits.size() > 10 ? commits.subList(commits.size() - 10, commits.size()) : commits,
-                sameVersionSucceeded, latestFeedback, suggestions);
+                sameVersionSucceeded, latestFeedback, suggestions,
+                analysis.map(learning::learn).orElse(null),
+                analysis.map(this::knownFix).orElse(null));
     }
 
     @PostMapping("/api/deployments/{id}/analysis/feedback")
@@ -170,6 +183,23 @@ public class AnalysisInsightController {
         List<CodeStat> codes = new ArrayList<>();
         byCode.forEach((code, c) -> codes.add(new CodeStat(code, c[0] + c[1] + c[2], c[0], c[1], c[2])));
         return new AnalystStats(total, correct, partial, wrong, precision, codes);
+    }
+
+    /** Parmi les incidents similaires résolus, d'abord ceux que l'équipe a confirmés, puis les plus proches. */
+    private KnownFix knownFix(IncidentAnalysis analysis) {
+        try {
+            List<com.smartdeploy.incident.IncidentAnalysisResponse.SimilarIncident> similar = memory.similar(analysis);
+            return similar.stream()
+                    .filter(s -> s.resolution() != null && !s.resolution().startsWith("Pas encore"))
+                    .map(s -> new KnownFix(s.deploymentId(), s.version(), s.environmentName(), s.similarity(), s.resolution(),
+                            s.resolutionMinutes(), feedback.findFirstByDeploymentIdOrderByIdDesc(s.deploymentId())
+                            .map(f -> f.getVerdict() == AnalysisFeedback.Verdict.CORRECT).orElse(false)))
+                    .sorted(Comparator.comparing(KnownFix::confirmed).reversed().thenComparing(Comparator.comparingInt(KnownFix::similarity).reversed()))
+                    .findFirst()
+                    .orElse(null);
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 
     static String analysisText(IncidentAnalysis a) {

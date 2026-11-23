@@ -7,4 +7,6 @@ import java.util.List;
 public interface DeploymentCommentRepository extends JpaRepository<DeploymentComment, Long> {
 
     List<DeploymentComment> findByDeploymentIdOrderByCreatedAtAsc(Long deploymentId);
+
+    List<DeploymentComment> findByCreatedAtAfterOrderByCreatedAtDesc(java.time.LocalDateTime after);
 }

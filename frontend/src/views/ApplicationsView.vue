@@ -8,6 +8,7 @@ import {
 import { useRouter } from 'vue-router'
 
 import ApplicationFormModal from '@/components/applications/ApplicationFormModal.vue'
+import NewApplicationDialog from '@/components/portal/NewApplicationDialog.vue'
 
 import { useApplicationsStore } from '@/stores/applications'
 import { useAuthStore } from '@/stores/auth'
@@ -111,7 +112,22 @@ function viewApplicationDetails(
  * ==========================================================
  */
 
+/* Espace développeur : une nouvelle application commence par le contrôle de son dépôt. */
+const repoCheckOpen = ref(false)
+function isDeveloperUser() {
+  const auth = useAuthStore()
+  return auth.hasRole('DEVELOPER') && !auth.hasRole('VIEWER', 'DEVOPS', 'ADMIN')
+}
+async function afterRepoCheckCreated() {
+  repoCheckOpen.value = false
+  await applicationsStore.loadApplications()
+}
+
 function openCreateModal() {
+  if (isDeveloperUser()) {
+    repoCheckOpen.value = true
+    return
+  }
   selectedApplication.value = null
   modalOpen.value = true
 }
@@ -490,6 +506,13 @@ function formatDate(
 
               <td>
                 <div class="actions">
+                  <RouterLink
+                    :to="`/applications/${application.id}/excellence`"
+                    class="excellence-link"
+                    title="Note de A à E et recommandations"
+                  >
+                    Excellence
+                  </RouterLink>
 
                   <!-- VOIR PLUS -->
 
@@ -672,6 +695,8 @@ function formatDate(
                          MODAL
     ======================================================= -->
 
+    <NewApplicationDialog :open="repoCheckOpen" @close="repoCheckOpen = false" @created="afterRepoCheckCreated" />
+
     <ApplicationFormModal
       :open="modalOpen"
       :application="
@@ -687,6 +712,7 @@ function formatDate(
 </template>
 
 <style scoped>
+.excellence-link { display: inline-flex; align-items: center; padding: 6px 10px; border: 1px solid #ddd6fe; border-radius: 8px; background: #f5f3ff; color: #5b21b6; font-size: 13px; font-weight: 700; text-decoration: none; }
 .owner-missing { color: #b45309; font-size: 12.5px; font-weight: 600; }
 .applications-page {
   display: flex;

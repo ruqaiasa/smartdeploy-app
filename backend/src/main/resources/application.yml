@@ -27,6 +27,18 @@ security:
 smartdeploy:
   # Adresse du frontend, pour les liens envoyés par e-mail
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  # Premier démarrage : administrateur initial, créé seulement s'il n'existe aucun administrateur
+  bootstrap:
+    admin-email: ${ADMIN_EMAIL:}
+    admin-password: ${ADMIN_PASSWORD:}
+  # Courriels des nouveaux comptes (confirmation, activation, refus) : vrai serveur SMTP.
+  # Sans ACCOUNT_SMTP_HOST, ils partent vers le serveur interne (Mailpit).
+  account-mail:
+    host: ${ACCOUNT_SMTP_HOST:}
+    port: ${ACCOUNT_SMTP_PORT:587}
+    username: ${ACCOUNT_SMTP_USERNAME:}
+    password: ${ACCOUNT_SMTP_PASSWORD:}
+    from: ${ACCOUNT_MAIL_FROM:}
   mail:
     from: ${SMARTDEPLOY_MAIL_FROM:SmartDeploy <no-reply@smartdeploy.local>}
   password-reset:

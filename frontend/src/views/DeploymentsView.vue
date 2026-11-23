@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { discussions } from '@/components/discussion/discussions'
 import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
@@ -29,6 +31,13 @@ const authStore = useAuthStore()
 const canManageDeployments = computed(() => authStore.hasRole('DEVOPS', 'ADMIN'))
 /* Portail développeur : le développeur demande un déploiement, un DevOps l’examine. */
 const isDeveloper = computed(() => authStore.hasRole('DEVELOPER') && !canManageDeployments.value)
+/* Développeur : toute la ligne ouvre la fiche du déploiement (sauf un clic sur un bouton ou un lien). */
+const rowRouter = useRouter()
+function openRow(deployment: DeploymentResponse, event: MouseEvent) {
+  if (!isDeveloper.value) return
+  if ((event.target as HTMLElement).closest('button, a, input, select')) return
+  void rowRouter.push(`/deployments/${deployment.id}`)
+}
 const canCreate = computed(() => canManageDeployments.value || isDeveloper.value)
 const createLabel = computed(() => isDeveloper.value ? 'Demander un déploiement' : 'Nouveau déploiement')
 function toggleMine() {
@@ -103,6 +112,7 @@ function canRollback(deployment: DeploymentResponse) {
     && guards.value[deployment.id]?.status !== 'DEGRADED'
     && !sameImage
 }
+
 const modalOpen = ref(false)
 const monitoringOpen = ref(false)
 const monitoredDeployment = ref<DeploymentResponse | null>(null)
@@ -509,63 +519,103 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
         </template>
       </div>
 
-            <div v-else class="sd9-scroll">
-        <table class="dp-table sd9-table" :class="{ 'is-refreshing': deploymentsStore.loading }">
-          <thead>
-            <tr>
-              <th scope="col">Application</th>
-              <th scope="col">Environnement</th>
-              <th scope="col">État</th>
-              <th scope="col">Date</th>
-              <th scope="col">Actions disponibles</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
+      <table v-else class="dp-table" :class="{ 'is-refreshing': deploymentsStore.loading }">
+        <thead>
+          <tr>
+            <th scope="col">Application</th>
+            <th scope="col">Environnement</th>
+            <th scope="col">Statut</th>
+            <th scope="col">Lancé</th>
+            <th scope="col">Durée</th>
+            <th scope="col">Build</th>
+            <th scope="col"><span class="dp-sr">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template v-for="deployment in deploymentsStore.deployments" :key="deployment.id">
+            <tr :class="{ 'has-error': hasReason(deployment), 'is-clickable': isDeveloper }" @click="openRow(deployment, $event)">
               <td data-label="Application">
-                <RouterLink class="sd9-app" :to="`/deployments/${deployment.id}`">{{ deployment.applicationName }}</RouterLink>
-                <div class="sd9-meta">{{ deployment.version }} <span class="sd9-separator">·</span> #{{ deployment.id }}</div>
+                <div class="dp-app">
+                  <strong>{{ deployment.applicationName }}</strong>
+                  <span class="dp-version">{{ deployment.version }}</span>
+                </div>
+                <small v-if="deployment.rollbackOfId" class="dp-muted">Retour au déploiement #{{ deployment.rollbackOfId }}</small>
+                <small v-else-if="deployment.imagesFromId" class="dp-muted" title="Même image, à l’octet près : construite une fois, déployée partout">Image réutilisée du déploiement #{{ deployment.imagesFromId }}</small>
               </td>
               <td data-label="Environnement">
-                <span class="sd9-env">{{ deployment.environmentName }}</span>
-                <small class="sd9-meta sd9-type">{{ deployment.environmentType }}</small>
+                <span>{{ deployment.environmentName }}</span>
+                <small class="dp-muted dp-block">{{ deployment.environmentType }}</small>
               </td>
-              <td data-label="État">
+              <td data-label="Statut">
                 <span class="dp-status" :class="`is-${deployment.status.toLowerCase()}`">
                   <span class="dp-status-dot" aria-hidden="true" />{{ STATUS_LABELS[deployment.status] ?? deployment.status }}
                 </span>
-                <small v-if="deployment.current" class="sd9-service">En service</small>
-                <small v-else-if="hasReason(deployment)" class="sd9-failure" :title="deployment.errorMessage ?? ''">Incident</small>
+                <span v-if="deployment.current" class="dp-live-badge" title="Déploiement actuellement en service sur cet environnement">En service</span>
+                <small v-if="deployment.status === 'AWAITING_APPROVAL'" class="dp-approval is-waiting">
+                  {{ deployment.requestedById === authStore.currentUser?.id ? 'En attente de l’accord d’une seconde personne' : 'Votre décision est attendue' }}
+                </small>
+                <small v-else-if="deployment.approvedBy && deployment.status !== 'REJECTED'" class="dp-approval is-approved"
+                  :title="deployment.approvalComment ?? ''">Approuvé par {{ deployment.approvedBy }}</small>
+                <small v-else-if="deployment.status === 'REJECTED'" class="dp-approval is-rejected">
+                  {{ deployment.approvedBy ? `Refusé par ${deployment.approvedBy}` : 'Refusé' }}<template v-if="deployment.approvalComment"> : {{ deployment.approvalComment }}</template>
+                </small>
+                <DeploymentGuardBadge v-if="guards[deployment.id] && !isDeveloper" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
+                <small v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)"
+                  :title="restorePointTitle(restorePoints[deployment.id]!)"><svg class="dp-rp-icon" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M4 3.5h9.5L16.5 6.5V16a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>{{ restorePointLabel(restorePoints[deployment.id]!) }}</small>
               </td>
-              <td data-label="Date">
-                <time class="sd9-date" :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</time>
+              <td data-label="Lancé">
+                <span :title="formatDate(deployment.createdAt)">{{ formatRelative(deployment.createdAt) }}</span>
+                <small class="dp-muted dp-block" :title="deployment.requestedByEmail">par {{ requesterName(deployment.requestedByEmail) }}</small>
               </td>
-              <td data-label="Actions disponibles" class="sd9-action-cell">
-                <div class="sd9-action-groups">
-                  <div class="sd9-action-line" aria-label="Consulter et échanger">
-                    <RouterLink :to="`/deployments/${deployment.id}`" class="sd9-action sd9-primary">Détails</RouterLink>
-                    <button v-if="hasIncident(deployment)" type="button" class="sd9-action" @click="analysisDeployment = deployment">Analyse</button>
-                    <button v-if="deployment.status === 'SUCCESS'" type="button" class="sd9-action" @click="openMonitoring(deployment)">Monitoring</button>
-                    <button v-if="canDiscuss(deployment)" type="button" class="sd9-action" @click="discussionTarget = deployment">Discussion</button>
-                    <button v-if="guards[deployment.id]" type="button" class="sd9-action" @click="openGuard(deployment)">Contrôle</button>
-                    <a v-if="deployment.deploymentLogsUrl" :href="deployment.deploymentLogsUrl" target="_blank" rel="noopener noreferrer" class="sd9-action">Logs</a>
+              <td data-label="Durée">{{ formatDuration(deployment.durationSeconds) }}</td>
+              <td data-label="Build">
+                <a v-if="deployment.deploymentLogsUrl" :href="deployment.deploymentLogsUrl" target="_blank" rel="noopener noreferrer" class="dp-build" title="Ouvrir les logs Jenkins">
+                  #{{ deployment.jenkinsBuildNumber ?? '?' }}
+                  <svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M8 4h8v8M16 4l-9 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </a>
+                <span v-else class="dp-muted">—</span>
+                <small v-if="deployment.deployedBackendImage" class="dp-muted dp-block dp-digest"
+                  :title="imageTooltip(deployment)">{{ shortDigest(deployment.deployedBackendImage) }}</small>
+              </td>
+              <td class="dp-actions-cell">
+                <div class="dp-actions">
+                  <div class="dp-actions-main">
+                    <RouterLink v-if="!isDeveloper" :to="`/deployments/${deployment.id}`" class="dp-action" title="Progression, explication, journaux et discussion">Détails</RouterLink>
+                    <button v-if="canDecide(deployment)" type="button" class="dp-action dp-action-approve"
+                      @click="openApproval(deployment)">Examiner et décider</button>
+                    <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="dp-action dp-action-promote"
+                      :title="`Même version, même image, même configuration : vers ${promotions[deployment.id]!.targetEnvironmentName}`"
+                      @click="promote(deployment)">Promouvoir vers {{ promotions[deployment.id]!.targetEnvironmentName }}</button>
+                    <button v-if="canDiscuss(deployment)" type="button" class="dp-action dp-chat" :title="`Discussion${discussions.byDeployment[deployment.id] ? ' : ' + discussions.byDeployment[deployment.id] + ' message(s) non lu(s)' : ''}`"
+                      @click="discussionTarget = deployment">
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" /></svg>
+                      <span v-if="discussions.byDeployment[deployment.id]" class="dp-chat-badge">{{ discussions.byDeployment[deployment.id] }}</span>
+                    </button>
                   </div>
-                  <div v-if="canDecide(deployment) || (isPromotable(deployment) && promotions[deployment.id]) || canCancel(deployment) || (ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)) || canRestoreBefore(deployment) || canDeleteDeployments" class="sd9-action-line sd9-operations" aria-label="Opérations">
-                    <button v-if="canDecide(deployment)" type="button" class="sd9-action sd9-emphasis" @click="openApproval(deployment)">Approuver / refuser</button>
-                    <button v-if="isPromotable(deployment) && promotions[deployment.id]" type="button" class="sd9-action sd9-emphasis" :title="`Vers ${promotions[deployment.id]!.targetEnvironmentName}`" @click="promote(deployment)">Promouvoir</button>
-                    <button v-if="canCancel(deployment)" type="button" class="sd9-action" :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">Annuler</button>
-                    <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="sd9-action" :disabled="deploymentsStore.actionLoading" @click="rollback(deployment)">Rollback</button>
-                    <button v-if="canRestoreBefore(deployment)" type="button" class="sd9-action sd9-danger" @click="restoreTarget = deployment">Restaurer</button>
-                    <button v-if="canDeleteDeployments" type="button" class="sd9-action sd9-danger" :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)" @click="removeDeployment(deployment)">Supprimer</button>
+                  <div class="dp-actions-more">
+                    <button v-if="deployment.status === 'SUCCESS' && !isDeveloper" type="button" class="dp-action" @click="openMonitoring(deployment)">Monitoring</button>
+                    <RouterLink v-if="!isDeveloper" :to="`/supervision?env=${deployment.environmentId}`" class="dp-action" title="Courbes de l’environnement, avec les déploiements marqués">Courbes</RouterLink>
+                    <button v-if="hasIncident(deployment) && !isDeveloper" type="button" class="dp-action dp-action-analysis" @click="analysisDeployment = deployment">Analyse</button>
+                    <button v-if="ROLLBACK_AVAILABLE && canManageDeployments && canRollback(deployment)" type="button" class="dp-action"
+                      :disabled="deploymentsStore.actionLoading" title="Redéployer exactement ces images" @click="rollback(deployment)">Revenir ici</button>
+                    <button v-if="canRestoreBefore(deployment)" type="button" class="dp-action dp-action-danger"
+                      title="Remettre l’application et ses données dans leur état d’avant ce déploiement" @click="restoreTarget = deployment">Restaurer l’état d’avant</button>
+                    <button v-if="canCancel(deployment)" type="button" class="dp-action dp-action-danger"
+                      :disabled="deploymentsStore.actionLoading" @click="cancelDeployment(deployment)">{{ isDeveloper ? 'Retirer' : 'Annuler' }}</button>
+                    <button v-if="canDeleteDeployments" type="button" class="dp-action dp-action-danger"
+                      :disabled="deploymentsStore.actionLoading || OPEN_STATUSES.includes(deployment.status)"
+                      :title="OPEN_STATUSES.includes(deployment.status) ? 'Impossible de supprimer un déploiement en cours ou en attente' : 'Supprimer de l’historique'"
+                      @click="removeDeployment(deployment)">Supprimer</button>
                   </div>
                 </div>
               </td>
             </tr>
-          </tbody>
-        </table>
-      </div>
-
-
+            <tr v-if="hasReason(deployment)" class="dp-error-row">
+              <td colspan="7"><span class="dp-error-text" :class="{ 'is-neutral': deployment.status === 'CANCELLED' }">{{ deployment.errorMessage }}</span></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
     </section>
 
     <footer v-if="deploymentsStore.totalElements" class="dp-pagination">
@@ -661,6 +711,16 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
 </template>
 
 <style scoped>
+.dp-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.dp-actions-main, .dp-actions-more { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.dp-actions-main:empty, .dp-actions-more:empty { display: none; }
+.dp-actions-main .dp-action { padding: 6px 12px; border-radius: 9px; font-size: 13px; font-weight: 700; }
+.dp-actions-main .dp-action:not(.dp-action-approve):not(.dp-action-promote):not(.dp-chat) { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
+.dp-actions-more .dp-action { padding: 3px 9px; border-radius: 7px; font-size: 12px; font-weight: 600; opacity: .9; }
+tr.is-clickable { cursor: pointer; }
+tr.is-clickable:hover td { background: #faf9ff; }
+.dp-chat { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 34px; }
+.dp-chat-badge { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 10.5px; font-weight: 800; box-shadow: 0 0 0 2px #fff; }
 .dp-discussion-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .45); }
 .dp-discussion { display: flex; flex-direction: column; gap: 10px; width: min(620px, 100%); padding: 16px 18px; border-radius: 14px; background: #fff; box-shadow: 0 20px 50px rgba(15, 23, 42, .25); }
 .dp-discussion header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }

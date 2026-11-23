@@ -37,4 +37,7 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
             AlertStatus status
     );
 
+
+    /** Supervision : les alertes d'un environnement sur une période. */
+    java.util.List<Alert> findByEnvironment_IdAndCreatedAtAfterOrderByCreatedAtAsc(Long environmentId, java.time.LocalDateTime after);
 }

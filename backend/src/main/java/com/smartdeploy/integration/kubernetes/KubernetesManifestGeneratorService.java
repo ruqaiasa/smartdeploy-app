@@ -194,7 +194,8 @@ public class KubernetesManifestGeneratorService {
                 );
 
         return new KubernetesFullStackPreviewResponse(
-                withResources(generateDeployment(frontendConfig), ContainerResourceProfile.FRONTEND),
+                withBackendUrl(withResources(generateDeployment(frontendConfig), ContainerResourceProfile.FRONTEND),
+                        backend.name(), backend.containerPort()),
                 generateService(frontendConfig),
                 withResources(generateDeployment(backendConfig), ContainerResourceProfile.BACKEND),
                 generateService(backendConfig)
@@ -439,7 +440,10 @@ public class KubernetesManifestGeneratorService {
 
             manifests.put(
                     "frontend-deployment.yaml",
-                    withResources(generateDeployment(config), ContainerResourceProfile.FRONTEND)
+                    request.backend() != null
+                            ? withBackendUrl(withResources(generateDeployment(config), ContainerResourceProfile.FRONTEND),
+                                    request.backend().name(), request.backend().containerPort())
+                            : withResources(generateDeployment(config), ContainerResourceProfile.FRONTEND)
             );
 
             manifests.put(
@@ -513,6 +517,23 @@ public class KubernetesManifestGeneratorService {
      * Deployment généré. Sans limite, une application qui s'emballe peut
      * priver les autres de ressources sur le nœud.
      */
+    /**
+     * Donne à l'interface l'adresse exacte du service du serveur (variable BACKEND_URL, lue par Nginx
+     * pour relayer /api). Sans elle, l'interface garde la valeur figée de son image, qui ne correspond
+     * qu'à un seul nom d'application : Nginx s'arrête alors sur « host not found in upstream ».
+     */
+    String withBackendUrl(String deploymentYaml, String backendName, Integer backendPort) {
+        Deployment deployment = Serialization.unmarshal(deploymentYaml, Deployment.class);
+        String url = "http://" + backendName + "-service:" + (backendPort == null ? 8080 : backendPort);
+        deployment.getSpec().getTemplate().getSpec().getContainers().forEach(container -> {
+            List<EnvVar> env = container.getEnv() == null ? new ArrayList<>() : new ArrayList<>(container.getEnv());
+            env.removeIf(e -> "BACKEND_URL".equals(e.getName()));
+            env.add(new EnvVarBuilder().withName("BACKEND_URL").withValue(url).build());
+            container.setEnv(env);
+        });
+        return Serialization.asYaml(deployment);
+    }
+
     String withResources(String deploymentYaml, ContainerResourceProfile profile) {
         Deployment deployment = Serialization.unmarshal(deploymentYaml, Deployment.class);
         deployment.getSpec().getTemplate().getSpec().getContainers().forEach(container ->

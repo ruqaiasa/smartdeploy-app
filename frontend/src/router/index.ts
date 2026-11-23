@@ -62,6 +62,16 @@ const router = createRouter({
     },
 
     {
+      // Accessible connecté ou non : le lien arrive par courriel (RG-U3).
+      path: '/verify-email',
+      name: 'verify-email',
+      component: () => import('@/views/VerifyEmailView.vue'),
+      meta: {
+        title: 'Confirmation de l’adresse',
+      },
+    },
+
+    {
       path: '/register',
       name: 'register',
       component: RegisterView,
@@ -235,6 +245,20 @@ const router = createRouter({
           name: 'deployment-detail',
           component: () => import('@/views/DeploymentDetailView.vue'),
           meta: { title: 'Fiche de déploiement' },
+        },
+
+        {
+          path: 'applications/:id(\\d+)/excellence',
+          name: 'application-scorecard',
+          component: () => import('@/views/ScorecardView.vue'),
+          meta: { title: 'Fiche d’excellence' },
+        },
+
+        {
+          path: 'supervision',
+          name: 'supervision',
+          component: () => import('@/views/SupervisionView.vue'),
+          meta: { title: 'Supervision', roles: ['VIEWER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
         },
 
         {

@@ -87,3 +87,9 @@ export async function approveUser(id: number, role: UserRole): Promise<UserRespo
 export async function rejectUser(id: number): Promise<void> {
   await httpClient.post(`/api/users/${id}/reject`)
 }
+
+/** Comptes en attente de validation (notification de l’administrateur). */
+export async function getPendingUsers(): Promise<UserResponse[]> {
+  const data = (await httpClient.get<UserResponse[]>('/api/users/pending')).data
+  return Array.isArray(data) ? data : []
+}

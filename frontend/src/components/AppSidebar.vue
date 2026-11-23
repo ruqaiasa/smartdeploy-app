@@ -6,6 +6,7 @@ import { getPendingApprovalsCount } from '@/api/deployments.api'
 
 import { useAlertsStore } from '@/stores/alerts'
 import { useAuthStore } from '@/stores/auth'
+import { pendingAccounts } from '@/components/admin/pendingAccounts'
 
 const alertsStore = useAlertsStore()
 const authStore = useAuthStore()
@@ -428,6 +429,30 @@ defineEmits<{
 
         <RouterLink
           v-if="!isDeveloper"
+          to="/supervision"
+          class="nav-link"
+          title="Supervision"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M3 17l5-6 4 4 5-7 4 5" />
+              <path d="M3 21h18" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            Supervision
+          </span>
+        </RouterLink>
+
+        <RouterLink
+          v-if="!isDeveloper"
           to="/alerts"
           class="nav-link alert-link"
           title="Alertes"
@@ -606,6 +631,7 @@ defineEmits<{
           >
             ADMIN
           </span>
+          <span v-if="pendingAccounts.count" class="nav-pending" :title="`${pendingAccounts.count} compte(s) à valider`">{{ pendingAccounts.count }}</span>
         </RouterLink>
       </div>
     </nav>
@@ -631,6 +657,7 @@ defineEmits<{
 </template>
 
 <style scoped>
+.nav-pending { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #7c3aed; color: #fff; font-size: 11.5px; font-weight: 800; text-align: center; }
 .approval-count { margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #4338ca; color: #fff; font-size: 11.5px; font-weight: 700; text-align: center; }
 .sidebar {
   position: fixed;

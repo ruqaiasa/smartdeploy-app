@@ -84,6 +84,12 @@ public interface DeploymentRepository extends
     List<Deployment> findTop5ByDeletedFalseOrderByCreatedAtDesc();
 
     /** Score de confiance : derniers déploiements d'un environnement. */
+    /** Supervision : les déploiements d'un environnement sur une période. */
+    List<Deployment> findByEnvironment_IdAndCreatedAtAfterAndDeletedFalseOrderByCreatedAtAsc(Long environmentId, java.time.LocalDateTime after);
+
+    /** Fiche d'excellence : les derniers déploiements d'une application. */
+    List<Deployment> findTop20ByVersion_Application_IdAndDeletedFalseOrderByCreatedAtDesc(Long applicationId);
+
     List<Deployment> findTop10ByEnvironment_IdAndDeletedFalseOrderByCreatedAtDesc(Long environmentId);
 
     /** Score de confiance : historique d'une version, tous environnements. */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import DashboardTrends from '@/components/dashboard/DashboardTrends.vue'
 import DoraPanel from '@/components/dashboard/DoraPanel.vue'
 import StorageHealthCard from '@/components/dashboard/StorageHealthCard.vue'
 import DataProtectionCard from '@/components/dashboard/DataProtectionCard.vue'
@@ -225,7 +226,8 @@ onMounted(load)
             </ul>
           </section>
 
-          <details class="db-card db-extra"><summary>RÃ©partition des dÃ©ploiements</summary>
+          <section class="db-card">
+            <header class="db-card-head"><h2>Résultats des déploiements</h2></header>
             <div class="db-ring">
               <svg viewBox="0 0 100 100" width="132" height="132" role="img" :aria-label="`${ring.ok} réussis, ${ring.ko} échoués, ${ring.other} autres`">
                 <circle cx="50" cy="50" r="42" fill="none" stroke="#f1f5f9" stroke-width="11" />
@@ -240,10 +242,16 @@ onMounted(load)
                 <li><span class="db-sq" style="background:#cbd5e1" />Autres <strong>{{ ring.other }}</strong></li>
               </ul>
             </div>
-          </details>
+          </section>
         </aside>
       </div>
     </template>
+
+    <!-- Tendances -->
+    <section class="db-section">
+      <h2 class="db-section-title">Tendances</h2>
+      <DashboardTrends />
+    </section>
 
     <!-- Performance de livraison -->
     <section class="db-section">
@@ -355,55 +363,4 @@ a.db-kpi:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(30, 58, 138,
 .db-section { display: flex; flex-direction: column; gap: 10px; }
 .db-section-title { margin: 6px 0 0; color: #374151; font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .db-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
-
-/* SMARTDEPLOY_DASHBOARD_V11_1 */
-/* SmartDeploy Dashboard V11 — scoped additions, no global CSS collisions */
-.db { --ink:#142238; --muted:#68778b; --line:#e4eaf2; --card:#fff; gap:18px; max-width:1600px; margin:0 auto; }
-.db-header { align-items:center; padding-bottom:14px; border-bottom:1px solid #e6ebf2; }
-.db-header h1 { font-size:26px; font-weight:760; letter-spacing:-.035em; }
-.db-sub { font-size:12.5px; }
-.db-header-actions { gap:9px; flex-wrap:wrap; }
-.db-btn { min-height:39px; border-radius:9px; font-size:12.5px; font-weight:650; }
-.db-btn-primary { background:#2563eb; border-color:#2563eb; }
-.db-kpis { grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
-.db-kpi { min-width:0; min-height:129px; padding:17px 18px; border-radius:13px; border:1px solid #e4eaf2; box-shadow:0 3px 14px rgba(21,42,74,.025); gap:4px; }
-.db-kpi-icon { width:30px; height:30px; border-radius:8px; margin-bottom:4px; }
-.db-kpi-icon.is-violet { background:#eaf0ff; color:#2c59a8; }
-.db-kpi-label { font-size:12px; font-weight:650; }
-.db-kpi-value { font-size:29px; letter-spacing:-.04em; line-height:1.13; }
-.db-kpi-detail { font-size:11.5px; line-height:1.4; }
-.db-main { grid-template-columns:minmax(0,1.85fr) minmax(245px,.8fr); gap:14px; }
-.db-card { min-width:0; padding:0; overflow:hidden; border:1px solid #e4eaf2; border-radius:13px; box-shadow:0 3px 12px rgba(22,36,63,.025); }
-.db-card-head { padding:18px 19px 14px; margin:0; border-bottom:1px solid #edf1f6; align-items:center; }
-.db-card-head h2 { font-size:15px; font-weight:730; letter-spacing:-.015em; }
-.db-card-head p { font-size:11.5px; }
-.db-link { font-size:12px; color:#1d4ed8; }
-.db-table-wrap { margin:0; }
-.db-table { font-size:12.5px; }
-.db-table th { padding:12px 15px; background:#f8fafc; color:#708096; font-size:10px; letter-spacing:.035em; }
-.db-table td { padding:13px 15px; border-bottom:1px solid #eef2f6; }
-.db-table .db-id { display:none; }
-.db-app { font-size:12.5px; font-weight:700; }
-.db-version { border-radius:5px; }
-.db-status { border-radius:6px; font-size:11px; padding:5px 8px; }
-.db-dot { width:6px; height:6px; }
-.db-todo { padding:8px 15px 12px; }
-.db-todo-row { min-height:44px; padding:10px 5px; font-size:12.5px; gap:8px; }
-.db-todo-row:hover { color:#1d4ed8; }
-.db-count { min-width:27px; font-size:12px; border-radius:7px; }
-.db-priority-count { font-size:11px; border-radius:8px; padding:4px 8px; background:#eff6ff; color:#1d4ed8; font-weight:700; }
-.db-empty { padding:22px 18px; font-size:12px; }
-.db-extra { background:#fff; }
-.db-extra > summary { padding:15px 19px; font-size:12.5px; font-weight:700; color:#526176; cursor:pointer; list-style-position:inside; }
-.db-extra > summary:hover { color:#1d4ed8; background:#f8fafc; }
-.db-extra .db-ring { padding:0 18px 18px; }
-.db-section-title { margin:5px 0 2px; font-size:12px; font-weight:750; letter-spacing:.07em; color:#516176; }
-.db-grid-2 { gap:14px; }
-.db-btn:focus-visible,.db-link:focus-visible,.db-todo-row:focus-visible,.db-extra>summary:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
-@media(max-width:1170px){ .db-kpis {grid-template-columns:repeat(2,minmax(0,1fr))} .db-main {grid-template-columns:1fr} }
-@media(max-width:620px){ .db-header {align-items:flex-start;flex-direction:column} .db-header-actions {width:100%} .db-kpis {grid-template-columns:repeat(2,minmax(0,1fr));gap:9px} .db-kpi {padding:14px;min-height:118px} .db-kpi-value {font-size:25px} .db-table {min-width:630px} }
-@media(prefers-reduced-motion:reduce){ .db * {transition:none!important;animation:none!important} }
-/* Fallback safe if the old status banner is laid out differently. */
-.db > .db-banner { display:none !important; }
-
 </style>
