@@ -70,4 +70,34 @@ class KubernetesManifestResourcesTest {
         assertTrue(frontend.getEnv().stream().anyMatch(e -> "BACKEND_URL".equals(e.getName())
                 && "http://fullstack-app-deploy-render-backend-service:8080".equals(e.getValue())));
     }
+
+    @Test
+    void eachComponentGetsAnAutoscalerAndTheIngressGoesThroughTheInterface() {
+        Map<String, String> manifests = generator.generateApplication(new KubernetesApplicationRequest(
+                "sd-test-demo",
+                new KubernetesComponentRequest("demo-frontend", "registry/frontend@sha256:aaa", 2, 8080),
+                new KubernetesComponentRequest("demo-backend", "registry/backend@sha256:bbb", 2, 8080),
+                null,
+                new KubernetesIngressRequest("test-demo.192.168.85.129.nip.io", null, null)
+        )).manifests();
+
+        String hpa = manifests.get("backend-hpa.yaml");
+        assertNotNull(hpa);
+        assertTrue(hpa.contains("kind: HorizontalPodAutoscaler"));
+        assertTrue(hpa.contains("minReplicas: 2"));
+        assertTrue(hpa.contains("maxReplicas: 6"));
+        assertNotNull(manifests.get("frontend-hpa.yaml"));
+
+        String ingress = manifests.get("application-ingress.yaml");
+        assertFalse(ingress.contains("/api"), "l'interface relaie /api elle-même");
+        assertTrue(ingress.contains("demo-frontend-service"));
+        assertTrue(new KubernetesManifestValidator().validate(manifests).isEmpty(), "les autoscalers sont acceptés");
+    }
+
+    @Test
+    void theAutoscalerStaysWithinTheMachineSize() {
+        assertEquals(3, KubernetesManifestGeneratorService.maxReplicas(1));
+        assertEquals(6, KubernetesManifestGeneratorService.maxReplicas(2));
+        assertEquals(6, KubernetesManifestGeneratorService.maxReplicas(4));
+    }
 }

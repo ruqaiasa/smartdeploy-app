@@ -106,6 +106,22 @@ public class JenkinsClient {
                 .body(String.class);
     }
 
+    /** Résultat d'un build ({"building":…,"result":…}), ou null s'il n'existe pas (encore). */
+    public String getBuildJson(int buildNumber) {
+        return restClient.get()
+                .uri("/job/{jobName}/{buildNumber}/api/json?tree=building,result", properties.jobName(), buildNumber)
+                .exchange((request, response) -> {
+                    if (response.getStatusCode().value() == 404) {
+                        return null;
+                    }
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        throw new JenkinsIntegrationException("Jenkins a refusé la lecture du build #" + buildNumber
+                                + ". Statut HTTP : " + response.getStatusCode());
+                    }
+                    return new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+                });
+    }
+
     public boolean stopBuild(int buildNumber) {
         return restClient.post()
                 .uri(

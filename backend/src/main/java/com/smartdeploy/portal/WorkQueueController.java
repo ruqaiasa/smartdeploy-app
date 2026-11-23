@@ -54,9 +54,16 @@ public class WorkQueueController {
         int approvals = 0;
         for (Deployment d : deployments.findByStatusInAndDeletedFalse(List.of(DeploymentStatus.AWAITING_APPROVAL))) {
             boolean production = d.getEnvironment().getType() == EnvironmentType.PRODUCTION;
+            boolean promotion = d.getImagesFrom() != null;
+            boolean fromDeveloper = d.getRequestedBy() != null && d.getRequestedBy().getRole() == com.smartdeploy.user.Role.DEVELOPER;
+            String title = promotion
+                    ? (production ? "Promotion vers la production à réaliser" : "Promotion à réaliser")
+                    : (production ? "Mise en production à approuver" : "Demande de déploiement à approuver");
+            String origin = promotion ? " : de " + d.getImagesFrom().getEnvironment().getName() + " vers " + d.getEnvironment().getName()
+                    + " (mêmes images)" : " vers " + d.getEnvironment().getName();
             items.add(new QueueItem("APPROVAL", production ? 100 : 70,
-                    production ? "Mise en production à approuver" : "Demande de déploiement à approuver",
-                    d.getVersion().getApplication().getName() + " " + d.getVersion().getVersion() + " vers " + d.getEnvironment().getName()
+                    title + (fromDeveloper ? ", demandée par le développeur" : ""),
+                    d.getVersion().getApplication().getName() + " " + d.getVersion().getVersion() + origin
                             + (d.getRequestMessage() == null ? "" : " : « " + d.getRequestMessage() + " »"),
                     d.getVersion().getApplication().getName(), d.getEnvironment().getName(), d.getEnvironment().getType().name(),
                     d.getId(), d.getRequestedBy() == null ? null : d.getRequestedBy().getEmail(), d.getCreatedAt(),

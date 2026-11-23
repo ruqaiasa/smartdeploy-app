@@ -45,6 +45,22 @@ public class PasswordResetService {
     private final RefreshTokenService refreshTokenService;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
+
+    /** Courriels destinés à l'utilisateur : vrai serveur SMTP s'il est configuré (sinon, serveur interne). */
+    private com.smartdeploy.mail.AccountMailService accountMail;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAccountMail(com.smartdeploy.mail.AccountMailService accountMail) {
+        this.accountMail = accountMail;
+    }
+
+    private void userMail(String to, String subject, String text) {
+        if (accountMail != null) {
+            accountMail.send(to, subject, text);
+        } else {
+            mailService.send(to, subject, text);
+        }
+    }
     private final ApplicationEventPublisher eventPublisher;
     private final String frontendUrl;
     private final long ttlMinutes;
@@ -90,7 +106,7 @@ public class PasswordResetService {
                 .createdAt(now)
                 .build());
 
-        mailService.send(user.getEmail(), "SmartDeploy : réinitialisation de votre mot de passe",
+        userMail(user.getEmail(), "SmartDeploy : réinitialisation de votre mot de passe",
                 "Bonjour,\n\n"
                         + "Une réinitialisation du mot de passe de votre compte SmartDeploy a été demandée.\n"
                         + "Pour choisir un nouveau mot de passe, ouvrez ce lien (valable " + ttlMinutes + " minutes, utilisable une seule fois) :\n\n"
@@ -122,7 +138,7 @@ public class PasswordResetService {
         refreshTokenService.revokeAll(user);
         reset.setUsedAt(LocalDateTime.now());
 
-        mailService.send(user.getEmail(), "SmartDeploy : votre mot de passe a été modifié",
+        userMail(user.getEmail(), "SmartDeploy : votre mot de passe a été modifié",
                 "Bonjour,\n\n"
                         + "Le mot de passe de votre compte SmartDeploy vient d'être modifié, et toutes vos sessions ont été fermées.\n"
                         + "Si vous n'êtes pas à l'origine de ce changement, contactez immédiatement un administrateur.\n");

@@ -74,10 +74,14 @@ public class ApplicationScorecardController {
     @GetMapping("/api/portal/applications/{id}/scorecard")
     @PreAuthorize("hasAnyRole('VIEWER', 'DEVELOPER', 'DEVOPS', 'ADMIN')")
     @Transactional
-    public Scorecard scorecard(@PathVariable Long id) {
+    public Scorecard scorecard(@PathVariable Long id,
+                               @org.springframework.web.bind.annotation.RequestParam(defaultValue = "false") boolean refresh) {
         Application app = applications.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Application introuvable"));
         ApplicationAccess.ensureCurrentUserCanAccess(app);
+        if (refresh) {
+            reportCache.keySet().removeIf(k -> k.startsWith(app.getRepositoryUrl() + "#"));   // relire le dépôt
+        }
         ScorecardCalculator.Result result = ScorecardCalculator.compute(criteria(app));
         List<ScorecardSnapshot> past = snapshots.findTop10ByApplicationIdOrderByCreatedAtDesc(app.getId());
         record(app.getId(), result, past);

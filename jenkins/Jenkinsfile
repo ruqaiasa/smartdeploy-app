@@ -1071,7 +1071,7 @@ void sdDownloadKubernetesManifests() {
                 MANIFESTS_ROOT=/srv/smartdeploy/manifests
                 DEST="$MANIFESTS_ROOT/$K8S_NAMESPACE/deploiement-$DEPLOYMENT_ID"
                 if mkdir -p "$DEST" 2>/dev/null; then
-                    find k8s-generated -type f \( -name '*.yaml' -o -name '*.yml' \) -exec cp {} "$DEST/" \;
+                    find k8s-generated -type f -name '*.y*ml' -exec cp -t "$DEST" {} +
                     {
                         echo "Déploiement SmartDeploy : #$DEPLOYMENT_ID"
                         echo "Espace de noms          : $K8S_NAMESPACE"

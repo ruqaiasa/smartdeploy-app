@@ -501,6 +501,14 @@ public class KubernetesManifestGeneratorService {
             );
         }
 
+        // MISE À L'ÉCHELLE AUTOMATIQUE : le nombre de pods suit la charge du processeur
+        if (request.frontend() != null) {
+            manifests.put("frontend-hpa.yaml", generateAutoscaler(request.namespace(), request.frontend()));
+        }
+        if (request.backend() != null) {
+            manifests.put("backend-hpa.yaml", generateAutoscaler(request.namespace(), request.backend()));
+        }
+
         // INGRESS
         if (request.ingress() != null) {
 
@@ -532,6 +540,42 @@ public class KubernetesManifestGeneratorService {
             container.setEnv(env);
         });
         return Serialization.asYaml(deployment);
+    }
+
+    /** Cible d'utilisation du processeur au-delà de laquelle on ajoute des pods. */
+    static final int AUTOSCALE_CPU_PERCENT = 70;
+
+    /** Au plus trois fois le nombre de pods demandé, et pas plus de 6 (taille de la machine). */
+    static int maxReplicas(int min) {
+        return Math.max(min + 1, Math.min(6, min * 3));
+    }
+
+    /** Autoscaler (autoscaling/v2) : de N pods à maxReplicas(N), selon l'utilisation du processeur. */
+    String generateAutoscaler(String namespace, KubernetesComponentRequest component) {
+        int min = Math.max(1, component.replicas());
+        return """
+                apiVersion: autoscaling/v2
+                kind: HorizontalPodAutoscaler
+                metadata:
+                  name: %s-hpa
+                  namespace: %s
+                  labels:
+                    app: %s
+                spec:
+                  scaleTargetRef:
+                    apiVersion: apps/v1
+                    kind: Deployment
+                    name: %s
+                  minReplicas: %d
+                  maxReplicas: %d
+                  metrics:
+                    - type: Resource
+                      resource:
+                        name: cpu
+                        target:
+                          type: Utilization
+                          averageUtilization: %d
+                """.formatted(component.name(), namespace, component.name(), component.name(), min, maxReplicas(min), AUTOSCALE_CPU_PERCENT);
     }
 
     String withResources(String deploymentYaml, ContainerResourceProfile profile) {
@@ -627,23 +671,8 @@ public class KubernetesManifestGeneratorService {
 
         List<HTTPIngressPath> paths = new ArrayList<>();
 
-        // 1. Route /api uniquement si Frontend ET Backend existent
-        if (request.frontend() != null && request.backend() != null) {
-
-            paths.add(new HTTPIngressPathBuilder()
-                    .withPath("/api")
-                    .withPathType("Prefix")
-                    .withNewBackend()
-                    .withNewService()
-                    .withName(request.backend().name() + "-service")
-                    .withNewPort()
-                    .withNumber(request.backend().containerPort())
-                    .endPort()
-                    .endService()
-                    .endBackend()
-                    .build());
-        }
-
+        // L'interface relaie elle-même /api vers le serveur (BACKEND_URL, préfixe retiré) :
+        // l'Ingress envoie tout vers elle. Sans interface, tout va au serveur.
         // 2. Route principale /
         // Frontend s'il existe, sinon Backend
         KubernetesComponentRequest rootTarget =

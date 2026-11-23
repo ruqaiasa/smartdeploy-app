@@ -27,6 +27,9 @@ security:
 smartdeploy:
   # Adresse du frontend, pour les liens envoyés par e-mail
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  # Adresse publique automatique de chaque environnement (vide : désactivée)
+  ingress:
+    auto-domain: ${INGRESS_AUTO_DOMAIN:192.168.85.129.nip.io}
   # Premier démarrage : administrateur initial, créé seulement s'il n'existe aucun administrateur
   bootstrap:
     admin-email: ${ADMIN_EMAIL:}

@@ -64,7 +64,8 @@ public class DeploymentProgressController {
 
     public record Progress(Long deploymentId, String status, String currentStage, int currentStageIndex, int totalStages,
                            List<PhaseState> phases, Long elapsedSeconds, Long estimatedRemainingSeconds, Long medianSeconds,
-                           String applicationUrl, String errorMessage, String source, String pendingReason) {
+                           String applicationUrl, String errorMessage, String source, String pendingReason,
+                           String namespace, String accessService, Integer accessPort) {
     }
 
     public record PodSummary(String name, String component, boolean ready, int restarts, String phase, String lastTermination) {
@@ -121,7 +122,8 @@ public class DeploymentProgressController {
         Long remaining = status == DeploymentStatus.RUNNING && median != null && elapsed != null ? Math.max(0, median - elapsed) : null;
         return new Progress(d.getId(), status.name(), index >= 0 ? STAGES.get(index) : null, index, STAGES.size(), phases,
                 elapsed, remaining, median, applicationUrl(d.getId()), d.getErrorMessage(), source,
-                status == DeploymentStatus.PENDING ? pendingReason(d) : null);
+                status == DeploymentStatus.PENDING ? pendingReason(d) : null,
+                d.getEnvironment().getNamespace(), access(d.getId(), "name"), accessPort(d.getId()));
     }
 
     @GetMapping("/api/deployments/{id}/pods")
@@ -251,6 +253,33 @@ public class DeploymentProgressController {
                 .map(DeploymentKubernetesConfig::getConfigurationJson)
                 .map(DeploymentProgressController::hostOf)
                 .orElse(null);
+    }
+
+    /** Sans adresse publique : le service à ouvrir pour un accès de test (l'interface, sinon le serveur). */
+    private String access(Long deploymentId, String field) {
+        return configs.findByDeploymentId(deploymentId).map(DeploymentKubernetesConfig::getConfigurationJson)
+                .map(json -> {
+                    try {
+                        JsonNode root = MAPPER.readTree(json);
+                        JsonNode c = root.path("frontend").isObject() && root.path("frontend").hasNonNull("name") ? root.path("frontend") : root.path("backend");
+                        return c.hasNonNull("name") ? c.path("name").asText() + "-service" : null;
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }).orElse(null);
+    }
+
+    private Integer accessPort(Long deploymentId) {
+        return configs.findByDeploymentId(deploymentId).map(DeploymentKubernetesConfig::getConfigurationJson)
+                .map(json -> {
+                    try {
+                        JsonNode root = MAPPER.readTree(json);
+                        JsonNode c = root.path("frontend").isObject() && root.path("frontend").hasNonNull("name") ? root.path("frontend") : root.path("backend");
+                        return c.hasNonNull("containerPort") ? c.path("containerPort").asInt() : null;
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }).orElse(null);
     }
 
     static String hostOf(String json) {

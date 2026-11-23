@@ -18,7 +18,8 @@ public class KubernetesManifestValidator {
             "Deployment",
             "Service",
             "StatefulSet",
-            "Ingress"
+            "Ingress",
+            "HorizontalPodAutoscaler"
     );
 
     public List<String> validate(Map<String, String> manifests) {

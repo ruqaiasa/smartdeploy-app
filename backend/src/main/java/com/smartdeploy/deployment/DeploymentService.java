@@ -82,6 +82,14 @@ public class DeploymentService {
     }
 
     /* RG-P2 : types d'environnement où une validation préalable par le gardien est exigée. */
+    /** Domaine des adresses publiques automatiques (vide : désactivé). */
+    private String autoIngressDomain;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAutoIngressDomain(@org.springframework.beans.factory.annotation.Value("${smartdeploy.ingress.auto-domain:}") String domain) {
+        this.autoIngressDomain = domain;
+    }
+
     private java.util.Set<com.smartdeploy.environment.EnvironmentType> promotionRequiredTypes =
             java.util.EnumSet.noneOf(com.smartdeploy.environment.EnvironmentType.class);
 
@@ -303,6 +311,7 @@ public class DeploymentService {
                     request.kubernetesConfig()
             );
             normalizedConfig.put("namespace", namespace);
+            AutoIngress.apply(normalizedConfig, namespace, autoIngressDomain);
             configurationJson = OBJECT_MAPPER.writeValueAsString(normalizedConfig);
         } catch (JsonProcessingException exception) {
             throw new DeploymentValidationException(
