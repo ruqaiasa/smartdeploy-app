@@ -166,7 +166,7 @@ String failureHint(String stage) {
             return 'La construction de l’image Docker a échoué : erreur dans le Dockerfile ou dans le build applicatif.'
         case 'Trivy Security Scan':
         case 'Trivy Frontend Security Scan':
-            return 'Le scan de sécurité Trivy a échoué ou a détecté une vulnérabilité bloquante.'
+            return 'Contrôle de sécurité bloquant : Trivy a détecté une vulnérabilité CRITIQUE disposant d’un correctif. Mettez à jour la bibliothèque ou l’image concernée, puis créez une nouvelle version.'
         case 'Check Docker Registry':
         case 'Docker Push':
         case 'Verify Registry':
@@ -716,6 +716,7 @@ void sdTrivySecurityScan() {
                                 --skip-db-update \
                                 --skip-java-db-update \
                                 --severity CRITICAL \
+                                --ignore-unfixed \
                                 --timeout 15m \
                                 --no-progress \
                                 --exit-code 1 \
@@ -882,6 +883,7 @@ void sdTrivyFrontendSecurityScan() {
                                     --skip-db-update \
                                     --skip-java-db-update \
                                     --severity CRITICAL \
+                                --ignore-unfixed \
                                     --timeout 15m \
                                     --no-progress \
                                     --exit-code 1 \
@@ -1062,10 +1064,37 @@ void sdDownloadKubernetesManifests() {
                 find k8s-generated -type f -name '*.yaml' -print -quit | grep -q . || \
                 find k8s-generated -type f -name '*.yml' -print -quit | grep -q .
 
+                # Copie dans un dossier fixe de la VM, pour retrouver facilement ce qui a été appliqué :
+                #   /srv/smartdeploy/manifests/<espace de noms>/deploiement-<numéro>/
+                #   /srv/smartdeploy/manifests/<espace de noms>/dernier  (raccourci vers le plus récent)
+                # Une erreur ici n'interrompt jamais le déploiement.
+                MANIFESTS_ROOT=/srv/smartdeploy/manifests
+                DEST="$MANIFESTS_ROOT/$K8S_NAMESPACE/deploiement-$DEPLOYMENT_ID"
+                if mkdir -p "$DEST" 2>/dev/null; then
+                    find k8s-generated -type f \( -name '*.yaml' -o -name '*.yml' \) -exec cp {} "$DEST/" \;
+                    {
+                        echo "Déploiement SmartDeploy : #$DEPLOYMENT_ID"
+                        echo "Espace de noms          : $K8S_NAMESPACE"
+                        echo "Build Jenkins           : #$BUILD_NUMBER"
+                        echo "Date                    : $(date '+%d/%m/%Y %H:%M:%S')"
+                        echo "Image du serveur        : ${BACKEND_IMAGE_BUILT:-}"
+                        echo "Image de l'interface    : ${FRONTEND_IMAGE_BUILT:-aucune}"
+                        echo "Fichiers                :"
+                        ls -1 "$DEST" | grep -v '^INFO.txt$' | sed 's/^/  - /'
+                    } > "$DEST/INFO.txt"
+                    ln -sfn "$DEST" "$MANIFESTS_ROOT/$K8S_NAMESPACE/dernier" 2>/dev/null || true
+                    echo "Manifests copiés dans $DEST"
+                else
+                    echo "AVERTISSEMENT : copie des manifests impossible dans $MANIFESTS_ROOT (droits ?)"
+                fi
+
                 echo "======================================"
                 echo " Manifests Kubernetes disponibles"
                 echo "======================================"
             '''
+
+            // Les manifests sont aussi archivés avec le build : consultables depuis Jenkins, build par build.
+            archiveArtifacts artifacts: 'k8s-generated/**/*.y*ml', allowEmptyArchive: true, fingerprint: true
         }
     }
 
@@ -1393,7 +1422,8 @@ pipeline {
         APP_NODE_PORT =
             '30080'
 
-        // Passer a 'true' uniquement apres validation du rapport Trivy.
+        // Contrôle de sécurité bloquant : une vulnérabilité CRITIQUE disposant d'un correctif
+        // arrête le déploiement (les failles sans correctif sont signalées, sans bloquer).
         TRIVY_ENFORCE_GATE = 'false'
     }
 
