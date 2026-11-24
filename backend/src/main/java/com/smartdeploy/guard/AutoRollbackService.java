@@ -64,10 +64,27 @@ public class AutoRollbackService {
         return template;
     }
 
+    private com.smartdeploy.canary.CanaryService canaryService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCanaryService(com.smartdeploy.canary.CanaryService canaryService) {
+        this.canaryService = canaryService;
+    }
+
     @EventListener
     public void onAuditRecorded(AuditRecordedEvent event) {
         if (event.entry().getAction() == AuditAction.GUARD_DEGRADED && event.entry().getTargetId() != null) {
-            rollBackIfAllowed(event.entry().getTargetId());
+            Long id = event.entry().getTargetId();
+            if (canaryService != null && canaryService.isObserving(id)) {
+                try {
+                    canaryService.abort(id, null, "Abandon automatique : le gardien a jugé la nouvelle version dégradée");
+                    log.info("Gardien : déploiement progressif #{} abandonné automatiquement", id);
+                } catch (RuntimeException exception) {
+                    log.warn("Gardien : abandon du déploiement progressif #{} impossible : {}", id, exception.getMessage());
+                }
+                return;
+            }
+            rollBackIfAllowed(id);
         }
     }
 

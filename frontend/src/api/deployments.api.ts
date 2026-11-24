@@ -42,10 +42,13 @@ export async function getDeploymentById(
 export async function createDeployment(
   request: CreateDeploymentRequest,
 ): Promise<DeploymentResponse> {
+  // La stratégie part en paramètre : le corps reste celui d'une demande ordinaire.
+  const { strategy, ...body } = request
   const response =
     await httpClient.post<DeploymentResponse>(
       DEPLOYMENTS_ENDPOINT,
-      request,
+      body,
+      { params: strategy === 'CANARY' ? { strategy } : undefined },
     )
 
   return response.data
@@ -137,4 +140,20 @@ export async function getPendingApprovalsCount(): Promise<number> {
 export async function getPromotion(deploymentId: number): Promise<PromotionProposal> {
   const response = await httpClient.get<PromotionProposal>(`/api/deployments/${deploymentId}/promotion`)
   return response.data
+}
+
+/** Déploiement progressif (canary). */
+export interface CanaryView { deploymentId: number; state: 'OBSERVING' | 'PROMOTED' | 'ABORTED'; active: boolean; stableReplicas: number; trafficPercent: number; createdAt: string; endedAt: string | null; note: string | null }
+export async function getCanary(id: number): Promise<CanaryView> {
+  return (await httpClient.get<CanaryView>(`/api/deployments/${id}/canary`)).data
+}
+export async function getActiveCanaries(): Promise<number[]> {
+  const data = (await httpClient.get<number[]>('/api/deployments/canaries')).data
+  return Array.isArray(data) ? data : []
+}
+export async function promoteCanary(id: number): Promise<DeploymentResponse> {
+  return (await httpClient.post<DeploymentResponse>(`/api/deployments/${id}/canary/promote`)).data
+}
+export async function abortCanary(id: number, reason: string): Promise<void> {
+  await httpClient.post(`/api/deployments/${id}/canary/abort`, { reason })
 }

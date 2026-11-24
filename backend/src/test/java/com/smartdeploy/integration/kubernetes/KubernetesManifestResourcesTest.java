@@ -100,4 +100,26 @@ class KubernetesManifestResourcesTest {
         assertEquals(6, KubernetesManifestGeneratorService.maxReplicas(2));
         assertEquals(6, KubernetesManifestGeneratorService.maxReplicas(4));
     }
+
+    @Test
+    void aCanaryKeepsOnlyOnePodCopyThatTheStableServiceStillReaches() {
+        Map<String, String> full = generator.generateApplication(new KubernetesApplicationRequest(
+                "sd-dev-demo",
+                new KubernetesComponentRequest("demo-frontend", "registry/frontend@sha256:aaa", 2, 8080),
+                new KubernetesComponentRequest("demo-backend", "registry/backend@sha256:bbb", 2, 8080),
+                null,
+                null
+        )).manifests();
+        Map<String, String> canary = generator.canaryManifests(full);
+
+        assertEquals(java.util.Set.of("backend-canary-deployment.yaml", "frontend-canary-deployment.yaml"), canary.keySet(),
+                "ni Service, ni Ingress, ni autoscaler, ni base : la version stable reste intacte");
+        io.fabric8.kubernetes.api.model.apps.Deployment d = io.fabric8.kubernetes.client.utils.Serialization.unmarshal(
+                canary.get("backend-canary-deployment.yaml"), io.fabric8.kubernetes.api.model.apps.Deployment.class);
+        assertEquals("demo-backend-canary", d.getMetadata().getName());
+        assertEquals(1, d.getSpec().getReplicas());
+        assertEquals("demo-backend", d.getSpec().getTemplate().getMetadata().getLabels().get("app"), "le Service stable le sélectionne");
+        assertEquals("canary", d.getSpec().getSelector().getMatchLabels().get("track"));
+        assertTrue(new KubernetesManifestValidator().validate(canary).isEmpty());
+    }
 }

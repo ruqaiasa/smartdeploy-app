@@ -17,6 +17,7 @@ const LINKS = [
   { to: '/environments', label: 'Environnements' },
   { to: '/versions', label: 'Versions' },
   { to: '/deployments', label: 'Déploiements' },
+  { to: '/meetings', label: 'Rendez-vous' },
   { to: '/knowledge', label: 'Aide' },
 ]
 async function logout() {
@@ -46,18 +47,18 @@ async function logout() {
 </template>
 
 <style scoped>
-.dn { position: sticky; top: 0; z-index: 40; border-bottom: 1px solid #ede9fe; background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px); }
+.dn { position: sticky; top: 0; z-index: 40; border-bottom: 1px solid #e0e7ff; background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px); }
 .dn-inner { display: flex; align-items: center; gap: 20px; max-width: 1240px; margin: 0 auto; padding: 10px 24px; }
-.dn-brand { display: flex; align-items: center; gap: 8px; color: #1f1147; text-decoration: none; }
-.dn-logo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff; font-weight: 800; }
+.dn-brand { display: flex; align-items: center; gap: 8px; color: #0f172a; text-decoration: none; }
+.dn-logo { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, #1e3a8a, #4f46e5); color: #fff; font-weight: 800; }
 .dn-name { font-size: 16px; font-weight: 800; }
-.dn-badge { padding: 2px 8px; border-radius: 999px; background: #ede9fe; color: #6d28d9; font-size: 11.5px; font-weight: 700; }
+.dn-badge { padding: 2px 8px; border-radius: 999px; background: #e0e7ff; color: #1d4ed8; font-size: 11.5px; font-weight: 700; }
 .dn-links { display: flex; flex: 1; flex-wrap: wrap; gap: 2px; }
 .dn-link { padding: 7px 12px; border-radius: 8px; color: #4b5563; font-size: 14px; font-weight: 600; text-decoration: none; }
-.dn-link:hover { background: #f5f3ff; color: #5b21b6; }
-.dn-link.is-active { background: #ede9fe; color: #5b21b6; }
+.dn-link:hover { background: #eef2ff; color: #1e40af; }
+.dn-link.is-active { background: #e0e7ff; color: #1e40af; }
 .dn-user { display: flex; align-items: center; gap: 10px; }
-.dn-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: #1f1147; color: #fff; font-size: 13px; font-weight: 700; }
+.dn-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: #0f172a; color: #fff; font-size: 13px; font-weight: 700; }
 .dn-logout { padding: 7px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; color: #374151; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 @media (max-width: 900px) { .dn-inner { flex-wrap: wrap; } .dn-links { order: 3; width: 100%; } }
 </style>

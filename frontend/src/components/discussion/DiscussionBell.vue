@@ -51,15 +51,15 @@ function age(iso: string) {
 <style scoped>
 .db { position: relative; }
 .db-btn { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #4b5563; cursor: pointer; }
-.db-btn:hover { color: #6d28d9; border-color: #c4b5fd; }
+.db-btn:hover { color: #1d4ed8; border-color: #c7d2fe; }
 .db-badge { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 11px; font-weight: 800; box-shadow: 0 0 0 2px #fff; }
 .db-panel { position: absolute; right: 0; top: 48px; z-index: 70; width: 340px; max-height: 420px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
 .db-panel header { padding: 12px 14px; border-bottom: 1px solid #f1f2f4; font-weight: 800; }
 .db-empty { margin: 0; padding: 18px 14px; color: #6b7280; font-size: 13.5px; text-align: center; }
-.db-item { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid #f5f3ff; background: #fff; font: inherit; text-align: left; cursor: pointer; }
-.db-item:hover { background: #faf9ff; }
+.db-item { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid #eef2ff; background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.db-item:hover { background: #f8faff; }
 .db-item-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
-.db-count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: #7c3aed; color: #fff; font-size: 11.5px; font-weight: 800; text-align: center; }
+.db-count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 11.5px; font-weight: 800; text-align: center; }
 .db-item-env { color: #6b7280; font-size: 12px; }
 .db-item-msg { overflow: hidden; color: #374151; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .db-item-age { color: #9ca3af; font-size: 11.5px; }

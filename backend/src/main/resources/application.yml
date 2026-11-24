@@ -27,6 +27,9 @@ security:
 smartdeploy:
   # Adresse du frontend, pour les liens envoyés par e-mail
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  # Visioconférences des rendez-vous : serveur Jitsi Meet (public par défaut ; en entreprise, le sien)
+  meetings:
+    jitsi-url: ${JITSI_URL:https://meet.jit.si}
   # Adresse publique automatique de chaque environnement (vide : désactivée)
   ingress:
     auto-domain: ${INGRESS_AUTO_DOMAIN:192.168.85.129.nip.io}

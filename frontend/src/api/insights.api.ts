@@ -28,6 +28,27 @@ export interface Insights {
   kpis: Kpi[]
   causes: { code: string; title: string; count: number }[]
   environments: { environmentId: number; applicationName: string; environmentName: string; type: string | null; version: string | null; state: string; openAlerts: number; lastDeploymentAt: string | null }[]
+  degradedVersions: number
+  analystPrecision: number | null
+  analystReviews: number
+}
+
+/** Capacité du cluster : utilisation dans le temps, et part réservée par les pods. */
+export interface ClusterCapacity {
+  from: number
+  to: number
+  cpuUsage: Point[]
+  memoryUsage: Point[]
+  runningPods: Point[]
+  cpuRequested: number | null
+  memoryRequested: number | null
+  cpuCores: number | null
+  memoryGb: number | null
+  runningPodsNow: number | null
+  error: string | null
+}
+export async function getClusterCapacity(hours: number): Promise<ClusterCapacity> {
+  return (await httpClient.get<ClusterCapacity>('/api/monitoring/cluster', { params: { hours } })).data
 }
 
 export async function getEnvironmentSeries(environmentId: number, hours: number): Promise<EnvironmentSeries> {

@@ -67,10 +67,50 @@ export async function getRecentDiscussions(): Promise<UnreadThread[]> {
   return Array.isArray(data) ? data : []
 }
 
-export async function getScorecard(applicationId: number): Promise<Scorecard> {
-  return (await httpClient.get<Scorecard>(`/api/portal/applications/${applicationId}/scorecard`)).data
+export async function getScorecard(applicationId: number, refresh = false): Promise<Scorecard> {
+  return (await httpClient.get<Scorecard>(`/api/portal/applications/${applicationId}/scorecard`, { params: { refresh } })).data
 }
 export async function getScorecards(): Promise<ScorecardSummary[]> {
   const data = (await httpClient.get<ScorecardSummary[]>('/api/portal/scorecards')).data
   return Array.isArray(data) ? data : []
+}
+
+/** Les applications en ligne : chaque environnement en service, sa version et son adresse. */
+export interface OnlineApplication { environmentId: number; applicationName: string; environmentName: string; environmentType: string | null; version: string; deploymentId: number; url: string | null }
+export async function getOnlineApplications(): Promise<OnlineApplication[]> {
+  const data = (await httpClient.get<OnlineApplication[]>('/api/portal/online')).data
+  return Array.isArray(data) ? data : []
+}
+
+/** Post-mortem automatique : le rapport d’incident d’un déploiement. */
+export interface PostMortem {
+  deploymentId: number
+  title: string
+  severity: string
+  kind: string
+  summary: string
+  applicationName: string
+  environmentName: string
+  environmentType: string | null
+  version: string
+  requestedBy: string | null
+  impactStart: string | null
+  detectedAt: string | null
+  recoveredAt: string | null
+  minutesToDetect: number | null
+  minutesToRecover: number | null
+  impact: string
+  detection: string
+  cause: string
+  causeDetail: string | null
+  decisiveLine: string | null
+  confidence: string | null
+  recovery: string
+  actions: string[]
+  lessons: string[]
+  timeline: { at: string; text: string; tone: string | null }[]
+  generatedAt: string
+}
+export async function getPostMortem(deploymentId: number): Promise<PostMortem> {
+  return (await httpClient.get<PostMortem>(`/api/deployments/${deploymentId}/postmortem`)).data
 }

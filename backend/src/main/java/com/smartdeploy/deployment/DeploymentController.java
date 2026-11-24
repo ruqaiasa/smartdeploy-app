@@ -29,18 +29,34 @@ public class DeploymentController {
      * ==========================================================
      */
 
+    /** Déploiement progressif (facultatif : absent des tests de la couche web). */
+    private com.smartdeploy.canary.CanaryService canaryService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCanaryService(com.smartdeploy.canary.CanaryService canaryService) {
+        this.canaryService = canaryService;
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     // RG-D1 : un développeur peut demander un déploiement ; il attend alors l'accord d'un DevOps.
     @PreAuthorize("hasAnyRole('DEVELOPER', 'DEVOPS', 'ADMIN')")
     public DeploymentResponse create(
             @Valid @RequestBody CreateDeploymentRequest request,
-            @AuthenticationPrincipal User currentUser
+            @AuthenticationPrincipal User currentUser,
+            @RequestParam(defaultValue = "STANDARD") String strategy
     ) {
+        boolean canary = "CANARY".equalsIgnoreCase(strategy) && canaryService != null;
+        if (canary) {
+            canaryService.validate(request.environmentId());
+        }
         DeploymentResponse created = deploymentService.create(
                 request,
                 currentUser
         );
+        if (canary) {
+            canaryService.register(created.id());
+        }
 
         // Relecture après commit : si Jenkins a refusé le déclenchement,
         // le déploiement est déjà FAILED et l'interface doit le voir.

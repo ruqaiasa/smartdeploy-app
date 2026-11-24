@@ -412,24 +412,24 @@ onUnmounted(() => {
 .message-toast strong { color: #312e81; }
 .message-toast p { margin: 2px 0 0; overflow: hidden; color: #4b5563; font-size: 13.5px; text-overflow: ellipsis; white-space: nowrap; }
 .message-toast-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #eef2ff; }
-.account-toast { position: fixed; right: 96px; bottom: 26px; z-index: 90; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #ddd6fe; border-left: 5px solid #7c3aed; border-radius: 14px; background: #fff; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
-.account-toast strong { color: #4c1d95; }
+.account-toast { position: fixed; right: 96px; bottom: 26px; z-index: 90; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #c7d2fe; border-left: 5px solid #2563eb; border-radius: 14px; background: #fff; box-shadow: 0 18px 40px rgba(15, 23, 42, .18); }
+.account-toast strong { color: #1e3a8a; }
 .account-toast p { margin: 2px 0 0; color: #4b5563; font-size: 13.5px; }
 .account-toast-actions { display: flex; align-items: center; gap: 6px; }
-.account-toast-open { padding: 7px 12px; border: 0; border-radius: 8px; background: #7c3aed; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.account-toast-open { padding: 7px 12px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .account-toast-close { border: 0; background: none; color: #6b7280; font-size: 20px; cursor: pointer; }
-.dev-layout { min-height: 100vh; background: linear-gradient(180deg, #faf9ff 0%, #f6f7fb 240px); }
+.dev-layout { min-height: 100vh; background: linear-gradient(180deg, #f8faff 0%, #f6f7fb 240px); }
 .dev-content { max-width: 1240px; margin: 0 auto; padding: 24px 24px 96px; }
 /* Les pages partagées prennent les couleurs de l’espace développeur. */
 .dev-layout :deep(.primary-button),
-.dev-layout :deep(.dp-btn-primary) { border-color: transparent; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff; }
+.dev-layout :deep(.dp-btn-primary) { border-color: transparent; background: linear-gradient(135deg, #1e3a8a, #4f46e5); color: #fff; }
 .dev-layout :deep(.primary-button:hover),
 .dev-layout :deep(.dp-btn-primary:hover) { filter: brightness(1.06); }
 .dev-layout :deep(.panel),
 .dev-layout :deep(.table-card),
-.dev-layout :deep(.dp-card) { border-color: #ede9fe; border-radius: 14px; }
+.dev-layout :deep(.dp-card) { border-color: #e0e7ff; border-radius: 14px; }
 .dev-layout :deep(.page-title),
-.dev-layout :deep(h1) { color: #1f1147; }
+.dev-layout :deep(h1) { color: #0f172a; }
 .app-layout {
   min-height: 100vh;
 

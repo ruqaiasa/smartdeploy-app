@@ -22,6 +22,8 @@ import type { EnvironmentResponse } from '@/types/environment'
 import type { VersionResponse } from '@/types/version'
 import type { CreateDeploymentRequest, KubernetesApplicationRequest } from '@/types/deployment'
 
+/* Déploiement progressif (canary) */
+const canary = ref(false)
 const props = defineProps<{
   open: boolean
   applications: ApplicationResponse[]
@@ -563,6 +565,7 @@ async function submitForm() {
     forceRebuild: forceRebuild.value,
     emergencyJustification: emergencyJustification.value.trim() || undefined,
     requestMessage: isDeveloperRequest.value ? requestMessage.value.trim() || undefined : undefined,
+    strategy: canary.value && !props.preset ? 'CANARY' : undefined,
   })
 }
 </script>
@@ -693,6 +696,13 @@ async function submitForm() {
                 placeholder="Contexte pour l’équipe" />
               <small>{{ requestMessage.length }} / 500</small>
             </section>
+            <label v-if="!preset" class="dfm-canary">
+              <input v-model="canary" type="checkbox" />
+              <span>
+                <strong>Déploiement progressif (canary)</strong>
+                <small>Un seul pod de la nouvelle version démarre à côté de la version en service et reçoit une part du trafic. Le gardien l’observe ; vous le promouvez ensuite, ou il est abandonné automatiquement s’il se dégrade.</small>
+              </span>
+            </label>
             <ConfidenceScoreCard :version-id="form.versionId" :environment-id="form.environmentId" />
             <DeploymentPrecheckNotices :version-id="form.versionId" :environment-id="form.environmentId"
               v-model:confirm-redeploy="confirmRedeploy" v-model:force-rebuild="forceRebuild" v-model:blocked="precheckBlocked"
@@ -808,6 +818,10 @@ async function submitForm() {
 </template>
 
 <style scoped>
+.dfm-canary { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid #c7d2fe; border-radius: 12px; background: #f8faff; cursor: pointer; }
+.dfm-canary input { margin-top: 3px; }
+.dfm-canary span { display: flex; flex-direction: column; gap: 2px; }
+.dfm-canary small { color: #475569; font-size: 12.5px; line-height: 1.45; }
 .dfm-request { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; border-radius: 10px; background: #f5f3ff; color: #4c1d95; font-size: 13.5px; }
 .dfm-request p { margin: 0; }
 .dfm-request label { margin-top: 4px; font-weight: 600; }

@@ -28,20 +28,22 @@ const STATE: Record<string, { label: string; tone: string }> = {
   HEALTHY: { label: 'En service', tone: 'ok' }, ALERT: { label: 'Alerte', tone: 'critical' }, FAILED: { label: 'Dernier échec', tone: 'critical' },
   DEPLOYING: { label: 'Déploiement', tone: 'running' }, IDLE: { label: 'Arrêté', tone: 'muted' }, EMPTY: { label: 'Jamais déployé', tone: 'muted' },
 }
+/* Le taux de réussite et le volume sont en haut du tableau de bord ; le rétablissement est dans DORA. */
+const PROCESS_KPIS = ['pipeline', 'approval']
 const maxCause = (list: { count: number }[]) => Math.max(1, ...list.map(c => c.count))
 </script>
 
 <template>
   <div v-if="data" class="tr">
     <div class="tr-head">
-      <h3>Tendances</h3>
+      <p class="tr-hint">Le processus de livraison, comparé à la période précédente.</p>
       <div class="tr-range">
         <button v-for="d in [7, 14, 30]" :key="d" type="button" :class="{ 'is-active': days === d }" @click="days = d">{{ d }} jours</button>
       </div>
     </div>
 
     <div class="tr-kpis">
-      <div v-for="k in data.kpis" :key="k.key" class="tr-kpi">
+      <div v-for="k in data.kpis.filter(x => PROCESS_KPIS.includes(x.key))" :key="k.key" class="tr-kpi">
         <span>{{ k.label }}</span>
         <strong>{{ value(k) }}</strong>
         <small v-if="trend(k)" :class="`is-${trend(k)!.tone}`">{{ trend(k)!.text }} <em>vs période précédente</em></small>
@@ -86,11 +88,11 @@ const maxCause = (list: { count: number }[]) => Math.max(1, ...list.map(c => c.c
 <style scoped>
 .tr { display: flex; flex-direction: column; gap: 12px; }
 .tr-head { display: flex; align-items: center; justify-content: space-between; }
-.tr-head h3 { margin: 0; font-size: 16px; }
+.tr-hint { margin: 0; color: #6b7280; font-size: 13px; }
 .tr-range { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: #f3f4f6; }
 .tr-range button { padding: 5px 12px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 13px; font-weight: 700; color: #4b5563; cursor: pointer; }
 .tr-range .is-active { background: #fff; color: #1e3a8a; box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
-.tr-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.tr-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .tr-kpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
 .tr-kpi span { color: #6b7280; font-size: 12px; font-weight: 600; }
 .tr-kpi strong { font-size: 22px; }

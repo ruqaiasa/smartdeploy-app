@@ -62,6 +62,14 @@ const router = createRouter({
     },
 
     {
+      // Post-mortem : hors de la mise en page, pour s'imprimer proprement en PDF.
+      path: '/rapport/:id(\\d+)',
+      name: 'postmortem',
+      component: () => import('@/views/PostMortemView.vue'),
+      meta: { title: 'Rapport d’incident', requiresAuth: true },
+    },
+
+    {
       // Accessible connecté ou non : le lien arrive par courriel (RG-U3).
       path: '/verify-email',
       name: 'verify-email',
@@ -259,6 +267,20 @@ const router = createRouter({
           name: 'supervision',
           component: () => import('@/views/SupervisionView.vue'),
           meta: { title: 'Supervision', roles: ['VIEWER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
+        },
+
+        {
+          path: 'meetings',
+          name: 'meetings',
+          component: () => import('@/views/MeetingsView.vue'),
+          meta: { title: 'Rendez-vous', roles: ['DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
+        },
+
+        {
+          path: 'meetings/:id(\\d+)',
+          name: 'meeting-room',
+          component: () => import('@/views/MeetingRoomView.vue'),
+          meta: { title: 'Visioconférence', roles: ['DEVELOPER', 'DEVOPS', 'ADMIN'] satisfies UserRole[] },
         },
 
         {

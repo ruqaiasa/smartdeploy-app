@@ -42,16 +42,23 @@ public class DashboardInsightsController {
                                     String version, String state, int openAlerts, String lastDeploymentAt) {
     }
 
-    public record Insights(int days, List<Day> daily, List<Kpi> kpis, List<Cause> causes, List<EnvironmentHealth> environments) {
+    public record Insights(int days, List<Day> daily, List<Kpi> kpis, List<Cause> causes, List<EnvironmentHealth> environments,
+                           int degradedVersions, Integer analystPrecision, int analystReviews) {
     }
 
     private final DeploymentRepository deployments;
     private final IncidentAnalysisRepository analyses;
     private final EnvironmentRepository environments;
     private final AlertRepository alerts;
+    private final com.smartdeploy.guard.DeploymentGuardRepository guards;
+    private final com.smartdeploy.portal.AnalysisFeedbackRepository feedback;
 
     public DashboardInsightsController(DeploymentRepository deployments, IncidentAnalysisRepository analyses,
-                                       EnvironmentRepository environments, AlertRepository alerts) {
+                                       EnvironmentRepository environments, AlertRepository alerts,
+                                       com.smartdeploy.guard.DeploymentGuardRepository guards,
+                                       com.smartdeploy.portal.AnalysisFeedbackRepository feedback) {
+        this.guards = guards;
+        this.feedback = feedback;
         this.deployments = deployments;
         this.analyses = analyses;
         this.environments = environments;
@@ -137,7 +144,24 @@ public class DashboardInsightsController {
                     state, alertsCount, last == null ? null : last.getCreatedAt().toString()));
         }
         envs.sort(Comparator.comparing(EnvironmentHealth::applicationName).thenComparing(EnvironmentHealth::environmentName));
-        return new Insights(d, daily, kpis, topCauses, envs);
+        // Intelligence : versions retirées par le gardien, précision de l'analyste (un avis par déploiement)
+        List<Long> ids = current.stream().map(Deployment::getId).toList();
+        int degraded = ids.isEmpty() ? 0 : (int) guards.findByDeploymentIdIn(ids).stream()
+                .filter(g -> g.getStatus() == com.smartdeploy.guard.GuardStatus.DEGRADED).count();
+        Map<Long, com.smartdeploy.portal.AnalysisFeedback> latest = new HashMap<>();
+        for (com.smartdeploy.portal.AnalysisFeedback f : feedback.findAll()) {
+            com.smartdeploy.portal.AnalysisFeedback kept = latest.get(f.getDeploymentId());
+            if (kept == null || f.getId() > kept.getId()) {
+                latest.put(f.getDeploymentId(), f);
+            }
+        }
+        double points = 0;
+        for (com.smartdeploy.portal.AnalysisFeedback f : latest.values()) {
+            points += f.getVerdict() == com.smartdeploy.portal.AnalysisFeedback.Verdict.CORRECT ? 1
+                    : f.getVerdict() == com.smartdeploy.portal.AnalysisFeedback.Verdict.PARTIAL ? 0.5 : 0;
+        }
+        Integer precision = latest.isEmpty() ? null : (int) Math.round(points * 100 / latest.size());
+        return new Insights(d, daily, kpis, topCauses, envs, degraded, precision, latest.size());
     }
 
     /* ------------------------------------------------------------------------ calculs (testables) */

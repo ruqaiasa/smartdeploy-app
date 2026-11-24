@@ -118,6 +118,8 @@ export interface CreateDeploymentRequest {
   emergencyJustification?: string
   /** Portail développeur : message joint à la demande. */
   requestMessage?: string
+  /** Déploiement progressif (canary) : un pod de la nouvelle version à côté de la version stable. */
+  strategy?: 'STANDARD' | 'CANARY'
 }
 
 /** Promotion guidée : environnement suivant d’un déploiement validé, et sa configuration. */

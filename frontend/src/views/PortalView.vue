@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { getScorecards, getWorkspace } from '@/api/portal.api'
+import { getOnlineApplications, getScorecards, getWorkspace, type OnlineApplication } from '@/api/portal.api'
 import { getDeployments } from '@/api/deployments.api'
 import { getClaims } from '@/api/claims.api'
 import { useAuthStore } from '@/stores/auth'
@@ -15,6 +15,7 @@ const workspace = ref<Workspace | null>(null)
 const recent = ref<DeploymentResponse[]>([])
 const todo = ref<{ link: string | null; text: string }[]>([])
 const scorecards = ref<ScorecardSummary[]>([])
+const online = ref<OnlineApplication[]>([])
 
 onMounted(async () => {
   const [ws, deps, claims] = await Promise.all([
@@ -22,6 +23,7 @@ onMounted(async () => {
   ])
   workspace.value = ws
   scorecards.value = await getScorecards().catch(() => [])
+  online.value = await getOnlineApplications().catch(() => [])
   recent.value = deps?.content ?? []
   todo.value = [
     ...claims.filter(c => c.status === 'WAITING_REQUESTER').map(c => ({ link: null, text: `Répondre : ${c.title}` })),
@@ -47,6 +49,7 @@ const steps = computed(() => [
 ])
 const ongoing = computed(() => recent.value.filter(d => ['AWAITING_APPROVAL', 'PENDING', 'RUNNING'].includes(d.status)))
 
+const ENV_LABEL: Record<string, string> = { DEVELOPMENT: 'Dév.', TEST: 'Test', STAGING: 'Préprod.', PRODUCTION: 'Prod.' }
 const STATUS: Record<string, { label: string; tone: string }> = {
   AWAITING_APPROVAL: { label: 'À valider', tone: 'approval' }, PENDING: { label: 'En file', tone: 'muted' }, RUNNING: { label: 'En cours', tone: 'running' },
   SUCCESS: { label: 'Réussi', tone: 'ok' }, FAILED: { label: 'Échoué', tone: 'critical' }, REJECTED: { label: 'Refusé', tone: 'critical' },
@@ -81,6 +84,19 @@ const plural = (n: number, w: string) => w === 'en service' ? `${n} ${w}` : `${n
         <RouterLink :to="s.to" class="hm-step-action">{{ s.action }}</RouterLink>
       </li>
     </ol>
+
+    <section v-if="online.length" class="hm-card">
+      <header class="hm-card-head"><h2>Mes applications en ligne</h2><span class="hm-count">{{ online.length }}</span></header>
+      <ul class="hm-online">
+        <li v-for="o in online" :key="o.environmentId">
+          <span class="hm-env-type" :class="`is-${(o.environmentType ?? '').toLowerCase()}`">{{ ENV_LABEL[o.environmentType ?? ''] ?? o.environmentType }}</span>
+          <span class="hm-online-name"><strong>{{ o.applicationName }}</strong> <code>{{ o.version }}</code><small>{{ o.environmentName }}</small></span>
+          <a v-if="o.url" :href="o.url" target="_blank" rel="noopener" class="hm-open">{{ o.url.replace('http://', '') }} ↗</a>
+          <span v-else class="hm-noaddr">Pas d’adresse publique</span>
+          <RouterLink :to="`/deployments/${o.deploymentId}`" class="hm-link">Fiche</RouterLink>
+        </li>
+      </ul>
+    </section>
 
     <div class="hm-grid">
       <section class="hm-card">
@@ -138,50 +154,64 @@ const plural = (n: number, w: string) => w === 'en service' ? `${n} ${w}` : `${n
 </template>
 
 <style scoped>
+.hm-online { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.hm-online li { display: grid; grid-template-columns: 62px minmax(0, 1.2fr) minmax(0, 1.6fr) auto; align-items: center; gap: 12px; padding: 10px 4px; border-top: 1px solid #eef2ff; font-size: 14px; }
+.hm-online li:first-child { border-top: 0; }
+.hm-online-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; }
+.hm-online-name code { padding: 0 6px; border-radius: 5px; background: #f3f4f6; font-size: 12px; }
+.hm-online-name small { width: 100%; color: #6b7280; font-size: 12px; }
+.hm-env-type { padding: 2px 8px; border-radius: 999px; background: #f3f4f6; color: #4b5563; font-size: 11.5px; font-weight: 800; text-align: center; }
+.hm-env-type.is-production { background: #fee2e2; color: #991b1b; }
+.hm-env-type.is-test { background: #fef3c7; color: #92400e; }
+.hm-env-type.is-development { background: #dbeafe; color: #1e40af; }
+.hm-open { overflow: hidden; padding: 6px 10px; border-radius: 9px; background: #eef2ff; color: #1e40af; font-size: 13px; font-weight: 700; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.hm-open:hover { background: #e0e7ff; }
+.hm-noaddr { color: #9ca3af; font-size: 13px; }
+@media (max-width: 760px) { .hm-online li { grid-template-columns: 1fr; } }
 .hm-scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.hm-score { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #ede9fe; border-radius: 12px; color: inherit; text-decoration: none; }
-.hm-score:hover { border-color: #c4b5fd; background: #faf9ff; }
+.hm-score { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e0e7ff; border-radius: 12px; color: inherit; text-decoration: none; }
+.hm-score:hover { border-color: #c7d2fe; background: #f8faff; }
 .hm-score span:last-child { display: flex; flex-direction: column; }
 .hm-score small { color: #6b7280; }
 .hm-grade { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #f3f4f6; color: #6b7280; font-size: 22px; font-weight: 900; }
 .hm-grade.is-a { background: #dcfce7; color: #15803d; } .hm-grade.is-b { background: #ecfccb; color: #4d7c0f; } .hm-grade.is-c { background: #fef9c3; color: #a16207; } .hm-grade.is-d { background: #ffedd5; color: #c2410c; } .hm-grade.is-e { background: #fee2e2; color: #b91c1c; }
 .hm { display: flex; flex-direction: column; gap: 16px; }
-.hm-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 22px 26px; border-radius: 18px; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff; }
+.hm-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 22px 26px; border-radius: 18px; background: linear-gradient(135deg, #1e3a8a, #4f46e5); color: #fff; }
 .hm-hero h1 { margin: 0; font-size: 26px; }
 .hm-hero p { margin: 4px 0 0; opacity: .85; }
-.hm-cta { padding: 10px 16px; border-radius: 10px; background: #fff; color: #5b21b6; font-size: 14px; font-weight: 800; text-decoration: none; }
+.hm-cta { padding: 10px 16px; border-radius: 10px; background: #fff; color: #1e40af; font-size: 14px; font-weight: 800; text-decoration: none; }
 .hm-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.hm-steps li { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid #ede9fe; border-radius: 14px; background: #fff; }
+.hm-steps li { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid #e0e7ff; border-radius: 14px; background: #fff; }
 .hm-steps li.is-done { border-color: #bbf7d0; }
-.hm-step-dot { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 999px; background: #ede9fe; color: #6d28d9; font-weight: 800; }
+.hm-step-dot { display: grid; flex: 0 0 auto; place-items: center; width: 32px; height: 32px; border-radius: 999px; background: #e0e7ff; color: #1d4ed8; font-weight: 800; }
 .is-done .hm-step-dot { background: #16a34a; color: #fff; }
 .hm-step-body { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .hm-step-body strong { font-size: 14.5px; }
 .hm-step-body span { color: #6b7280; font-size: 12.5px; }
-.hm-step-action { padding: 5px 10px; border-radius: 8px; background: #f5f3ff; color: #6d28d9; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.hm-step-action { padding: 5px 10px; border-radius: 8px; background: #eef2ff; color: #1d4ed8; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap; }
 .hm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 900px) { .hm-grid, .hm-steps { grid-template-columns: 1fr; } }
-.hm-card { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border: 1px solid #ede9fe; border-radius: 14px; background: #fff; }
+.hm-card { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border: 1px solid #e0e7ff; border-radius: 14px; background: #fff; }
 .hm-card-head { display: flex; align-items: center; justify-content: space-between; }
 .hm-card h2 { margin: 0; font-size: 16px; }
 .hm-count { min-width: 26px; padding: 1px 8px; border-radius: 999px; background: #f3f4f6; color: #4b5563; font-size: 12.5px; font-weight: 700; text-align: center; }
-.hm-count.is-alert { background: #ede9fe; color: #6d28d9; }
-.hm-link { color: #6d28d9; font-size: 13.5px; font-weight: 700; text-decoration: none; }
+.hm-count.is-alert { background: #e0e7ff; color: #1d4ed8; }
+.hm-link { color: #1d4ed8; font-size: 13.5px; font-weight: 700; text-decoration: none; }
 .hm-empty { margin: 0; color: #6b7280; font-size: 14px; }
 .hm-ok { margin: 0; padding: 10px 12px; border-radius: 10px; background: #f0fdf4; color: #166534; font-weight: 700; font-size: 14px; }
 .hm-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.hm-list a:not(.hm-todo) { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; background: #faf9ff; color: inherit; text-decoration: none; font-size: 14px; }
-.hm-todo { display: block; box-sizing: border-box; width: 100%; padding: 9px 12px; border: 0; border-radius: 10px; background: #f5f3ff; color: #4c1d95; font: inherit; font-size: 14px; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; }
+.hm-list a:not(.hm-todo) { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; background: #f8faff; color: inherit; text-decoration: none; font-size: 14px; }
+.hm-todo { display: block; box-sizing: border-box; width: 100%; padding: 9px 12px; border: 0; border-radius: 10px; background: #eef2ff; color: #1e3a8a; font: inherit; font-size: 14px; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; }
 .hm-name { color: #111827; font-weight: 600; text-decoration: none; }
 .hm-name code { padding: 0 6px; border-radius: 5px; background: #f3f4f6; font-size: 12px; }
 .hm-sub { color: #6b7280; }
 .hm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.hm-table th { padding: 8px; border-bottom: 1px solid #ede9fe; color: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-align: left; text-transform: uppercase; }
-.hm-table td { padding: 10px 8px; border-bottom: 1px solid #f5f3ff; }
+.hm-table th { padding: 8px; border-bottom: 1px solid #e0e7ff; color: #6b7280; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-align: left; text-transform: uppercase; }
+.hm-table td { padding: 10px 8px; border-bottom: 1px solid #eef2ff; }
 .hm-table tbody tr:last-child td { border-bottom: 0; }
 .hm-right { text-align: right !important; }
 .hm-pill { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.hm-pill.is-approval { background: #ede9fe; color: #5b21b6; }
+.hm-pill.is-approval { background: #e0e7ff; color: #1e40af; }
 .hm-pill.is-running { background: #dbeafe; color: #1e40af; }
 .hm-pill.is-ok { background: #dcfce7; color: #166534; }
 .hm-pill.is-critical { background: #fee2e2; color: #991b1b; }

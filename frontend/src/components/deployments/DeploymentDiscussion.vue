@@ -118,18 +118,18 @@ function onKey(event: KeyboardEvent) {
 .dd-event-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 999px; background: #9ca3af; }
 .dd-event.is-ok .dd-event-dot { background: #16a34a; }
 .dd-event.is-critical .dd-event-dot { background: #dc2626; }
-.dd-event.is-analysis .dd-event-dot { background: #7c3aed; }
+.dd-event.is-analysis .dd-event-dot { background: #2563eb; }
 .dd-day { display: flex; align-items: center; gap: 10px; margin: 4px 0; color: #9ca3af; font-size: 11.5px; text-transform: capitalize; }
 .dd-day::before, .dd-day::after { content: ""; flex: 1; height: 1px; background: #eef0f3; }
 .dd-row { display: flex; align-items: flex-end; gap: 8px; }
 .dd-row.is-mine { flex-direction: row-reverse; }
-.dd-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 800; }
+.dd-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #e0e7ff; color: #1e40af; font-size: 11px; font-weight: 800; }
 .dd-row.is-mine .dd-avatar { background: #1e3a8a; color: #fff; }
 .dd-msg { align-self: flex-start; max-width: 85%; padding: 8px 12px; border-radius: 12px 12px 12px 4px; background: #f3f4f6; }
 .dd-msg.is-mine { align-self: flex-end; border-radius: 12px 12px 4px 12px; background: #e0e7ff; }
 .dd-msg p { margin: 2px 0 0; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .dd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; }
-.dd-role { padding: 0 6px; border-radius: 999px; background: #fff; color: #6d28d9; font-weight: 600; }
+.dd-role { padding: 0 6px; border-radius: 999px; background: #fff; color: #1d4ed8; font-weight: 600; }
 .dd-meta time { color: #9ca3af; }
 .dd-form { display: flex; gap: 8px; align-items: flex-end; }
 .dd-form textarea { flex: 1; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 8px; font: inherit; font-size: 14px; resize: vertical; }

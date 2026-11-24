@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { discussions } from '@/components/discussion/discussions'
+import { getActiveCanaries } from '@/api/deployments.api'
 import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DeploymentFormModal from '@/components/deployments/DeploymentFormModal.vue'
@@ -216,7 +217,12 @@ const guards = ref<Record<number, DeploymentGuard>>({})
 const guardDeployment = ref<DeploymentResponse | null>(null)
 let guardTimer: ReturnType<typeof setInterval> | null = null
 
+/* Déploiements progressifs en observation : un badge sur leur ligne */
+const canaryIds = ref<Set<number>>(new Set())
+async function loadCanaries() { try { canaryIds.value = new Set(await getActiveCanaries()) } catch { canaryIds.value = new Set() } }
+
 async function loadGuards() {
+  void loadCanaries()
   const ids = deploymentsStore.deployments
     .filter(d => d.status === 'SUCCESS' || d.status === 'ROLLED_BACK')
     .map(d => d.id)
@@ -255,6 +261,18 @@ async function loadPromotions() {
 watch(guards, () => { void loadPromotions() })
 
 const modalPreset = ref<PromotionProposal | null>(null)
+/* Depuis la fiche d’un déploiement : ?promote=ID ouvre directement l’assistant de promotion. */
+const promoteRoute = useRoute()
+watch([promotions, () => deploymentsStore.deployments], () => {
+  const id = Number(promoteRoute.query.promote)
+  if (!id || !promotions.value[id]) return
+  const target = deploymentsStore.deployments.find(d => d.id === id)
+  if (target) {
+    promote(target)
+    void rowRouter.replace({ query: {} })
+  }
+}, { deep: true })
+
 function promote(deployment: DeploymentResponse) {
   const proposal = promotions.value[deployment.id]
   if (!proposal) return
@@ -559,6 +577,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
                 <small v-else-if="deployment.status === 'REJECTED'" class="dp-approval is-rejected">
                   {{ deployment.approvedBy ? `Refusé par ${deployment.approvedBy}` : 'Refusé' }}<template v-if="deployment.approvalComment"> : {{ deployment.approvalComment }}</template>
                 </small>
+                <span v-if="canaryIds.has(deployment.id)" class="dp-canary-badge" title="Déploiement progressif : un pod de cette version reçoit une part du trafic">Canary</span>
                 <DeploymentGuardBadge v-if="guards[deployment.id] && !isDeveloper" :guard="guards[deployment.id]!" @open="openGuard(deployment)" />
                 <small v-if="restorePoints[deployment.id]" class="dp-restore-point" :class="restorePointTone(restorePoints[deployment.id]!)"
                   :title="restorePointTitle(restorePoints[deployment.id]!)"><svg class="dp-rp-icon" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="M4 3.5h9.5L16.5 6.5V16a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>{{ restorePointLabel(restorePoints[deployment.id]!) }}</small>
@@ -711,6 +730,7 @@ function requesterName(email: string) { return email?.split('@')[0] || email }
 </template>
 
 <style scoped>
+.dp-canary-badge { display: inline-block; margin: 4px 6px 0 0; padding: 2px 9px; border-radius: 999px; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; font-size: 12px; font-weight: 800; }
 .dp-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .dp-actions-main, .dp-actions-more { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .dp-actions-main:empty, .dp-actions-more:empty { display: none; }

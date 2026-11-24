@@ -79,6 +79,10 @@ export interface DeploymentProgress {
   source: 'none' | 'final' | 'jenkins' | 'unavailable'
   /** Pourquoi un déploiement accepté n’a pas encore démarré. */
   pendingReason: string | null
+  /** Sans adresse publique : de quoi ouvrir l’application pour un essai. */
+  namespace: string | null
+  accessService: string | null
+  accessPort: number | null
 }
 export interface PodSummary { name: string; component: string; ready: boolean; restarts: number; phase: string | null; lastTermination: string | null }
 export interface LogExcerpt { pod: string; previous: boolean; lines: string[]; totalLines: number }

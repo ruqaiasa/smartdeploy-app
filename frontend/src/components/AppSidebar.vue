@@ -203,6 +203,30 @@ defineEmits<{
         </RouterLink>
 
         <RouterLink
+          v-if="!isDeveloper"
+          to="/meetings"
+          class="nav-link"
+          title="Rendez-vous"
+        >
+          <span class="nav-icon">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <rect x="3" y="5" width="13" height="14" rx="2" />
+              <path d="M16 10l5-3v10l-5-3" />
+            </svg>
+          </span>
+
+          <span
+            v-if="!collapsed"
+            class="nav-label"
+          >
+            Rendez-vous
+          </span>
+        </RouterLink>
+
+        <RouterLink
           v-if="authStore.hasRole('DEVELOPER', 'DEVOPS', 'ADMIN')"
           to="/claims"
           class="nav-link"
@@ -657,7 +681,7 @@ defineEmits<{
 </template>
 
 <style scoped>
-.nav-pending { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #7c3aed; color: #fff; font-size: 11.5px; font-weight: 800; text-align: center; }
+.nav-pending { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #2563eb; color: #fff; font-size: 11.5px; font-weight: 800; text-align: center; }
 .approval-count { margin-left: auto; min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #4338ca; color: #fff; font-size: 11.5px; font-weight: 700; text-align: center; }
 .sidebar {
   position: fixed;

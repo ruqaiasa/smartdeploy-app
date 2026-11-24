@@ -542,6 +542,36 @@ public class KubernetesManifestGeneratorService {
         return Serialization.asYaml(deployment);
     }
 
+    /**
+     * Déploiement progressif : seulement une copie « -canary » du serveur et de l'interface, avec 1 pod, et les mêmes
+     * étiquettes « app » que la version stable (le Service lui envoie donc sa part du trafic), plus « track: canary »
+     * dans son propre sélecteur. Rien d'autre n'est appliqué : la version stable, la base et l'Ingress restent intacts.
+     */
+    public java.util.Map<String, String> canaryManifests(java.util.Map<String, String> manifests) {
+        java.util.Map<String, String> canary = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, String> e : manifests.entrySet()) {
+            String key = e.getKey();
+            if (!key.endsWith("-deployment.yaml") || !(key.startsWith("backend") || key.startsWith("frontend"))) {
+                continue;
+            }
+            Deployment deployment = Serialization.unmarshal(e.getValue(), Deployment.class);
+            deployment.getMetadata().setName(deployment.getMetadata().getName() + "-canary");
+            java.util.Map<String, String> metaLabels = new java.util.HashMap<>(
+                    deployment.getMetadata().getLabels() == null ? java.util.Map.of() : deployment.getMetadata().getLabels());
+            metaLabels.put("track", "canary");
+            deployment.getMetadata().setLabels(metaLabels);
+            deployment.getSpec().setReplicas(1);
+            java.util.Map<String, String> selector = new java.util.HashMap<>(deployment.getSpec().getSelector().getMatchLabels());
+            selector.put("track", "canary");
+            deployment.getSpec().getSelector().setMatchLabels(selector);
+            java.util.Map<String, String> podLabels = new java.util.HashMap<>(deployment.getSpec().getTemplate().getMetadata().getLabels());
+            podLabels.put("track", "canary");
+            deployment.getSpec().getTemplate().getMetadata().setLabels(podLabels);
+            canary.put(key.replace("-deployment.yaml", "-canary-deployment.yaml"), Serialization.asYaml(deployment));
+        }
+        return canary;
+    }
+
     /** Cible d'utilisation du processeur au-delà de laquelle on ajoute des pods. */
     static final int AUTOSCALE_CPU_PERCENT = 70;
 

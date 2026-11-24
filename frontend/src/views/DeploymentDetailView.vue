@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import { approveDeployment, cancelDeployment, getDeploymentById, rejectDeployment } from '@/api/deployments.api'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { abortCanary, approveDeployment, cancelDeployment, getCanary, getDeploymentById, getPromotion, promoteCanary, rejectDeployment, type CanaryView } from '@/api/deployments.api'
 import { getIncidentAnalysis } from '@/api/incident.api'
 import { getDeploymentMetrics } from '@/api/monitoring.api'
 import type { ApplicationMetrics } from '@/types/monitoring'
@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/auth'
 import DeploymentDiscussion from '@/components/deployments/DeploymentDiscussion.vue'
 import ApprovalDialog from '@/components/deployments/ApprovalDialog.vue'
 import EnvironmentCharts from '@/components/charts/EnvironmentCharts.vue'
+import ProposeMeetingDialog from '@/components/meetings/ProposeMeetingDialog.vue'
 import { openClaimsWidget } from '@/components/developer/claimsWidget'
 import type { DeploymentResponse } from '@/types/deployment'
 import type { IncidentAnalysis } from '@/types/incident'
@@ -29,6 +30,26 @@ const analysis = ref<IncidentAnalysis | null>(null)
 const insight = ref<AnalysisInsight | null>(null)
 const pods = ref<PodSummary[]>([])
 const metrics = ref<ApplicationMetrics | null>(null)
+/* Déploiement progressif (canary) */
+const canary = ref<CanaryView | null>(null)
+const meetingOpen = ref(false)
+const canaryBusy = ref(false)
+const canaryRouter = useRouter()
+async function promoteCanaryNow() {
+  if (!window.confirm('Promouvoir : le pod canary est retiré et toute l’application passe à cette version (images réutilisées). Continuer ?')) return
+  canaryBusy.value = true
+  try { const created = await promoteCanary(id.value); await canaryRouter.push(`/deployments/${created.id}`) }
+  catch (exception) { decisionError.value = (exception as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Promotion impossible.' }
+  finally { canaryBusy.value = false }
+}
+async function abortCanaryNow() {
+  const reason = window.prompt('Abandonner le déploiement progressif : pourquoi ?', 'Comportement anormal observé')
+  if (reason === null) return
+  canaryBusy.value = true
+  try { await abortCanary(id.value, reason); await load() } finally { canaryBusy.value = false }
+}
+/* Étape suivante : la promotion vers l’environnement suivant, si la version y est prête. */
+const promotion = ref<{ targetEnvironmentName: string; targetEnvironmentType: string } | null>(null)
 const error = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -47,6 +68,8 @@ async function load() {
     }
     if (d.status === 'SUCCESS' || d.status === 'FAILED') pods.value = await getPods(id.value).catch(() => [])
     if (d.status === 'SUCCESS') metrics.value = await getDeploymentMetrics(id.value).catch(() => null)
+    canary.value = await getCanary(id.value).catch(() => null)
+    promotion.value = d.status === 'SUCCESS' && d.current ? await getPromotion(id.value).catch(() => null) : null
   } catch (exception) {
     const status = (exception as { response?: { status?: number } }).response?.status
     error.value = status === 403 ? 'Ce déploiement concerne une application qui ne vous appartient pas.' : 'Ce déploiement n’a pas pu être chargé.'
@@ -166,6 +189,8 @@ const reportLink = computed(() => deployment.value
           <button v-if="canWithdraw" type="button" class="fd-btn" @click="withdraw">Retirer</button>
           <button v-if="isDeveloperUser" type="button" class="fd-btn" @click="openClaimsWidget({ applicationId: deployment.applicationId, deploymentId: deployment.id })">Signaler</button>
           <RouterLink v-else :to="reportLink" class="fd-btn">Signaler</RouterLink>
+          <RouterLink v-if="deployment.status === 'FAILED' || deployment.status === 'ROLLED_BACK'" :to="`/rapport/${deployment.id}`" class="fd-btn" title="Post-mortem généré automatiquement">Rapport d’incident</RouterLink>
+          <button type="button" class="fd-btn" title="Proposer des créneaux de visioconférence" @click="meetingOpen = true">Planifier une visio</button>
         </div>
       </header>
 
@@ -182,6 +207,41 @@ const reportLink = computed(() => deployment.value
         </ol>
         <p class="fd-progress-line">{{ progressLine }}</p>
         <p v-if="progress.source === 'unavailable'" class="fd-muted">Jenkins injoignable.</p>
+      </section>
+
+      <!-- Déploiement progressif (canary) -->
+      <section v-if="canary" class="fd-card fd-canary" :class="`is-${canary.state.toLowerCase()}`">
+        <header class="fd-canary-head">
+          <h2>Déploiement progressif (canary)</h2>
+          <span class="fd-status" :class="canary.state === 'OBSERVING' ? 'is-running' : canary.state === 'PROMOTED' ? 'is-ok' : 'is-muted'">
+            {{ canary.state === 'OBSERVING' ? (canary.active ? 'En observation' : 'En préparation') : canary.state === 'PROMOTED' ? 'Promu' : 'Abandonné' }}
+          </span>
+        </header>
+        <template v-if="canary.state === 'OBSERVING' && canary.active">
+          <p>Un pod de cette version reçoit environ <strong>{{ canary.trafficPercent }} %</strong> du trafic, à côté de {{ canary.stableReplicas }} pod(s) de la version stable. Le gardien l’observe : s’il la juge dégradée, il abandonne le canary automatiquement.</p>
+          <div class="fd-traffic" :aria-label="`${canary.trafficPercent} % vers le canary`">
+            <span class="fd-traffic-stable" :style="{ width: `${100 - canary.trafficPercent}%` }">Version stable · {{ 100 - canary.trafficPercent }} %</span>
+            <span class="fd-traffic-canary" :style="{ width: `${canary.trafficPercent}%` }">Canary · {{ canary.trafficPercent }} %</span>
+          </div>
+          <div v-if="isTeam" class="fd-canary-actions">
+            <button type="button" class="fd-btn fd-btn-primary" :disabled="canaryBusy" @click="promoteCanaryNow">Promouvoir</button>
+            <button type="button" class="fd-btn" :disabled="canaryBusy" @click="abortCanaryNow">Abandonner</button>
+          </div>
+        </template>
+        <p v-else-if="canary.state === 'OBSERVING'">Le pod canary sera lancé à la fin du pipeline, à côté de la version en service.</p>
+        <p v-else class="fd-muted">{{ canary.note }}</p>
+      </section>
+
+      <!-- Étape suivante : la promotion -->
+      <section v-if="promotion" class="fd-card fd-next">
+        <div>
+          <h2>Étape suivante</h2>
+          <p v-if="promotion.targetEnvironmentType === 'PRODUCTION'">Cette version est validée : vous pouvez demander sa <strong>mise en production</strong>. Un DevOps examinera la demande et réalisera la promotion, avec les mêmes images.</p>
+          <p v-else>Cette version peut passer vers <strong>{{ promotion.targetEnvironmentName }}</strong>, avec les mêmes images (sans reconstruction).</p>
+        </div>
+        <RouterLink :to="{ path: '/deployments', query: { promote: String(deployment.id) } }" class="fd-btn fd-btn-primary">
+          {{ promotion.targetEnvironmentType === 'PRODUCTION' ? 'Demander la mise en production' : `Promouvoir vers ${promotion.targetEnvironmentName}` }}
+        </RouterLink>
       </section>
 
       <!-- Explication d'un échec -->
@@ -244,7 +304,14 @@ const reportLink = computed(() => deployment.value
           <div><span>Redémarrages</span><strong>{{ metrics.restartCount }}</strong></div>
         </div>
         <p v-if="progress?.applicationUrl">Adresse : <a :href="progress.applicationUrl" target="_blank" rel="noopener">{{ progress.applicationUrl }}</a></p>
-        <p v-else class="fd-muted">Pas d’adresse publique.</p>
+        <div v-else class="fd-access">
+          <p><strong>Pas d’adresse publique</strong> : l’application n’est joignable qu’à l’intérieur du cluster (aucun nom d’hôte saisi dans l’assistant).</p>
+          <template v-if="progress?.accessService">
+            <p class="fd-muted">Pour l’ouvrir quand même, sur la machine du cluster :</p>
+            <pre class="fd-decisive">kubectl -n {{ progress.namespace }} port-forward --address 0.0.0.0 svc/{{ progress.accessService }} 8090:{{ progress.accessPort ?? 8080 }}</pre>
+            <p class="fd-muted">puis ouvrir l’adresse de cette machine sur le port 8090.</p>
+          </template>
+        </div>
         <table v-if="pods.length" class="fd-table">
           <thead><tr><th>Composant</th><th>Pod</th><th>Prêt</th><th>Redémarrages</th><th>Dernier arrêt</th></tr></thead>
           <tbody>
@@ -282,6 +349,9 @@ const reportLink = computed(() => deployment.value
 
       <!-- Fil de la demande -->
       <div id="discussion"><DeploymentDiscussion :deployment-id="deployment.id" /></div>
+
+      <ProposeMeetingDialog :open="meetingOpen" :deployment-id="deployment.id" :default-topic="`Déploiement #${deployment.id} : ${deployment.applicationName} ${deployment.version}`"
+        @close="meetingOpen = false" @proposed="meetingOpen = false; canaryRouter.push('/meetings')" />
 
       <ApprovalDialog :open="decisionOpen" :deployment="deployment" :loading="deciding" :error="decisionError"
         @close="decisionOpen = false" @approve="decide('approve', $event)" @reject="decide('reject', $event)" />
@@ -335,6 +405,15 @@ const reportLink = computed(() => deployment.value
 .fd-logbar select { padding: 7px 9px; border: 1px solid #e5e7eb; border-radius: 8px; font: inherit; font-size: 13.5px; }
 @media (max-width: 760px) { .fd-phases { grid-template-columns: 1fr; } }
 a.fd-btn { text-decoration: none; }
+.fd-canary { border-color: #c7d2fe; }
+.fd-canary-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fd-traffic { display: flex; overflow: hidden; height: 30px; border-radius: 10px; font-size: 12px; font-weight: 800; color: #fff; }
+.fd-traffic span { display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
+.fd-traffic-stable { background: linear-gradient(90deg, #16a34a, #22c55e); }
+.fd-traffic-canary { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.fd-canary-actions { display: flex; gap: 8px; }
+.fd-next { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; border-color: #c7d2fe; background: #f8faff; }
+.fd-next p { max-width: 640px; }
 .fd-learning { padding: 6px 10px; border-radius: 8px; background: #f5f3ff; color: #5b21b6; font-size: 13px !important; }
 .fd-fix { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-left: 4px solid #16a34a; border-radius: 10px; background: #f0fdf4; }
 .fd-health { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }

@@ -36,6 +36,8 @@ public class KubernetesManifestController {
     private final DeploymentKubernetesConfigRepository kubernetesConfigRepository;
 
     private final ObjectMapper objectMapper;
+
+    private final com.smartdeploy.canary.CanaryReleaseRepository canaryReleases;
     @PostMapping("/preview")
     public ResponseEntity<KubernetesManifestPreviewResponse> preview(
             @Valid @RequestBody KubernetesDeploymentConfigRequest request
@@ -192,8 +194,13 @@ public class KubernetesManifestController {
         KubernetesApplicationPreviewResponse preview =
                 generatorService.generateApplication(request);
 
+        // 3 bis. Déploiement progressif : seulement la copie canary (la version stable reste intacte)
+        Map<String, String> manifests = canaryReleases.existsByDeploymentId(deploymentId)
+                ? generatorService.canaryManifests(preview.manifests())
+                : preview.manifests();
+
         // 4. Valider les manifests
-        var errors = manifestValidator.validate(preview.manifests());
+        var errors = manifestValidator.validate(manifests);
 
         if (!errors.isEmpty()) {
             throw new ResponseStatusException(
@@ -208,7 +215,7 @@ public class KubernetesManifestController {
         try (ZipOutputStream zip = new ZipOutputStream(output)) {
 
             for (Map.Entry<String, String> entry :
-                    preview.manifests().entrySet()) {
+                    manifests.entrySet()) {
 
                 zip.putNextEntry(
                         new ZipEntry(entry.getKey())
